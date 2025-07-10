@@ -12,7 +12,8 @@ app.use(express.json())
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise
     .all(req.body.events.map(handleEvent))
-    .then(result => res.json(result))
+    .then(result => 
+      res.status(200).end())
 })
 
 function handleEvent(event) {
