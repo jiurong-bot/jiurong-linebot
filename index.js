@@ -24,32 +24,53 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 // 處理 LINE 傳入的事件
 function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
-    return Promise.resolve(null)
+    return Promise.resolve(null);
   }
 
-  const text = event.message.text.trim()
+  const msg = event.message.text.trim();
 
-  if (text === '@預約') {
+  // 指令對應邏輯
+  if (msg === '@課程查詢') {
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: '請選擇課程日期：\n1️⃣ 星期一瑜伽\n2️⃣ 星期三冥想\n3️⃣ 星期五伸展\n\n請輸入「@1」、「@2」、「@3」進行預約。'
-    })
-  } else if (text === '@1') {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '您已成功預約「星期一瑜伽」課程，感謝！🧘‍♀️'
-    })
-  } else if (text === '@2') {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '您已成功預約「星期三冥想」課程，感謝！🧘‍♂️'
-    })
-  } else if (text === '@3') {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '您已成功預約「星期五伸展」課程，感謝！🧘‍♀️'
-    })
+      text: '這裡是課程查詢功能（範例內容）。'
+    });
   }
+
+  if (msg === '@預約') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請問您要預約哪一堂課？（此功能尚在建置中）'
+    });
+  }
+
+  if (msg === '@取消') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請問您要取消哪一堂課？（此功能尚在建置中）'
+    });
+  }
+
+  if (msg === '@點數查詢') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '目前剩餘點數為：10 點，有效期限至 2025/12/31。'
+    });
+  }
+
+  if (msg === '@購點') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請點選以下表單進行購點：\nhttps://yourform.url\n\n💰 每點 NT$100，可用於預約課程。'
+    });
+  }
+
+  // 預設回覆
+  return client.replyMessage(event.replyToken, {
+    type: 'text',
+    text: `你說的是：「${msg}」`
+  });
+}
 
   // 預設回應
   return client.replyMessage(event.replyToken, {
