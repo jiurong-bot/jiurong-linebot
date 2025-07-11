@@ -25,41 +25,38 @@ function handleEvent(event) {
     return Promise.resolve(null)
   }
 
-  // 回覆訊息 + 快速選單
+  const messageText = event.message.text.trim()
+
+  // 學員主選單觸發關鍵字
+  if (messageText === '@選單' || messageText === '選單') {
+    const replyText =
+      '📋 九容瑜伽選單：\n' +
+      '1️⃣ @預約課程\n' +
+      '2️⃣ @查看預約\n' +
+      '3️⃣ @購買點數\n' +
+      '4️⃣ @我的點數\n' +
+      '5️⃣ @聯絡老師'
+
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: replyText
+    })
+  }
+
+  // 若為關鍵字預約
+  if (messageText === '@預約課程') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請選擇您要預約的課程：\n🧘‍♀️ 週一晚間瑜伽\n🧘‍♀️ 週三早晨伸展\n🧘‍♀️ 週六核心強化\n（未來將提供按鈕功能）'
+    })
+  }
+
+  // 其他一般文字回覆
   return client.replyMessage(event.replyToken, {
     type: 'text',
-    text: '請選擇操作項目：',
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          action: {
-            type: 'message',
-            label: '預約課程',
-            text: '@預約'
-          }
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'message',
-            label: '購買點數',
-            text: '@購點'
-          }
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'message',
-            label: '查詢點數',
-            text: '@點數'
-          }
-        }
-      ]
-    }
+    text: `你說的是：「${messageText}」`
   })
 }
-
 const port = process.env.PORT || 3000
 app.listen(port, () => {
   console.log(`✅ LINE Bot 已啟動，監聽在 port ${port}`)
