@@ -26,37 +26,28 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 });
 
 // 處理 LINE Bot 收到的事件
-// 學員文字選單回應
 function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
-    return Promise.resolve(null)
+    return Promise.resolve(null);
   }
 
-  const msg = event.message.text.trim()
+  // 根據關鍵字給出不同回應（可擴充）
+  const userMessage = event.message.text.trim();
 
-  let replyText = ''
-  switch (msg) {
-    case '@預約':
-      replyText = '請選擇要預約的課程時間：\n1. 週一 19:00\n2. 週三 10:00\n3. 週六 14:00\n請回覆課程代碼（如：1）完成預約。'
-      break
-    case '@取消':
-      replyText = '請回覆欲取消的課程時間（如：週一 19:00），系統將協助您處理取消與退點。'
-      break
-    case '@點數查詢':
-      replyText = '您目前剩餘 10 點。\n如需購買請輸入 @購點。'
-      break
-    case '@購點':
-      replyText = '請點擊以下表單填寫購點資訊：\nhttps://forms.gle/your-form-link'
-      break
-    default:
-      replyText = `你說的是：「${msg}」`
+  if (userMessage === '@預約') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '預約功能即將上線，敬請期待 🙏'
+    });
   }
 
+  // 回傳收到的訊息
   return client.replyMessage(event.replyToken, {
     type: 'text',
-    text: replyText
-  })
+    text: `你說的是：「${userMessage}」`
+  });
 }
+
 // 啟動伺服器
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
