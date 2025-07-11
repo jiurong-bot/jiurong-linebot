@@ -31,7 +31,45 @@ function handleEvent(event) {
     return Promise.resolve(null)
   }
 
-  // 回覆訊息 + 快速選單
+  const msg = event.message.text.trim()
+
+  // 指令回覆處理
+  if (msg === '@預約') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請問您要預約哪一堂課？（此功能尚在建置中）'
+    })
+  }
+
+  if (msg === '@課程查詢') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '目前開放的課程如下：（此功能尚在建置中）'
+    })
+  }
+
+  if (msg === '@取消') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請問您要取消哪一堂課？（此功能尚在建置中）'
+    })
+  }
+
+  if (msg === '@點數查詢' || msg === '@點數') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '您目前剩餘點數為：10 點，有效期限至 2025/12/31。'
+    })
+  }
+
+  if (msg === '@購點') {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請點選以下表單進行購點：\nhttps://yourform.url\n\n💰 每點 NT$100，可用於預約課程。'
+    })
+  }
+
+  // 預設回覆：快速選單
   return client.replyMessage(event.replyToken, {
     type: 'text',
     text: '請選擇操作項目：',
@@ -49,8 +87,16 @@ function handleEvent(event) {
           type: 'action',
           action: {
             type: 'message',
-            label: '購買點數',
-            text: '@購點'
+            label: '查詢課程',
+            text: '@課程查詢'
+          }
+        },
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '取消課程',
+            text: '@取消'
           }
         },
         {
@@ -58,7 +104,15 @@ function handleEvent(event) {
           action: {
             type: 'message',
             label: '查詢點數',
-            text: '@點數'
+            text: '@點數查詢'
+          }
+        },
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '購買點數',
+            text: '@購點'
           }
         }
       ]
