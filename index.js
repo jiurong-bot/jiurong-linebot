@@ -2,13 +2,17 @@ const express = require('express')
 const line = require('@line/bot-sdk')
 require('dotenv').config()
 
+// 設定 LINE 機器人連線資訊
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET
 }
 
+// 建立 LINE 客戶端
 const client = new line.Client(config)
+
 const app = express()
+app.use(express.json())
 
 // 處理 webhook 路徑
 app.post('/webhook', line.middleware(config), (req, res) => {
@@ -16,58 +20,37 @@ app.post('/webhook', line.middleware(config), (req, res) => {
     .all(req.body.events.map(handleEvent))
     .then(result => res.json(result))
     .catch(err => {
-      console.error('❌ Webhook 錯誤：', err)
+      console.error('Webhook 錯誤：', err)
       res.status(500).end()
     })
 })
 
-// 處理 LINE 傳入的事件
+// 處理傳入事件
 function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null)
   }
 
-  const text = event.message.text.trim()
+  const msg = event.message.text.trim()
 
-  if (text === '@預約') {
+  // 學員選單
+  if (msg === '@選單') {
+    const menu = `請選擇操作項目：
+1️⃣ @預約
+2️⃣ @查詢課程
+3️⃣ @取消預約
+4️⃣ @購買點數
+5️⃣ @點數紀錄`
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: '請選擇課程日期：\n1️⃣ 星期一瑜伽\n2️⃣ 星期三冥想\n3️⃣ 星期五伸展\n\n請輸入「@1」、「@2」、「@3」進行預約。'
-    })
-  } else if (text === '@1') {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '您已成功預約「星期一瑜伽」課程，感謝！🧘‍♀️'
-    })
-  } else if (text === '@2') {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '您已成功預約「星期三冥想」課程，感謝！🧘‍♂️'
-    })
-  } else if (text === '@3') {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '您已成功預約「星期五伸展」課程，感謝！🧘‍♀️'
+      text: menu
     })
   }
 
-  // 預設回應
-  return client.replyMessage(event.replyToken, {
-    type: 'text',
-    text: `你說的是：「${text}」`
-  })
-}
-  // 預設回覆
+  // 其他預設回應
   return client.replyMessage(event.replyToken, {
     type: 'text',
     text: `你說的是：「${msg}」`
-  });
-}
-
-  // 預設回應
-  return client.replyMessage(event.replyToken, {
-    type: 'text',
-    text: `你說的是：「${text}」`
   })
 }
 
