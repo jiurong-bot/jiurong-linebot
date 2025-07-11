@@ -25,9 +25,38 @@ function handleEvent(event) {
     return Promise.resolve(null)
   }
 
+  // 回覆訊息 + 快速選單
   return client.replyMessage(event.replyToken, {
     type: 'text',
-    text: `你說的是：「${event.message.text}」`
+    text: '請選擇操作項目：',
+    quickReply: {
+      items: [
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '預約課程',
+            text: '@預約'
+          }
+        },
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '購買點數',
+            text: '@購點'
+          }
+        },
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '查詢點數',
+            text: '@點數'
+          }
+        }
+      ]
+    }
   })
 }
 
