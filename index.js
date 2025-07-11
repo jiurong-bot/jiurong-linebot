@@ -22,6 +22,7 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 })
 
 // 處理 LINE 傳入的事件
+
 function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null);
