@@ -28,24 +28,42 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 // 處理 LINE Bot 收到的事件
 function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
-    return Promise.resolve(null);
+    return Promise.resolve(null)
   }
 
-  // 根據關鍵字給出不同回應（可擴充）
-  const userMessage = event.message.text.trim();
-
-  if (userMessage === '@預約') {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '預約功能即將上線，敬請期待 🙏'
-    });
-  }
-
-  // 回傳收到的訊息
+  // 回覆訊息 + 快速選單
   return client.replyMessage(event.replyToken, {
     type: 'text',
-    text: `你說的是：「${userMessage}」`
-  });
+    text: '請選擇操作項目：',
+    quickReply: {
+      items: [
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '預約課程',
+            text: '@預約'
+          }
+        },
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '購買點數',
+            text: '@購點'
+          }
+        },
+        {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: '查詢點數',
+            text: '@點數'
+          }
+        }
+      ]
+    }
+  })
 }
 
 // 啟動伺服器
