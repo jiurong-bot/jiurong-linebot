@@ -55,7 +55,8 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 
 async function handleEvent(event) {
   const userId = event.source.userId;
-  if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
+  if (event.type !== 'message' || event.message.type !== 'text') return;
+
   const msg = event.message.text.trim();
   const db = readJSON(DATA_FILE);
   const courses = readJSON(COURSE_FILE);
@@ -64,9 +65,10 @@ async function handleEvent(event) {
     db[userId] = { role: null, points: 10, history: [] };
     writeJSON(DATA_FILE, db);
   }
+
   const user = db[userId];
 
-  // 老師登入密碼驗證
+  // 登入流程
   if (pendingTeacherLogin[userId]) {
     if (/^\d{4}$/.test(msg)) {
       if (msg === TEACHER_PASSWORD) {
@@ -88,85 +90,73 @@ async function handleEvent(event) {
     writeJSON(DATA_FILE, db);
     return replyWithMenu(event.replyToken, '✅ 進入學員模式', studentMenu);
   }
-
   if (msg === '@我是老師') {
     pendingTeacherLogin[userId] = true;
     return replyText(event.replyToken, '請輸入老師密碼（四位數字）：');
   }
-
   if (msg === '@切換身份') {
     return sendRoleSelection(event.replyToken);
   }
 
   // 學員功能
   if (user.role === 'student') {
-    if (msg === '@點數查詢') {
-      return replyWithMenu(event.replyToken, `您目前剩餘點數為：${user.points} 點。`, studentMenu);
-    }
-
-    if (msg === '@預約') {
+    if (msg === '@課程查詢') {
       const list = Object.entries(courses)
         .map(([id, c]) => `${id}: ${c.name} (${c.date})`)
         .join('\n');
-      const reply = list
-        ? `📚 可預約課程：\n${list}\n請輸入課程編號進行預約（例如：預約 course_001）`
-        : '目前無可預約課程。';
+      const reply = list ? `📚 可預約課程：\n${list}` : '目前無課程可查詢。';
       return replyWithMenu(event.replyToken, reply, studentMenu);
     }
 
-    if (/^預約 course_/.test(msg)) {
+    if (msg === '@取消') {
+      const bookings = user.history.map(h => h.courseId);
+      const list = bookings
+        .map(id => `${id}: ${courses[id]?.name || '(已刪除)'}`)
+        .join('\n');
+      const reply = bookings.length
+        ? `🗓️ 您的預約課程：\n${list}\n請輸入「取消 course_XXX」進行取消`
+        : '您尚未預約任何課程。';
+      return replyWithMenu(event.replyToken, reply, studentMenu);
+    }
+
+    if (/^取消 course_/.test(msg)) {
       const courseId = msg.split(' ')[1];
       const course = courses[courseId];
       if (!course) return replyText(event.replyToken, '找不到該課程編號');
-      if (course.students.includes(userId)) return replyText(event.replyToken, '您已預約此課程');
-      if (user.points <= 0) return replyText(event.replyToken, '點數不足');
 
-      if (course.students.length < course.max) {
-        course.students.push(userId);
-        user.points -= 1;
-        user.history.push({ courseId, time: new Date().toISOString() });
+      const index = course.students.indexOf(userId);
+      if (index !== -1) {
+        course.students.splice(index, 1);
+        user.points += 1;
+        user.history = user.history.filter(h => h.courseId !== courseId);
+        if (course.waitlist.length > 0) {
+          const next = course.waitlist.shift();
+          course.students.push(next);
+          db[next].history.push({ courseId, time: new Date().toISOString() });
+          db[next].points -= 1;
+        }
         writeJSON(DATA_FILE, db);
         writeJSON(COURSE_FILE, courses);
-        return replyText(event.replyToken, '✅ 預約成功，已扣除 1 點');
+        return replyText(event.replyToken, '✅ 已取消預約並退回 1 點。');
       } else {
-        if (!course.waitlist.includes(userId)) course.waitlist.push(userId);
-        writeJSON(COURSE_FILE, courses);
-        return replyText(event.replyToken, '目前已額滿，您已加入候補名單');
+        return replyText(event.replyToken, '您尚未預約此課程。');
       }
     }
-  }
 
-  // 老師功能
-  if (user.role === 'teacher') {
-    if (msg === '@今日名單') {
-      const today = new Date().toISOString().slice(0, 10);
-      const todayList = Object.entries(courses)
-        .filter(([id, c]) => c.date.startsWith(today))
-        .map(([id, c]) =>
-          `📌 ${c.name} (${c.date})\n報名：${c.students.length}人\n候補：${c.waitlist.length}人`
-        )
-        .join('\n\n') || '今天沒有課程';
-      return replyWithMenu(event.replyToken, todayList, teacherMenu);
+    if (msg === '@購點') {
+      return replyWithMenu(event.replyToken, `📌 購買點數請填表單：
+https://yourform.url
+💰 每點 NT$100`, studentMenu);
     }
 
-    if (msg.startsWith('@新增課程')) {
-      const parts = msg.split(' ');
-      if (parts.length < 5)
-        return replyText(event.replyToken, '格式錯誤，請輸入：@新增課程 課程名 月/日 時間 人數');
-      const name = parts[1];
-      const date = `${new Date().getFullYear()}-${parts[2].replace('/', '-')} ${parts[3]}`;
-      const max = parseInt(parts[4]);
-      const id = `course_${Date.now()}`;
-      courses[id] = { name, date, max, students: [], waitlist: [] };
-      writeJSON(COURSE_FILE, courses);
-      return replyWithMenu(event.replyToken, `✅ 已新增課程：${name}`, teacherMenu);
-    }
+    return replyWithMenu(event.replyToken, `請使用功能選單操作。`, studentMenu);
   }
 
-  return replyText(event.replyToken, '請使用選單或正確指令。');
+  // 老師功能（略）
+
+  return replyText(event.replyToken, '請使用選單操作。');
 }
 
-// 工具函式
 function replyText(replyToken, text) {
   return client.replyMessage(replyToken, { type: 'text', text });
 }
@@ -186,7 +176,6 @@ function sendRoleSelection(replyToken) {
   ]);
 }
 
-// 啟動伺服器
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`✅ 九容瑜伽 LINE Bot 已啟動，監聽在 port ${port}`);
