@@ -27,6 +27,13 @@ function writeDB(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+// 課程列表（可自由擴充）
+const courses = [
+  { id: 'C001', name: '瑜伽初級班', cost: 3 },
+  { id: 'C002', name: '瑜伽中級班', cost: 3 },
+  { id: 'C003', name: '瑜伽高級班', cost: 3 }
+];
+
 // 快速選單
 const studentMenu = [
   { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約' } },
@@ -44,7 +51,7 @@ const teacherMenu = [
   { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }
 ];
 
-// 暫存登入狀態
+// 暫存老師登入狀態
 const pendingTeacherLogin = {};
 
 app.post('/webhook', line.middleware(config), (req, res) => {
@@ -71,7 +78,7 @@ async function handleEvent(event) {
   const msg = event.message.text.trim();
   let db = readDB();
 
-  // 確保使用者資料存在
+  // 初始化使用者資料
   if (!db[userId]) {
     db[userId] = { role: null, points: 10, history: [] };
     writeDB(db);
@@ -79,7 +86,7 @@ async function handleEvent(event) {
 
   const user = db[userId];
 
-  // 處理老師登入流程
+  // 老師登入密碼流程
   if (pendingTeacherLogin[userId]) {
     if (/^\d{4}$/.test(msg)) {
       if (msg === TEACHER_PASSWORD) {
@@ -111,14 +118,32 @@ async function handleEvent(event) {
 
   // 學員功能
   if (user.role === 'student') {
-    let reply = '';
-    if (msg === '@預約') reply = '請問您要預約哪一堂課？（功能建置中）';
-    else if (msg === '@課程查詢') reply = '目前開放的課程如下：（功能建置中）';
-    else if (msg === '@取消') reply = '請問您要取消哪一堂課？（功能建置中）';
-    else if (msg === '@點數查詢') reply = `您目前剩餘點數為：${user.points} 點。`;
-    else if (msg === '@購點') reply = '請填寫以下表單購點：\nhttps://yourform.url\n💰 每點 NT$100';
-    else reply = `您輸入的是：「${msg}」。此功能尚在建置中。`;
-    return replyWithMenu(event.replyToken, reply, studentMenu);
+    if (msg === '@預約') {
+      let courseList = '目前可預約的課程：\n';
+      courses.forEach(c => {
+        courseList += `${c.id} - ${c.name} (費用: ${c.cost} 點)\n`;
+      });
+      courseList += '\n請輸入欲預約的課程編號，例如：C001';
+      return replyWithMenu(event.replyToken, courseList, studentMenu);
+    }
+    // 學員輸入課程編號預約
+    else if (courses.some(c => c.id === msg)) {
+      const course = courses.find(c => c.id === msg);
+      if (user.points >= course.cost) {
+        user.points -= course.cost;
+        user.history.push({ type: '預約', courseId: course.id, courseName: course.name, date: new Date().toISOString() });
+        writeDB(db);
+        return replyWithMenu(event.replyToken, `✅ 預約成功！您已預約「${course.name}」，並扣除 ${course.cost} 點。剩餘點數：${user.points} 點。`, studentMenu);
+      } else {
+        return replyWithMenu(event.replyToken, `❌ 點數不足，預約失敗。您目前剩餘點數：${user.points} 點。`, studentMenu);
+      }
+    }
+    else if (msg === '@點數查詢' || msg === '@點數') {
+      return replyWithMenu(event.replyToken, `您目前剩餘點數為：${user.points} 點。`, studentMenu);
+    }
+    else {
+      return replyWithMenu(event.replyToken, `您輸入的是：「${msg}」。此功能尚在建置中。`, studentMenu);
+    }
   }
 
   // 老師功能
@@ -148,7 +173,6 @@ function sendRoleSelection(replyToken) {
   ]);
 }
 
-// 啟動伺服器
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`✅ 九容瑜伽 LINE Bot 已啟動，監聽在 port ${port}`);
