@@ -14,7 +14,7 @@ const app = express();
 const DATA_FILE = './data.json';
 const TEACHER_PASSWORD = '9527';
 
-// 初始化資料庫檔案
+// 初始化資料檔案
 if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
 }
@@ -33,7 +33,8 @@ const studentMenu = [
   { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } },
   { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消' } },
   { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } },
-  { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } }
+  { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } },
+  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } }
 ];
 
 const teacherMenu = [
@@ -41,10 +42,11 @@ const teacherMenu = [
   { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程' } },
   { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } },
   { type: 'action', action: { type: 'message', label: '課程取消', text: '@取消課程' } },
-  { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }
+  { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } },
+  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } }
 ];
 
-// 暫存登入狀態
+// 暫存老師登入中
 const pendingTeacherLogin = {};
 
 app.post('/webhook', line.middleware(config), (req, res) => {
@@ -79,7 +81,7 @@ async function handleEvent(event) {
 
   const user = db[userId];
 
-  // 處理老師登入
+  // ✅ 處理老師密碼驗證流程
   if (pendingTeacherLogin[userId]) {
     if (/^\d{4}$/.test(msg)) {
       if (msg === TEACHER_PASSWORD) {
@@ -95,7 +97,14 @@ async function handleEvent(event) {
     }
   }
 
-  // 尚未設定身份
+  // ✅ 身份切換
+  if (msg === '@切換身份') {
+    delete db[userId].role;
+    writeDB(db);
+    return sendRoleSelection(event.replyToken);
+  }
+
+  // ✅ 尚未設定身份
   if (!user.role) {
     if (msg === '@我是學員') {
       user.role = 'student';
@@ -109,54 +118,43 @@ async function handleEvent(event) {
     return sendRoleSelection(event.replyToken);
   }
 
-  // 學員功能處理
+  // ✅ 學員功能處理
   if (user.role === 'student') {
     let reply = '';
-    if (msg === '@預約') {
-      reply = '請問您要預約哪一堂課？（功能建置中）';
-    } else if (msg === '@課程查詢') {
-      reply = '目前開放的課程如下：（功能建置中）';
-    } else if (msg === '@取消') {
-      reply = '請問您要取消哪一堂課？（功能建置中）';
-    } else if (msg === '@點數查詢') {
-      reply = `您目前剩餘點數為：${user.points} 點。`;
-    } else if (msg === '@購點') {
-      reply = '請填寫以下表單購點：\nhttps://yourform.url\n💰 每點 NT$100';
-    } else {
-      reply = `您輸入的是：「${msg}」。此功能尚在建置中。`;
-    }
+    if (msg === '@預約') reply = '請問您要預約哪一堂課？（功能建置中）';
+    else if (msg === '@課程查詢') reply = '目前開放的課程如下：（功能建置中）';
+    else if (msg === '@取消') reply = '請問您要取消哪一堂課？（功能建置中）';
+    else if (msg === '@點數查詢') reply = `您目前剩餘點數為：${user.points} 點。`;
+    else if (msg === '@購點') reply = '請填寫以下表單購點：\nhttps://yourform.url\n💰 每點 NT$100';
+    else reply = `您輸入的是：「${msg}」。此功能尚在建置中。`;
     return replyWithMenu(event.replyToken, reply, studentMenu);
   }
 
-  // 老師功能處理
+  // ✅ 老師功能處理（功能尚未實作）
   if (user.role === 'teacher') {
-    const reply = `您輸入的是：「${msg}」。此功能尚未建置。`;
-    return replyWithMenu(event.replyToken, reply, teacherMenu);
+    return replyWithMenu(event.replyToken, `您輸入的是：「${msg}」。此功能尚未建置。`, teacherMenu);
   }
 
   return Promise.resolve(null);
 }
 
-// 傳送身份選擇選單
-function sendRoleSelection(replyToken) {
-  return replyWithMenu(replyToken, '請選擇您的身份：', [
-    { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
-    { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } }
-  ]);
-}
-
-// 傳送純文字訊息
 function replyText(replyToken, text) {
   return client.replyMessage(replyToken, { type: 'text', text });
 }
 
-// 傳送帶有快速選單的訊息
 function replyWithMenu(replyToken, text, menuItems) {
   return client.replyMessage(replyToken, {
     type: 'text',
     text,
     quickReply: { items: menuItems }
   });
+}
+
+function sendRoleSelection(replyToken) {
+  return replyWithMenu(replyToken, '請選擇您的身份：', [
+    { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
+    { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } }
+  ]);
 }
 
 // 啟動伺服器
