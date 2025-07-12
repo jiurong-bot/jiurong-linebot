@@ -71,7 +71,7 @@ function handleEvent(event) {
       userRoles[userId] = 'student';
       replyText = '✅ 您已進入學員模式，請選擇功能：';
     } else if (msg === '@我是老師') {
-      replyText = '請輸入老師密碼，例如：@老師密碼 9527';
+      replyText = '請輸入@老師密碼（四位數字）';
     } else if (msg.startsWith('@老師密碼')) {
       const inputPwd = msg.split(' ')[1];
       if (inputPwd === TEACHER_PASSWORD) {
