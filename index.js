@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const line = require('@line/bot-sdk');
 require('dotenv').config();
 
@@ -10,8 +11,24 @@ const config = {
 const client = new line.Client(config);
 const app = express();
 
-// 學員選單
-const studentMenuItems = [
+const DATA_FILE = './data.json';
+const TEACHER_PASSWORD = '9527';
+
+// 初始化資料庫檔案
+if (!fs.existsSync(DATA_FILE)) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
+}
+
+function readDB() {
+  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+}
+
+function writeDB(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+// 快速選單
+const studentMenu = [
   { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約' } },
   { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } },
   { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消' } },
@@ -19,8 +36,7 @@ const studentMenuItems = [
   { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } }
 ];
 
-// 老師選單
-const teacherMenuItems = [
+const teacherMenu = [
   { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } },
   { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程' } },
   { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } },
@@ -28,104 +44,95 @@ const teacherMenuItems = [
   { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }
 ];
 
-// 暫存用戶身份與登入狀態
-const userRoles = {};
+// 暫存登入狀態
 const pendingTeacherLogin = {};
-const TEACHER_PASSWORD = '9527';
 
-// Webhook 處理
 app.post('/webhook', line.middleware(config), (req, res) => {
-  if (!Array.isArray(req.body.events)) return res.status(400).send('Invalid request');
-
-  Promise.all(req.body.events.map(handleEvent))
+  Promise
+    .all(req.body.events.map(handleEvent))
     .then(result => res.json(result))
     .catch(err => {
-      console.error('Webhook 錯誤：', err);
+      console.error('Webhook error:', err);
       res.status(500).end();
     });
 });
 
-// 處理事件主函式
-function handleEvent(event) {
+async function handleEvent(event) {
   const userId = event.source.userId;
 
   if (event.type === 'follow') {
     return sendRoleSelection(event.replyToken);
   }
 
-  if (event.type === 'message' && event.message.type === 'text') {
-    const msg = event.message.text.trim();
-    const role = userRoles[userId];
+  if (event.type !== 'message' || event.message.type !== 'text') {
+    return Promise.resolve(null);
+  }
 
-    // 若正在輸入老師密碼中
-    if (pendingTeacherLogin[userId]) {
-      if (/^\d{4}$/.test(msg)) {
-        if (msg === TEACHER_PASSWORD) {
-          delete pendingTeacherLogin[userId];
-          userRoles[userId] = 'teacher';
-          return replyWithMenu(event.replyToken, '✅ 驗證成功，歡迎進入老師模式：', teacherMenuItems);
-        } else {
-          return replyText(event.replyToken, '❌ 密碼錯誤，請再試一次（四位數字）');
-        }
+  const msg = event.message.text.trim();
+  let db = readDB();
+
+  // 確保使用者資料存在
+  if (!db[userId]) {
+    db[userId] = { role: null, points: 10, history: [] };
+    writeDB(db);
+  }
+
+  const user = db[userId];
+
+  // 處理老師登入流程
+  if (pendingTeacherLogin[userId]) {
+    if (/^\d{4}$/.test(msg)) {
+      if (msg === TEACHER_PASSWORD) {
+        user.role = 'teacher';
+        writeDB(db);
+        delete pendingTeacherLogin[userId];
+        return replyWithMenu(event.replyToken, '✅ 驗證成功，您已進入老師模式：', teacherMenu);
       } else {
-        return replyText(event.replyToken, '請輸入正確的四位數字密碼');
+        return replyText(event.replyToken, '❌ 密碼錯誤，請再試一次（四位數字）');
       }
+    } else {
+      return replyText(event.replyToken, '請輸入四位數字密碼：');
     }
+  }
 
-    // 尚未設定身份
-    if (!role) {
-      if (msg.includes('我是學員')) {
-        userRoles[userId] = 'student';
-        return replyWithMenu(event.replyToken, '✅ 您已進入學員模式，請選擇功能：', studentMenuItems);
-      } else if (msg.includes('我是老師')) {
-        pendingTeacherLogin[userId] = true;
-        return replyText(event.replyToken, '請輸入老師密碼（四位數字）：');
-      } else {
-        return sendRoleSelection(event.replyToken);
-      }
+  // 尚未設定身份
+  if (!user.role) {
+    if (msg === '@我是學員') {
+      user.role = 'student';
+      writeDB(db);
+      return replyWithMenu(event.replyToken, '✅ 您已進入學員模式，請選擇功能：', studentMenu);
     }
+    if (msg === '@我是老師') {
+      pendingTeacherLogin[userId] = true;
+      return replyText(event.replyToken, '請輸入老師密碼（四位數字）：');
+    }
+    return sendRoleSelection(event.replyToken);
+  }
 
-    // 學員操作
-    if (role === 'student') {
-      let reply = '請選擇操作項目：';
-      if (msg === '@預約') reply = '請問您要預約哪一堂課？（功能建置中）';
-      else if (msg === '@課程查詢') reply = '目前開放的課程如下：（功能建置中）';
-      else if (msg === '@取消') reply = '請問您要取消哪一堂課？（功能建置中）';
-      else if (msg === '@點數查詢') reply = '您目前剩餘點數為：10 點，有效期限至 2025/12/31。';
-      else if (msg === '@購點') reply = '請填寫以下表單進行購點：\nhttps://yourform.url\n💰 每點 NT$100';
-      return replyWithMenu(event.replyToken, reply, studentMenuItems);
-    }
+  // 學員功能
+  if (user.role === 'student') {
+    let reply = '';
+    if (msg === '@預約') reply = '請問您要預約哪一堂課？（功能建置中）';
+    else if (msg === '@課程查詢') reply = '目前開放的課程如下：（功能建置中）';
+    else if (msg === '@取消') reply = '請問您要取消哪一堂課？（功能建置中）';
+    else if (msg === '@點數查詢') reply = `您目前剩餘點數為：${user.points} 點。`;
+    else if (msg === '@購點') reply = '請填寫以下表單購點：\nhttps://yourform.url\n💰 每點 NT$100';
+    else reply = `您輸入的是：「${msg}」。此功能尚在建置中。`;
+    return replyWithMenu(event.replyToken, reply, studentMenu);
+  }
 
-    // 老師操作
-    if (role === 'teacher') {
-      let reply = `您輸入的是：「${msg}」。\n此功能尚未建置。`;
-      return replyWithMenu(event.replyToken, reply, teacherMenuItems);
-    }
+  // 老師功能
+  if (user.role === 'teacher') {
+    return replyWithMenu(event.replyToken, `您輸入的是：「${msg}」。此功能尚未建置。`, teacherMenu);
   }
 
   return Promise.resolve(null);
 }
 
-// 顯示角色選擇 QuickReply
-function sendRoleSelection(replyToken) {
-  return client.replyMessage(replyToken, {
-    type: 'text',
-    text: '請選擇您的身份：',
-    quickReply: {
-      items: [
-        { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
-        { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } }
-      ]
-    }
-  });
-}
-
-// 回覆簡單訊息
 function replyText(replyToken, text) {
   return client.replyMessage(replyToken, { type: 'text', text });
 }
 
-// 回覆訊息並帶快速選單
 function replyWithMenu(replyToken, text, menuItems) {
   return client.replyMessage(replyToken, {
     type: 'text',
@@ -134,8 +141,15 @@ function replyWithMenu(replyToken, text, menuItems) {
   });
 }
 
+function sendRoleSelection(replyToken) {
+  return replyWithMenu(replyToken, '請選擇您的身份：', [
+    { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
+    { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } }
+  ]);
+}
+
 // 啟動伺服器
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`✅ LINE Bot 已啟動，監聽在 port ${port}`);
+  console.log(`✅ 九容瑜伽 LINE Bot 已啟動，監聽在 port ${port}`);
 });
