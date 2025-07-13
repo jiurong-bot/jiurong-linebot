@@ -12,11 +12,19 @@ if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, nu
 
 function readJSON(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); } function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
-const studentMenu = [ { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約' } }, { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程 course_001' } }, { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } }, { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } }, { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
+const studentMenu = [ { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約' } }, { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } }, { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } }, { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } }, { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
 
-const teacherMenu = [ { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } }, { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程 課名 7/20 19:00 8' } }, { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } }, { type: 'action', action: { type: 'message', label: '加點', text: '@加點 學員ID 數量' } }, { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點 學員ID 數量' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程 course_001' } }, { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
+const teacherMenu = [ { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } }, { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程' } }, { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } }, { type: 'action', action: { type: 'message', label: '加點', text: '@加點' } }, { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } }, { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
 
 const pendingTeacherLogin = {};
+
+// webhook 入口 app.post('/webhook', line.middleware(config), async (req, res) => { try { const results = await Promise.all(req.body.events.map(handleEvent)); res.json(results); } catch (err) { console.error('Webhook error:', err); res.status(500).end(); } });
+
+function replyText(replyToken, text) { return client.replyMessage(replyToken, { type: 'text', text }); }
+
+function replyWithMenu(replyToken, text, menuItems) { return client.replyMessage(replyToken, { type: 'text', text, quickReply: { items: menuItems }, }); }
+
+function sendRoleSelection(replyToken) { return replyWithMenu(replyToken, '請選擇您的身份：', [ { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } }, { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } }, ]); }
 
 // webhook 入口
 app.post('/webhook', line.middleware(config), async (req, res) => {
@@ -34,7 +42,7 @@ function replyText(replyToken, text) {
   return client.replyMessage(replyToken, { type: 'text', text });
 }
 
-// 回覆 + 快速選單
+// 回覆文字＋快速選單
 function replyWithMenu(replyToken, text, menuItems) {
   return client.replyMessage(replyToken, {
     type: 'text',
@@ -43,7 +51,7 @@ function replyWithMenu(replyToken, text, menuItems) {
   });
 }
 
-// 身份選擇選單
+// 身份選擇
 function sendRoleSelection(replyToken) {
   return replyWithMenu(replyToken, '請選擇您的身份：', [
     { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
@@ -51,7 +59,7 @@ function sendRoleSelection(replyToken) {
   ]);
 }
 
-// 處理每個 LINE 訊息事件
+// 處理每個事件
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') return;
 
@@ -60,7 +68,7 @@ async function handleEvent(event) {
   const db = readJSON(DATA_FILE);
   const courses = readJSON(COURSE_FILE);
 
-  // 使用者尚未註冊，先建立
+  // 尚未註冊使用者
   if (!db[userId]) {
     const profile = await client.getProfile(userId);
     db[userId] = {
@@ -74,7 +82,7 @@ async function handleEvent(event) {
 
   const user = db[userId];
 
-  // 處理老師密碼登入
+  // 老師登入密碼流程
   if (pendingTeacherLogin[userId]) {
     if (msg === TEACHER_PASSWORD) {
       user.role = 'teacher';
@@ -87,7 +95,7 @@ async function handleEvent(event) {
     }
   }
 
-  // 身份切換
+  // 身分切換流程
   if (msg === '@我是老師') {
     pendingTeacherLogin[userId] = true;
     return replyText(event.replyToken, '請輸入老師密碼（四位數字）：');
@@ -103,7 +111,7 @@ async function handleEvent(event) {
     return sendRoleSelection(event.replyToken);
   }
 
-  // 身份處理分流
+  // 身分分流
   if (user.role === 'student') {
     return handleStudentCommands(event, userId, msg, user, db, courses);
   } else if (user.role === 'teacher') {
