@@ -19,22 +19,32 @@ const DATA_FILE = './data/users.json';
 const COURSE_FILE = './data/courses.json';
 const PURCHASE_FILE = './data/purchases.json';
 
-// === 讀寫工具 ===
-function loadJSON(file) {
-  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : {};
+// === 讀寫工具（自動建立資料夾與預設資料） ===
+function loadJSON(file, defaultData = {}) {
+  const dir = path.dirname(file);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
+  }
+  return JSON.parse(fs.readFileSync(file));
 }
+
 function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
+
 function generateId() {
   return `id_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 }
 
 // === 初始資料 ===
-let db = loadJSON(DATA_FILE);
-let courses = loadJSON(COURSE_FILE);
-let purchases = loadJSON(PURCHASE_FILE);
+let db = loadJSON(DATA_FILE, {});
+let courses = loadJSON(COURSE_FILE, {});
+let purchases = loadJSON(PURCHASE_FILE, []);
 
+// === 學員選單 ===
 const studentMenu = {
   type: 'template',
   altText: '選單',
@@ -51,6 +61,7 @@ const studentMenu = {
   },
 };
 
+// === 回覆工具 ===
 function replyText(token, text) {
   return client.replyMessage(token, { type: 'text', text });
 }
