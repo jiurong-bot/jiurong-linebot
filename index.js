@@ -1,4 +1,4 @@
-// 九容瑜伽 LINE Bot 主程式 V1（修正版，含定時提醒、自動退點與候補轉正） // 2025-07-13 更新
+// index.js - 優化後九容瑜伽 LINE Bot 主程式
 
 const express = require('express'); const fs = require('fs'); const line = require('@line/bot-sdk'); require('dotenv').config();
 
@@ -6,7 +6,7 @@ const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSe
 
 const client = new line.Client(config); const app = express();
 
-const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const TEACHER_PASSWORD = '9527';
+const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2)); if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
 
@@ -18,7 +18,9 @@ const teacherMenu = [ { type: 'action', action: { type: 'message', label: '今�
 
 const pendingTeacherLogin = {};
 
-// webhook 入口 app.post('/webhook', line.middleware(config), async (req, res) => { try { const results = await Promise.all(req.body.events.map(handleEvent)); res.json(results); } catch (err) { console.error('Webhook error:', err); res.status(500).end(); } });
+// webhook 路由 - 立即回應避免 timeout app.post('/webhook', line.middleware(config), (req, res) => { res.status(200).end(); // 立即結束回應
+
+// 非同步處理事件 Promise.all( req.body.events.map(async (event) => { try { await handleEvent(event); } catch (err) { console.error('處理事件錯誤:', err); } }) ).catch((err) => console.error('Webhook 錯誤:', err)); });
 
 function replyText(replyToken, text) { return client.replyMessage(replyToken, { type: 'text', text }); }
 
@@ -26,63 +28,43 @@ function replyWithMenu(replyToken, text, menuItems) { return client.replyMessage
 
 function sendRoleSelection(replyToken) { return replyWithMenu(replyToken, '請選擇您的身份：', [ { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } }, { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } }, ]); }
 
-// webhook 入口
-app.post('/webhook', line.middleware(config), async (req, res) => {
-  try {
-    const results = await Promise.all(req.body.events.map(handleEvent));
-    res.json(results);
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).end();
-  }
-});
-
-// 回覆文字
-function replyText(replyToken, text) {
-  return client.replyMessage(replyToken, { type: 'text', text });
-}
-
-// 回覆文字＋快速選單
-function replyWithMenu(replyToken, text, menuItems) {
-  return client.replyMessage(replyToken, {
-    type: 'text',
-    text,
-    quickReply: { items: menuItems },
-  });
-}
-
-// 身份選擇
-function sendRoleSelection(replyToken) {
-  return replyWithMenu(replyToken, '請選擇您的身份：', [
-    { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
-    { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } },
-  ]);
-}
-
 // 處理每個事件
 async function handleEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') return;
+  if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
 
   const userId = event.source.userId;
   const msg = event.message.text.trim();
-  const db = readJSON(DATA_FILE);
-  const courses = readJSON(COURSE_FILE);
+  let db = {};
+  let courses = {};
 
-  // 尚未註冊使用者
+  try {
+    db = readJSON(DATA_FILE);
+    courses = readJSON(COURSE_FILE);
+  } catch (e) {
+    console.error('讀取資料錯誤:', e);
+    return replyText(event.replyToken, '⚠️ 系統發生錯誤，請稍後再試');
+  }
+
+  // 初次註冊
   if (!db[userId]) {
-    const profile = await client.getProfile(userId);
-    db[userId] = {
-      name: profile.displayName || '未命名',
-      role: 'student',
-      points: 0,
-      history: [],
-    };
-    writeJSON(DATA_FILE, db);
+    try {
+      const profile = await client.getProfile(userId);
+      db[userId] = {
+        name: profile.displayName || '未命名',
+        role: 'student',
+        points: 0,
+        history: [],
+      };
+      writeJSON(DATA_FILE, db);
+    } catch (e) {
+      console.error('獲取用戶資料失敗:', e);
+      return replyText(event.replyToken, '⚠️ 無法取得您的資料，請稍後再試');
+    }
   }
 
   const user = db[userId];
 
-  // 老師登入密碼流程
+  // 老師登入流程
   if (pendingTeacherLogin[userId]) {
     if (msg === TEACHER_PASSWORD) {
       user.role = 'teacher';
@@ -111,7 +93,7 @@ async function handleEvent(event) {
     return sendRoleSelection(event.replyToken);
   }
 
-  // 身分分流
+  // 分流處理
   if (user.role === 'student') {
     return handleStudentCommands(event, userId, msg, user, db, courses);
   } else if (user.role === 'teacher') {
@@ -223,9 +205,10 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
     const today = new Date().toISOString().slice(0, 10);
     const list = Object.entries(courses)
       .filter(([_, c]) => c.date.startsWith(today))
-      .map(([id, c]) =>
-        `📌 ${c.name} (${c.date})\n報名：${c.students.length} 人\n候補：${c.waitlist.length} 人`
-      )
+      .map(([id, c]) => {
+        const names = c.students.map(uid => db[uid]?.name || uid.slice(-4)).join(', ') || '無';
+        return `📌 ${c.name} (${c.date})\n👥 報名：${c.students.length} 人\n🙋‍♀️ 學員：${names}`;
+      })
       .join('\n\n') || '今天沒有課程';
     return replyWithMenu(replyToken, list, teacherMenu);
   }
@@ -321,24 +304,28 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
 
 // ⏰ 課程提醒（每 10 分鐘檢查一次，提醒 60 分鐘內將開課的課程）
 setInterval(() => {
-  const db = readJSON(DATA_FILE);
-  const courses = readJSON(COURSE_FILE);
-  const now = new Date();
+  try {
+    const db = readJSON(DATA_FILE);
+    const courses = readJSON(COURSE_FILE);
+    const now = new Date();
 
-  const upcoming = Object.entries(courses).filter(([_, c]) => {
-    const courseTime = new Date(c.date);
-    const diff = (courseTime - now) / 60000; // 差距分鐘
-    return diff > 0 && diff <= 60;
-  });
-
-  upcoming.forEach(([id, c]) => {
-    c.students.forEach(uid => {
-      client.pushMessage(uid, {
-        type: 'text',
-        text: `⏰ 課程提醒：「${c.name}」即將於 ${c.date} 開始，請準時上課！`
-      }).catch(console.error);
+    const upcoming = Object.entries(courses).filter(([_, c]) => {
+      const courseTime = new Date(c.date);
+      const diff = (courseTime - now) / 60000; // 差距分鐘
+      return diff > 0 && diff <= 60;
     });
-  });
+
+    upcoming.forEach(([id, c]) => {
+      c.students.forEach(uid => {
+        client.pushMessage(uid, {
+          type: 'text',
+          text: `⏰ 課程提醒：「${c.name}」即將於 ${c.date} 開始，請準時上課！`
+        }).catch(err => console.error('提醒推播失敗:', err.message));
+      });
+    });
+  } catch (err) {
+    console.error('定時提醒錯誤:', err);
+  }
 }, 10 * 60 * 1000); // 每 10 分鐘執行一次
 
 // ✅ Express 啟動伺服器
