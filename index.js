@@ -1,51 +1,109 @@
-// index.js - 優化後九容瑜伽 LINE Bot 主程式
+// index.js - 九容瑜伽 LINE Bot 主程式（優化版）
 
-const express = require('express'); const fs = require('fs'); const line = require('@line/bot-sdk'); require('dotenv').config();
+const express = require('express');
+const fs = require('fs');
+const line = require('@line/bot-sdk');
+require('dotenv').config();
 
-const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSecret: process.env.CHANNEL_SECRET, };
+const config = {
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.CHANNEL_SECRET,
+};
+const client = new line.Client(config);
+const app = express();
 
-const client = new line.Client(config); const app = express();
+const DATA_FILE = './data.json';
+const COURSE_FILE = './courses.json';
+const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 
-const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
+// 初始化資料檔
+if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
+if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
 
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2)); if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
+// 讀寫工具
+function readJSON(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    console.error(`讀取 ${file} 錯誤:`, e);
+    return {};
+  }
+}
+function writeJSON(file, data) {
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error(`寫入 ${file} 錯誤:`, e);
+  }
+}
 
-function readJSON(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); } function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
+// 學員選單
+const studentMenu = [
+  { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約' } },
+  { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } },
+  { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } },
+  { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } },
+  { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } },
+  { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } },
+  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } },
+];
 
-const studentMenu = [ { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約' } }, { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } }, { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } }, { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } }, { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
+// 老師選單
+const teacherMenu = [
+  { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } },
+  { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程' } },
+  { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } },
+  { type: 'action', action: { type: 'message', label: '加點', text: '@加點' } },
+  { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點' } },
+  { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } },
+  { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } },
+  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } },
+];
 
-const teacherMenu = [ { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } }, { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程' } }, { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } }, { type: 'action', action: { type: 'message', label: '加點', text: '@加點' } }, { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } }, { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
+const pendingTeacherLogin = {}; // 紀錄尚未登入的老師
 
-const pendingTeacherLogin = {};
+// 回應工具
+function replyText(replyToken, text) {
+  return client.replyMessage(replyToken, { type: 'text', text });
+}
+function replyWithMenu(replyToken, text, menuItems) {
+  return client.replyMessage(replyToken, {
+    type: 'text',
+    text,
+    quickReply: { items: menuItems },
+  });
+}
+function sendRoleSelection(replyToken) {
+  return replyWithMenu(replyToken, '請選擇您的身份：', [
+    { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
+    { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } },
+  ]);
+}
 
-// webhook 路由 - 立即回應避免 timeout app.post('/webhook', line.middleware(config), (req, res) => { res.status(200).end(); // 立即結束回應
+// Webhook 路由 - 立即回應避免 LINE 超時
+app.post('/webhook', line.middleware(config), (req, res) => {
+  res.status(200).end(); // 馬上回應
 
-// 非同步處理事件 Promise.all( req.body.events.map(async (event) => { try { await handleEvent(event); } catch (err) { console.error('處理事件錯誤:', err); } }) ).catch((err) => console.error('Webhook 錯誤:', err)); });
+  // 非同步處理每個事件
+  Promise.all(req.body.events.map(async (event) => {
+    try {
+      await handleEvent(event);
+    } catch (err) {
+      console.error('處理事件失敗:', err);
+    }
+  })).catch((err) => console.error('Webhook 錯誤:', err));
+});
 
-function replyText(replyToken, text) { return client.replyMessage(replyToken, { type: 'text', text }); }
-
-function replyWithMenu(replyToken, text, menuItems) { return client.replyMessage(replyToken, { type: 'text', text, quickReply: { items: menuItems }, }); }
-
-function sendRoleSelection(replyToken) { return replyWithMenu(replyToken, '請選擇您的身份：', [ { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } }, { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } }, ]); }
-
-// 處理每個事件
+// 主事件處理函式
 async function handleEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
+  if (event.type !== 'message' || event.message.type !== 'text') return;
 
   const userId = event.source.userId;
   const msg = event.message.text.trim();
-  let db = {};
-  let courses = {};
+  let db = readJSON(DATA_FILE);
+  let courses = readJSON(COURSE_FILE);
 
-  try {
-    db = readJSON(DATA_FILE);
-    courses = readJSON(COURSE_FILE);
-  } catch (e) {
-    console.error('讀取資料錯誤:', e);
-    return replyText(event.replyToken, '⚠️ 系統發生錯誤，請稍後再試');
-  }
-
-  // 初次註冊
+  // 初次註冊 - 儲存使用者 LINE 名稱與身份
   if (!db[userId]) {
     try {
       const profile = await client.getProfile(userId);
@@ -57,7 +115,7 @@ async function handleEvent(event) {
       };
       writeJSON(DATA_FILE, db);
     } catch (e) {
-      console.error('獲取用戶資料失敗:', e);
+      console.error('獲取用戶資訊失敗:', e);
       return replyText(event.replyToken, '⚠️ 無法取得您的資料，請稍後再試');
     }
   }
@@ -70,14 +128,14 @@ async function handleEvent(event) {
       user.role = 'teacher';
       delete pendingTeacherLogin[userId];
       writeJSON(DATA_FILE, db);
-      return replyWithMenu(event.replyToken, '✅ 登入成功，您已切換為老師身份。', teacherMenu);
+      return replyWithMenu(event.replyToken, '✅ 登入成功，您現在是老師身份。', teacherMenu);
     } else {
       delete pendingTeacherLogin[userId];
-      return replyText(event.replyToken, '❌ 密碼錯誤，已取消切換。');
+      return replyText(event.replyToken, '❌ 密碼錯誤，已取消切換');
     }
   }
 
-  // 身分切換流程
+  // 身份切換流程
   if (msg === '@我是老師') {
     pendingTeacherLogin[userId] = true;
     return replyText(event.replyToken, '請輸入老師密碼（四位數字）：');
@@ -93,7 +151,7 @@ async function handleEvent(event) {
     return sendRoleSelection(event.replyToken);
   }
 
-  // 分流處理
+  // 分流：依照身份導向對應功能處理
   if (user.role === 'student') {
     return handleStudentCommands(event, userId, msg, user, db, courses);
   } else if (user.role === 'teacher') {
@@ -266,7 +324,7 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
     if (!db[targetId]) return replyText(replyToken, '找不到該學員');
     db[targetId].points += parseInt(amount);
     writeJSON(DATA_FILE, db);
-    return replyText(replyToken, `✅ 已為 ${targetId} 加點 ${amount}`);
+    return replyText(replyToken, `✅ 已為 ${db[targetId].name || targetId} 加點 ${amount}`);
   }
 
   if (/^@扣點 /.test(msg)) {
@@ -274,7 +332,7 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
     if (!db[targetId]) return replyText(replyToken, '找不到該學員');
     db[targetId].points -= parseInt(amount);
     writeJSON(DATA_FILE, db);
-    return replyText(replyToken, `✅ 已為 ${targetId} 扣點 ${amount}`);
+    return replyText(replyToken, `✅ 已為 ${db[targetId].name || targetId} 扣點 ${amount}`);
   }
 
   if (msg === '@統計報表') {
