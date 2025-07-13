@@ -1,36 +1,21 @@
-// 九容瑜伽 LINE Bot 主程式 V1（含定時提醒、自動退點與候補轉正）
-// 2025-07-13 更新
+// 九容瑜伽 LINE Bot 主程式 V1（修正版，含定時提醒、自動退點與候補轉正） // 2025-07-13 更新
 
-const express = require('express');
-const fs = require('fs');
-const line = require('@line/bot-sdk');
-require('dotenv').config();
+const express = require('express'); const fs = require('fs'); const line = require('@line/bot-sdk'); require('dotenv').config();
 
-const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.CHANNEL_SECRET,
-};
+const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSecret: process.env.CHANNEL_SECRET, };
 
-const client = new line.Client(config);
-const app = express();
+const client = new line.Client(config); const app = express();
 
-const DATA_FILE = './data.json';
-const COURSE_FILE = './courses.json';
-const TEACHER_PASSWORD = '9527';
+const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const TEACHER_PASSWORD = '9527';
 
-// 檔案初始化
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
-if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
+if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2)); if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
 
-function readJSON(file) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
+function readJSON(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); } function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
-const studentMenu = [ /* 略：學生快速選單 */ ];
-const teacherMenu = [ /* 略：老師快速選單 */ ];
+const studentMenu = [ { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約' } }, { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程 course_001' } }, { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } }, { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } }, { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
+
+const teacherMenu = [ { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } }, { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程 課名 7/20 19:00 8' } }, { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } }, { type: 'action', action: { type: 'message', label: '加點', text: '@加點 學員ID 數量' } }, { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點 學員ID 數量' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程 course_001' } }, { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } } ];
+
 const pendingTeacherLogin = {};
 
 // webhook 入口
@@ -44,7 +29,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   }
 });
 
-// 文字回覆
+// 回覆文字
 function replyText(replyToken, text) {
   return client.replyMessage(replyToken, { type: 'text', text });
 }
@@ -58,7 +43,7 @@ function replyWithMenu(replyToken, text, menuItems) {
   });
 }
 
-// 身份選單
+// 身份選擇選單
 function sendRoleSelection(replyToken) {
   return replyWithMenu(replyToken, '請選擇您的身份：', [
     { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
@@ -102,7 +87,7 @@ async function handleEvent(event) {
     }
   }
 
-  // 切換身份
+  // 身份切換
   if (msg === '@我是老師') {
     pendingTeacherLogin[userId] = true;
     return replyText(event.replyToken, '請輸入老師密碼（四位數字）：');
@@ -118,7 +103,7 @@ async function handleEvent(event) {
     return sendRoleSelection(event.replyToken);
   }
 
-  // 以下進入身份相關處理
+  // 身份處理分流
   if (user.role === 'student') {
     return handleStudentCommands(event, userId, msg, user, db, courses);
   } else if (user.role === 'teacher') {
@@ -223,7 +208,7 @@ function handleStudentCommands(event, userId, msg, user, db, courses) {
 }
 
 // 老師功能處理
-function handleTeacherCommands(event, userId, msg, db, courses) {
+function handleTeacherCommands(event, userId, msg, user, db, courses) {
   const replyToken = event.replyToken;
 
   if (msg === '@今日名單') {
@@ -269,7 +254,7 @@ function handleTeacherCommands(event, userId, msg, db, courses) {
   if (msg === '@查學員') {
     const list = Object.entries(db)
       .filter(([_, u]) => u.role === 'student')
-      .map(([id, u]) => `🙋 ${id.slice(-4)} 點數：${u.points}｜預約：${u.history.length}`)
+      .map(([id, u]) => `🙋 ${u.name || id.slice(-4)} 點數：${u.points}｜預約：${u.history.length}`)
       .join('\n') || '沒有學員資料';
     return replyWithMenu(replyToken, list, teacherMenu);
   }
@@ -304,7 +289,7 @@ function handleTeacherCommands(event, userId, msg, db, courses) {
   if (msg === '@統計報表') {
     const summary = Object.entries(db)
       .filter(([_, u]) => u.role === 'student')
-      .map(([id, u]) => `學員 ${id.slice(-4)}：${u.history.length} 堂課`)
+      .map(([id, u]) => `學員 ${u.name || id.slice(-4)}：${u.history.length} 堂課`)
       .join('\n') || '尚無預約紀錄';
     return replyWithMenu(replyToken, summary, teacherMenu);
   }
