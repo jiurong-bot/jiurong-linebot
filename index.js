@@ -13,12 +13,26 @@ if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, nu
 function readJSON(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); } function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
 // 快速選單定義略... // Webhook 與身份切換邏輯略... // 學員與老師的指令處理邏輯略...
+// ⏰ 課程提醒（每 10 分鐘執行一次）
+setInterval(() => {
+  const db = readJSON(DATA_FILE);
+  const courses = readJSON(COURSE_FILE);
+  const now = new Date();
+  const upcoming = Object.entries(courses).filter(([_, c]) => {
+    const courseTime = new Date(c.date);
+    const diff = (courseTime - now) / 60000;
+    return diff > 0 && diff <= 60;
+  });
 
-// ✅ 課程提醒（每 10 分鐘執行一次） setInterval(() => { const db = readJSON(DATA_FILE); const courses = readJSON(COURSE_FILE); const now = new Date();
-
-const upcoming = Object.entries(courses).filter(([_, c]) => { const courseTime = new Date(c.date); const diff = (courseTime - now) / 60000; return diff > 0 && diff <= 60; // 開課前 60 分鐘內提醒 });
-
-upcoming.forEach(([id, c]) => { c.students.forEach(uid => { client.pushMessage(uid, { type: 'text', text: ⏰ 課程提醒：「${c.name}」即將於 ${c.date} 開始，請準時上課！ }).catch(console.error); }); }); }, 10 * 60 * 1000);
+  upcoming.forEach(([id, c]) => {
+    c.students.forEach(uid => {
+      client.pushMessage(uid, {
+        type: 'text',
+        text: `⏰ 課程提醒：「${c.name}」即將於 ${c.date} 開始，請準時上課！`
+      }).catch(console.error);
+    });
+  });
+}, 10 * 60 * 1000);
 
 const port = process.env.PORT || 3000; app.listen(port, () => { console.log(✅ 九容瑜伽 LINE Bot 已啟動，監聽在 port ${port}); });
 
