@@ -295,7 +295,7 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
   if (msg.startsWith('@新增課程')) {
     const parts = msg.split(' ');
     if (parts.length < 5) {
-      return replyQuickReply(replyToken, '格式錯誤：@新增課程 課名 日期 時間 名額\n範例：@新增課程 伸展 7/20 19:00 8', teacherMenu);
+      return replyQuickReply(replyToken, '格式：@新增課程 課名 日期 時間 名額\n範例：@新增課程 伸展 7/20 19:00 8', teacherMenu);
     }
     const name = parts[1];
     const date = `${new Date().getFullYear()}-${parts[2].replace('/', '-')} ${parts[3]}`;
@@ -374,7 +374,7 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
       client.pushMessage(id, {
         type: 'text',
         text: `📢 系統通知：${broadcast}`
-      }).catch(console.catch(console.error);
+      }).catch(console.error);
     });
     return replyQuickReply(replyToken, '✅ 已發送廣播訊息', teacherMenu);
   }
