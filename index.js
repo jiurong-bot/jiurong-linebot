@@ -220,13 +220,27 @@ function handleStudentCommands(event, userId, msg, user, db, courses) {
   }
 
   if (msg === '@我的課程') {
-    const my = user.history.map(h => {
-      const c = courses[h.courseId];
-      return c
-        ? `${c.name} (${c.date}) 預約時間：${new Date(h.time).toLocaleString()}`
-        : `已刪除課程 ${h.courseId}`;
-    }).join('\n') || '尚無預約紀錄';
-    return replyQuickReply(replyToken, my, studentMenu);
+    const myCourses = [];
+
+    // 將預約正式生與候補顯示不同標示與順位
+    for (const [courseId, course] of Object.entries(courses)) {
+      if (course.students.includes(userId)) {
+        myCourses.push(`✅ ${course.name} (${course.date})`);
+      } else {
+        const waitIdx = course.waitlist.indexOf(userId);
+        if (waitIdx >= 0) {
+          myCourses.push(`🕓 ${course.name} (${course.date}) - 候補第 ${waitIdx + 1} 順位`);
+        }
+      }
+    }
+
+    if (myCourses.length === 0) {
+      return replyQuickReply(replyToken, '尚無預約或候補紀錄', studentMenu);
+    }
+
+    myCourses.push('\n若要取消，請輸入：@取消課程 課程編號');
+
+    return replyQuickReply(replyToken, myCourses.join('\n'), studentMenu);
   }
 
   if (msg.startsWith('@取消課程')) {
@@ -270,7 +284,6 @@ function handleStudentCommands(event, userId, msg, user, db, courses) {
   }
 
   if (msg === '@購點') {
-    // 這邊後續可改成連結或表單訊息
     return replyQuickReply(replyToken, '請填寫購點表單：https://yourform.url\n銀行：中國信托（882）\n帳號：012540278393\n轉帳戶頭後五碼請填寫表單\n💰 點數方案：5點（500元）、10點（1000元）、50點（5000元）', studentMenu);
   }
 
@@ -370,18 +383,18 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
     const studentIds = Object.entries(db)
       .filter(([_, u]) => u.role === 'student')
       .map(([id]) => id);
-    studentIds.forEach(id => {
-      client.pushMessage(id, {
-        type: 'text',
-        text: `📢 系統通知：${broadcast}`
-      }).catch(console.error);
-    });
-    return replyQuickReply(replyToken, '✅ 已發送廣播訊息', teacherMenu);
-  }
-
-  return replyQuickReply(replyToken, '請使用選單操作或正確指令。', teacherMenu);
+    studentIds.forEach(id => {client.pushMessage(id, {
+      type: 'text',
+      text: `📢 系統通知：${broadcast}`
+    }).catch(console.error);
+  });
+  return replyQuickReply(replyToken, '✅ 已發送廣播訊息', teacherMenu);
 }
 
+return replyQuickReply(replyToken, '請使用選單操作或正確指令。', teacherMenu);
+}
+
+// 傳送文字訊息
 function replyText(replyToken, text) {
   return client.replyMessage(replyToken, {
     type: 'text',
@@ -389,6 +402,7 @@ function replyText(replyToken, text) {
   });
 }
 
+// 傳送帶快速選單的文字訊息
 function replyQuickReply(replyToken, text, items) {
   const quickReply = items.length > 0 ? {
     quickReply: {
@@ -398,7 +412,7 @@ function replyQuickReply(replyToken, text, items) {
       })),
     }
   } : {};
-  
+
   return client.replyMessage(replyToken, {
     type: 'text',
     text,
