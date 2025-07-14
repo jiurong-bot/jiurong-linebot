@@ -1,64 +1,32 @@
-// index.js - 九容瑜伽 LINE Bot V2.4.3
+// index.js - 九容瑜伽 LINE Bot V2.4.4
 
-const express = require('express');
-const fs = require('fs');
-const line = require('@line/bot-sdk');
-require('dotenv').config();
+const express = require('express'); const fs = require('fs'); const line = require('@line/bot-sdk'); require('dotenv').config();
 
-const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.CHANNEL_SECRET,
-};
+const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSecret: process.env.CHANNEL_SECRET, };
 
-const client = new line.Client(config);
-const app = express();
+const client = new line.Client(config); const app = express();
 
-const DATA_FILE = './data.json';
-const COURSE_FILE = './courses.json';
-const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
+const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
-if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
+if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2)); if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
 
-// 讀取 JSON 檔案（空檔案或錯誤時回傳空物件）
-function readJSON(file) {
-  try {
-    const content = fs.readFileSync(file, 'utf8');
-    return content ? JSON.parse(content) : {};
-  } catch {
-    return {};
-  }
-}
+function readJSON(file) { try { const content = fs.readFileSync(file, 'utf8'); return content ? JSON.parse(content) : {}; } catch { return {}; } }
 
-// 寫入 JSON 檔案
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
+function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
-// 預設學員選單
-const studentMenu = [
-  { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約課程' } },
-  { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } },
-  { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } },
-  { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } },
-  { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } },
-  { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } },
-  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } },
-];
+function cleanCourses(courses) { for (const id in courses) { const c = courses[id]; if (!c.name || !c.date || !c.students || !c.max) { delete courses[id]; continue; } if (!Array.isArray(c.students)) c.students = []; if (!Array.isArray(c.waitlist)) c.waitlist = []; } return courses; }
 
-// 預設老師選單
-const teacherMenu = [
-  { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } },
-  { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程' } },
-  { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } },
-  { type: 'action', action: { type: 'message', label: '加點', text: '@加點' } },
-  { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點' } },
-  { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } },
-  { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } },
-  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } },
-];
+const studentMenu = [ { type: 'action', action: { type: 'message', label: '預約課程', text: '@預約課程' } }, { type: 'action', action: { type: 'message', label: '查詢課程', text: '@課程查詢' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } }, { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } }, { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } }, { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } }, ];
 
-const pendingTeacherLogin = {}; // 用於老師登入流程暫存
+const teacherMenu = [ { type: 'action', action: { type: 'message', label: '今日名單', text: '@今日名單' } }, { type: 'action', action: { type: 'message', label: '新增課程', text: '@新增課程' } }, { type: 'action', action: { type: 'message', label: '查詢學員', text: '@查學員' } }, { type: 'action', action: { type: 'message', label: '加點', text: '@加點' } }, { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點' } }, { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } }, { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } }, { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } }, ];
+
+const pendingTeacherLogin = {};
+
+app.post('/webhook', line.middleware(config), async (req, res) => { try { await Promise.all(req.body.events.map(handleEvent)); res.status(200).end(); } catch (err) { console.error('Webhook Error:', err); res.status(500).end(); } });
+
+app.get('/', (req, res) => { res.status(200).send('九容瑜伽 LINE Bot 正常運作中'); });
+
+setInterval(() => { fetch(process.env.KEEP_ALIVE_URL || 'https://your-render-app-url.onrender.com') .catch(err => console.error('Keep alive failed:', err)); }, 5 * 60 * 1000);
 
 // webhook route，LINE 事件處理
 app.post('/webhook', line.middleware(config), (req, res) => {
@@ -84,16 +52,9 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const msg = event.message.text.trim();
 
-  let db = {};
-  let courses = {};
-
-  try {
-    db = readJSON(DATA_FILE);
-    courses = readJSON(COURSE_FILE);
-  } catch (e) {
-    console.error('讀取資料錯誤:', e);
-    return replyText(event.replyToken, '⚠️ 系統發生錯誤，請稍後再試');
-  }
+  let db = readJSON(DATA_FILE);
+  let courses = cleanCourses(readJSON(COURSE_FILE));
+  writeJSON(COURSE_FILE, courses); // 將清理後的課程寫回
 
   // 初次註冊使用者
   if (!db[userId]) {
@@ -198,7 +159,7 @@ function handleStudentCommands(event, userId, msg, user, db, courses) {
 
     if (course.students.length < course.max) {
       course.students.push(userId);
-      user.points-= 1;
+      user.points -= 1;
       user.history.push({ courseId, time: new Date().toISOString() });
       writeJSON(DATA_FILE, db);
       writeJSON(COURSE_FILE, courses);
@@ -381,15 +342,20 @@ function cleanCourses(courses) {
   return courses;
 }
 
-// 發送文字訊息
+// 發送純文字訊息
 function replyText(replyToken, text) {
-  return client.replyMessage(replyToken, { type: 'text', text });
+  return client.replyMessage(replyToken, {
+    type: 'text',
+    text
+  });
 }
 
-// 發送含選單的訊息
+// 發送包含按鍵選單的訊息
 function replyWithMenu(replyToken, text, menu) {
   return client.replyMessage(replyToken, [
-    { type: 'text',text,
+    {
+      type: 'text',
+      text
     },
     {
       type: 'template',
@@ -397,13 +363,13 @@ function replyWithMenu(replyToken, text, menu) {
       template: {
         type: 'buttons',
         text: '請選擇功能',
-        actions: menu,
-      },
-    },
+        actions: menu
+      }
+    }
   ]);
 }
 
-// 傳送身份選擇選單
+// 發送身份選擇按鈕
 function sendRoleSelection(replyToken) {
   return client.replyMessage(replyToken, {
     type: 'template',
@@ -413,14 +379,14 @@ function sendRoleSelection(replyToken) {
       text: '請選擇您的身份',
       actions: [
         { type: 'message', label: '我是學員', text: '@我是學員' },
-        { type: 'message', label: '我是老師', text: '@我是老師' },
-      ],
-    },
+        { type: 'message', label: '我是老師', text: '@我是老師' }
+      ]
+    }
   });
 }
 
 // 啟動 Express Server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`九容瑜伽 LINE Bot 已啟動，監聽埠號：${PORT}`);
+  console.log(`✅ 九容瑜伽 LINE Bot V2.4.4 已啟動，監聽埠號：${PORT}`);
 });
