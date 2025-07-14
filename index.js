@@ -1,5 +1,4 @@
-// ✅ 九容瑜伽 LINE Bot 主程式 V2.4（含錯誤修正與優化）
-// 檢查與修正過：避免重複宣告、選單常駐、錯誤提示優化
+// index.js - 九容瑜伽 LINE Bot V2.4.1 完整版
 
 const express = require('express');
 const fs = require('fs');
@@ -17,7 +16,6 @@ const app = express();
 const DATA_FILE = './data.json';
 const COURSE_FILE = './courses.json';
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
-const pendingTeacherLogin = {}; // ✅ 確保只宣告一次
 
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, JSON.stringify({}, null, 2));
@@ -37,7 +35,7 @@ const studentMenu = [
   { type: 'action', action: { type: 'message', label: '查詢點數', text: '@點數查詢' } },
   { type: 'action', action: { type: 'message', label: '購買點數', text: '@購點' } },
   { type: 'action', action: { type: 'message', label: '我的課程', text: '@我的課程' } },
-  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } }
+  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } },
 ];
 
 const teacherMenu = [
@@ -48,14 +46,63 @@ const teacherMenu = [
   { type: 'action', action: { type: 'message', label: '扣點', text: '@扣點' } },
   { type: 'action', action: { type: 'message', label: '取消課程', text: '@取消課程' } },
   { type: 'action', action: { type: 'message', label: '統計報表', text: '@統計報表' } },
-  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } }
+  { type: 'action', action: { type: 'message', label: '切換身份', text: '@切換身份' } },
 ];
 
-// 以下為其他主體函式、路由與邏輯（略）
-// 請依照先前分段繼續補上 handleEvent、handleStudentCommands、handleTeacherCommands 等主體
-// 處理每個事件
+const pendingTeacherLogin = {};
+
+// Webhook 路由 - 立即回應避免 timeout
+app.post('/webhook', line.middleware(config), (req, res) => {
+  res.status(200).end(); // 立即結束回應
+
+  // 非同步處理事件
+  Promise.all(
+    req.body.events.map(async (event) => {
+      try {
+        await handleEvent(event);
+      } catch (err) {
+        console.error('處理事件錯誤:', err);
+      }
+    })
+  ).catch((err) => console.error('Webhook 錯誤:', err));
+});
+
+// 回覆文字（含快速選單）
+function replyWithMenu(replyToken, text, menuItems) {
+  return client.replyMessage(replyToken, {
+    type: 'text',
+    text,
+    quickReply: { items: menuItems },
+  });
+}
+
+// 回覆純文字（含快速選單）
+function replyText(replyToken, text, role = 'student') {
+  const menu = role === 'teacher' ? teacherMenu : studentMenu;
+  return client.replyMessage(replyToken, {
+    type: 'text',
+    text,
+    quickReply: { items: menu },
+  });
+}
+
+// 身份選擇選單
+function sendRoleSelection(replyToken) {
+  return client.replyMessage(replyToken, {
+    type: 'text',
+    text: '請選擇您的身份：',
+    quickReply: {
+      items: [
+        { type: 'action', action: { type: 'message', label: '我是學員', text: '@我是學員' } },
+        { type: 'action', action: { type: 'message', label: '我是老師', text: '@我是老師' } },
+      ],
+    },
+  });
+}
+
+// 處理事件
 async function handleEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
+  if (event.type !== 'message' || event.message.type !== 'text') return null;
 
   const userId = event.source.userId;
   const msg = event.message.text.trim();
@@ -67,7 +114,7 @@ async function handleEvent(event) {
     courses = readJSON(COURSE_FILE);
   } catch (e) {
     console.error('讀取資料錯誤:', e);
-    return replyWithMenu(event.replyToken, '⚠️ 系統發生錯誤，請稍後再試', studentMenu);
+    return replyText(event.replyToken, '⚠️ 系統發生錯誤，請稍後再試');
   }
 
   // 初次註冊
@@ -98,20 +145,20 @@ async function handleEvent(event) {
       return replyWithMenu(event.replyToken, '✅ 登入成功，您已切換為老師身份。', teacherMenu);
     } else {
       delete pendingTeacherLogin[userId];
-      return replyWithMenu(event.replyToken, '❌ 密碼錯誤，已取消切換。', studentMenu);
+      return replyText(event.replyToken, '❌ 密碼錯誤，已取消切換。', user.role);
     }
   }
 
   // 身分切換流程
   if (msg === '@我是老師') {
     pendingTeacherLogin[userId] = true;
-    return replyText(event.replyToken, '請輸入老師密碼（四位數字）：');
+    return replyText(event.replyToken, '請輸入老師密碼（四位數字）：', user.role);
   }
 
   if (msg === '@我是學員') {
     user.role = 'student';
     writeJSON(DATA_FILE, db);
-    return replyWithMenu(event.replyToken, '✅ 您現在是學員身份。', studentMenu);
+    return replyWithMenu(event.replyToken, '您現在是學員身份。', studentMenu);
   }
 
   if (msg === '@切換身份') {
@@ -127,6 +174,7 @@ async function handleEvent(event) {
     return sendRoleSelection(event.replyToken);
   }
 }
+
 // 學員功能處理
 function handleStudentCommands(event, userId, msg, user, db, courses) {
   const replyToken = event.replyToken;
@@ -136,35 +184,25 @@ function handleStudentCommands(event, userId, msg, user, db, courses) {
   }
 
   if (msg === '@課程查詢') {
-    const courseList = Object.entries(courses)
-      .map(([id, c]) => `${id}: ${c.name}（${c.date}）剩餘名額：${c.max - c.students.length}`)
-      .join('\n');
-    return replyWithMenu(
-      replyToken,
-      courseList || '📭 目前無相關課程。',
-      studentMenu
-    );
+    const list = Object.entries(courses)
+      .map(([id, c]) => `${id}: ${c.name} (${c.date}) 剩餘名額：${c.max - c.students.length}`)
+      .join('\n') || '目前無相關課程。';
+    return replyWithMenu(replyToken, list, studentMenu);
   }
 
   if (msg === '@預約') {
-    const courseList = Object.entries(courses)
-      .map(([id, c]) => `${id}: ${c.name}（${c.date}）`)
-      .join('\n');
-    return replyWithMenu(
-      replyToken,
-      courseList
-        ? `📚 可預約課程如下：\n${courseList}\n請輸入課程編號（例如：預約 course_001）`
-        : '📭 目前無可預約課程。',
-      studentMenu
-    );
+    const list = Object.entries(courses)
+      .map(([id, c]) => `${id}: ${c.name} (${c.date})`)
+      .join('\n') || '目前無可預約課程。';
+    return replyWithMenu(replyToken, `📚 可預約課程：\n${list}\n請輸入課程編號（如：預約 course_001）`, studentMenu);
   }
 
   if (/^預約 course_/.test(msg)) {
     const courseId = msg.split(' ')[1];
     const course = courses[courseId];
-    if (!course) return replyWithMenu(replyToken, '找不到該課程編號', studentMenu);
-    if (course.students.includes(userId)) return replyWithMenu(replyToken, '您已預約此課程', studentMenu);
-    if (user.points <= 0) return replyWithMenu(replyToken, '點數不足，請先購買點數', studentMenu);
+    if (!course) return replyText(replyToken, '找不到該課程編號', user.role);
+    if (course.students.includes(userId)) return replyText(replyToken, '您已預約此課程', user.role);
+    if (user.points <= 0) return replyText(replyToken, '點數不足', user.role);
 
     if (course.students.length < course.max) {
       course.students.push(userId);
@@ -172,30 +210,32 @@ function handleStudentCommands(event, userId, msg, user, db, courses) {
       user.history.push({ courseId, time: new Date().toISOString() });
       writeJSON(DATA_FILE, db);
       writeJSON(COURSE_FILE, courses);
-      return replyWithMenu(replyToken, '✅ 預約成功，已扣除 1 點', studentMenu);
+      return replyText(replyToken, '✅ 預約成功，已扣除 1 點', user.role);
     } else {
       if (!course.waitlist.includes(userId)) {
         course.waitlist.push(userId);
         writeJSON(COURSE_FILE, courses);
       }
-      return replyWithMenu(replyToken, '目前已額滿，您已加入候補名單', studentMenu);
+      return replyText(replyToken, '目前已額滿，您已加入候補名單', user.role);
     }
   }
 
   if (msg === '@我的課程') {
-    const myCourses = user.history.map(h => {
-      const c = courses[h.courseId];
-      return c
-        ? `${c.name}（${c.date}）預約時間：${new Date(h.time).toLocaleString()}`
-        : `❌ 已刪除課程 ${h.courseId}`;
-    }).join('\n');
-    return replyWithMenu(replyToken, myCourses || '尚無預約紀錄', studentMenu);
+    const my = user.history
+      .map((h) => {
+        const c = courses[h.courseId];
+        return c
+          ? `${c.name} (${c.date}) 預約時間：${new Date(h.time).toLocaleString()}`
+          : `已刪除課程 ${h.courseId}`;
+      })
+      .join('\n') || '尚無預約紀錄';
+    return replyWithMenu(replyToken, my, studentMenu);
   }
 
   if (msg.startsWith('@取消課程')) {
     const courseId = msg.split(' ')[1];
     const course = courses[courseId];
-    if (!course) return replyWithMenu(replyToken, '找不到該課程', studentMenu);
+    if (!course) return replyText(replyToken, '找不到該課程', user.role);
 
     const idx = course.students.indexOf(userId);
     if (idx >= 0) {
@@ -209,27 +249,30 @@ function handleStudentCommands(event, userId, msg, user, db, courses) {
         if (db[promotedUserId]) {
           db[promotedUserId].history.push({ courseId, time: new Date().toISOString() });
           db[promotedUserId].points -= 1;
-          client.pushMessage(promotedUserId, {
-            type: 'text',
-            text: `✅ 您已從候補轉為正式學員：${course.name}（${course.date}）`
-          }).catch(console.error);
+          client
+            .pushMessage(promotedUserId, {
+              type: 'text',
+              text: `✅ 您已從候補轉為正式學員：${course.name} (${course.date})`,
+            })
+            .catch(console.error);
         }
       }
 
-      writeJSON(DATA_FILE, db);
       writeJSON(COURSE_FILE, courses);
-      return replyWithMenu(replyToken, '✅ 已取消預約並退回 1 點', studentMenu);
+      writeJSON(DATA_FILE, db);
+      return replyText(replyToken, '✅ 已取消預約並退回 1 點', user.role);
     } else {
-      return replyWithMenu(replyToken, '您未預約此課程', studentMenu);
+      return replyText(replyToken, '您未預約此課程', user.role);
     }
   }
 
   if (msg === '@購點') {
-    return replyWithMenu(replyToken, '請填寫購點表單：https://yourform.url\n💰 每點 NT$100', studentMenu);
+    return replyText(replyToken, '請填寫購點表單：https://yourform.url\n💰 每點 NT$100', user.role);
   }
 
   return replyWithMenu(replyToken, '請使用選單操作或正確指令。', studentMenu);
 }
+
 // 老師功能處理
 function handleTeacherCommands(event, userId, msg, user, db, courses) {
   const replyToken = event.replyToken;
@@ -239,17 +282,21 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
     const list = Object.entries(courses)
       .filter(([_, c]) => c.date.startsWith(today))
       .map(([id, c]) => {
-        const names = c.students.map(uid => db[uid]?.name || uid.slice(-4)).join(', ') || '無';
-        return `📌 ${c.name}（${c.date}）\n👥 報名：${c.students.length} 人\n🙋‍♀️ 學員：${names}`;
+        const names = c.students.map((uid) => db[uid]?.name || uid.slice(-4)).join(', ') || '無';
+        return `📌 ${c.name} (${c.date})\n👥 報名：${c.students.length} 人\n🙋‍♀️ 學員：${names}`;
       })
-      .join('\n\n');
-    return replyWithMenu(replyToken, list || '📭 今天沒有課程', teacherMenu);
+      .join('\n\n') || '今天沒有課程';
+    return replyWithMenu(replyToken, list, teacherMenu);
   }
 
   if (msg.startsWith('@新增課程')) {
     const parts = msg.split(' ');
     if (parts.length < 5) {
-      return replyWithMenu(replyToken, '格式錯誤：@新增課程 課名 日期 時間 名額\n範例：@新增課程 伸展 7/20 19:00 8', teacherMenu);
+      return replyText(
+        replyToken,
+        '格式錯誤：@新增課程 課名 日期 時間 名額\n範例：@新增課程 伸展 7/20 19:00 8',
+        user.role
+      );
     }
     const name = parts[1];
     const date = `${new Date().getFullYear()}-${parts[2].replace('/', '-')} ${parts[3]}`;
@@ -263,9 +310,9 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
   if (msg.startsWith('@取消課程')) {
     const courseId = msg.split(' ')[1];
     const course = courses[courseId];
-    if (!course) return replyWithMenu(replyToken, '找不到課程', teacherMenu);
+    if (!course) return replyText(replyToken, '找不到課程', user.role);
 
-    course.students.forEach(uid => {
+    course.students.forEach((uid) => {
       if (db[uid]) db[uid].points += 1;
     });
 
@@ -279,43 +326,47 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
     const list = Object.entries(db)
       .filter(([_, u]) => u.role === 'student')
       .map(([id, u]) => `🙋 ${u.name || id.slice(-4)} 點數：${u.points}｜預約：${u.history.length}`)
-      .join('\n');
-    return replyWithMenu(replyToken, list || '📭 沒有學員資料', teacherMenu);
+      .join('\n') || '沒有學員資料';
+    return replyWithMenu(replyToken, list, teacherMenu);
   }
 
   if (/^@查學員 /.test(msg)) {
     const targetId = msg.split(' ')[1];
     const stu = db[targetId];
-    if (!stu) return replyWithMenu(replyToken, '找不到該學員', teacherMenu);
-    const record = stu.history.map(h => {
-      const c = courses[h.courseId];
-      return c ? `${c.name}（${c.date}）` : `❌ ${h.courseId}`;
-    }).join('\n');
-    return replyWithMenu(replyToken, `點數：${stu.points}\n紀錄：\n${record || '無預約紀錄'}`, teacherMenu);
+    if (!stu) return replyText(replyToken, '找不到該學員', user.role);
+    const record =
+      stu.history
+        .map((h) => {
+          const c = courses[h.courseId];
+          return c ? `${c.name} (${c.date})` : `❌ ${h.courseId}`;
+        })
+        .join('\n') || '無預約紀錄';
+    return replyText(replyToken, `點數：${stu.points}\n紀錄：\n${record}`, user.role);
   }
 
   if (/^@加點 /.test(msg)) {
     const [_, targetId, amount] = msg.split(' ');
-    if (!db[targetId]) return replyWithMenu(replyToken, '找不到該學員', teacherMenu);
+    if (!db[targetId]) return replyText(replyToken, '找不到該學員', user.role);
     db[targetId].points += parseInt(amount);
     writeJSON(DATA_FILE, db);
-    return replyWithMenu(replyToken, `✅ 已為 ${targetId} 加點 ${amount}`, teacherMenu);
+    return replyText(replyToken, `✅ 已為 ${targetId} 加點 ${amount}`, user.role);
   }
 
   if (/^@扣點 /.test(msg)) {
     const [_, targetId, amount] = msg.split(' ');
-    if (!db[targetId]) return replyWithMenu(replyToken, '找不到該學員', teacherMenu);
+    if (!db[targetId]) return replyText(replyToken, '找不到該學員', user.role);
     db[targetId].points -= parseInt(amount);
     writeJSON(DATA_FILE, db);
-    return replyWithMenu(replyToken, `✅ 已為 ${targetId} 扣點 ${amount}`, teacherMenu);
+    return replyText(replyToken, `✅ 已為 ${targetId} 扣點 ${amount}`, user.role);
   }
 
   if (msg === '@統計報表') {
-    const summary = Object.entries(db)
-      .filter(([_, u]) => u.role === 'student')
-      .map(([id, u]) => `📊 ${u.name || id.slice(-4)}：${u.history.length} 堂課`)
-      .join('\n');
-    return replyWithMenu(replyToken, summary || '📭 尚無預約紀錄', teacherMenu);
+    const summary =
+      Object.entries(db)
+        .filter(([_, u]) => u.role === 'student')
+        .map(([id, u]) => `學員 ${u.name || id.slice(-4)}：${u.history.length} 堂課`)
+        .join('\n') || '尚無預約紀錄';
+    return replyWithMenu(replyToken, summary, teacherMenu);
   }
 
   if (msg.startsWith('@廣播 ')) {
@@ -323,18 +374,21 @@ function handleTeacherCommands(event, userId, msg, user, db, courses) {
     const studentIds = Object.entries(db)
       .filter(([_, u]) => u.role === 'student')
       .map(([id]) => id);
-    studentIds.forEach(id => {
-      client.pushMessage(id, {
-        type: 'text',
-        text: `📢 系統通知：${broadcast}`
-      }).catch(console.error);
+    studentIds.forEach((id) => {
+      client
+        .pushMessage(id, {
+          type: 'text',
+          text: `📢 系統通知：${broadcast}`,
+        })
+        .catch(console.error);
     });
-    return replyWithMenu(replyToken, `✅ 已廣播訊息給 ${studentIds.length} 位學員`, teacherMenu);
+    return replyText(replyToken, `✅ 已廣播訊息給 ${studentIds.length} 位學員`, user.role);
   }
 
   return replyWithMenu(replyToken, '請使用選單操作或正確指令。', teacherMenu);
 }
-// ⏰ 課程提醒（每 10 分鐘檢查一次，提醒 60 分鐘內將開課的課程）
+
+// 課程提醒（每 10 分鐘檢查一次，提醒 60 分鐘內將開課的課程）
 setInterval(() => {
   try {
     const db = readJSON(DATA_FILE);
@@ -348,30 +402,37 @@ setInterval(() => {
     });
 
     upcoming.forEach(([id, c]) => {
-      c.students.forEach(uid => {
-        client.pushMessage(uid, {
-          type: 'text',
-          text: `⏰ 課程提醒：「${c.name}」即將於 ${c.date} 開始，請準時上課！`
-        }).catch(err => console.error('提醒推播失敗:', err.message));
+      c.students.forEach((uid) => {
+        client
+          .pushMessage(uid, {
+            type: 'text',
+            text: `⏰ 課程提醒：「${c.name}」即將開始，時間：${c.date}，請準時參加！`,
+          })
+          .catch(console.error);
       });
     });
-  } catch (err) {
-    console.error('定時提醒錯誤:', err);
+  } catch (e) {
+    console.error('課程提醒錯誤:', e);
   }
 }, 10 * 60 * 1000); // 每 10 分鐘執行一次
 
-// 🛠 keep-alive：每 5 分鐘 ping 自己一次
+// Keep-alive 自我 Ping，避免伺服器休眠
 setInterval(() => {
-  require('http').get(`http://localhost:${process.env.PORT || 3000}/`);
-}, 5 * 60 * 1000);
+  const url = process.env.KEEP_ALIVE_URL || 'https://your-app-url.com/';
+  require('https').get(url, (res) => {
+    console.log(`Keep-alive ping: ${res.statusCode}`);
+  }).on('error', (e) => {
+    console.error('Keep-alive ping 失敗:', e);
+  });
+}, 5 * 60 * 1000); // 每 5 分鐘執行一次
 
-// 🌐 GET / 首頁路由 - 確認伺服器狀態
+// 根目錄路由，用於驗證或簡易檢查
 app.get('/', (req, res) => {
-  res.status(200).send('✅ 九容瑜伽 LINE Bot 正常運作中');
+  res.send('九容瑜伽 LINE Bot 正常運行中');
 });
 
-// ✅ Express 啟動伺服器
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`✅ 九容瑜伽 LINE Bot 已啟動，監聽在 port ${port}`);
+// 啟動伺服器
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`九容瑜伽 LINE Bot 已啟動，監聽端口 ${PORT}`);
 });
