@@ -410,10 +410,9 @@ async function handleTeacherCommands(event, userId, db, courses) {
   }
   let list = '📋 已建立課程列表：\n\n';
   Object.entries(courses).forEach(([id, c]) => {
-    list += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
-    list += `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n`;
-    list += '─'.repeat(25) + '\n';
-  });
+  list += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
+  list += `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n\n`;
+});
   return replyText(replyToken, list.trim(), teacherMenu);
   }
 
