@@ -65,6 +65,24 @@ function backupData() {
   }
 }
 
+function promoteWaitlist(course, db) {
+  while (course.students.length < course.capacity && course.waiting.length > 0) {
+    const nextId = course.waiting.shift();
+    if (!db[nextId] || db[nextId].points <= 0) continue;
+    course.students.push(nextId);
+    db[nextId].points--;
+    db[nextId].history.push({
+      id: course.id,
+      action: '候補轉正',
+      time: new Date().toISOString(),
+    });
+    client.pushMessage(nextId, {
+      type: 'text',
+      text: `🎉 你已從候補轉為課程「${course.title}」的正式學員！`,
+    });
+  }
+}
+
 function chunkArray(arr, size) {
   const result = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -73,9 +91,11 @@ function chunkArray(arr, size) {
   return result;
 }
 
-function replyText(token, text, quickReply = null) {
+function replyText(token, text, menu = null) {
   const msg = { type: 'text', text };
-  if (quickReply) msg.quickReply = quickReply;
+  if (menu) {
+    msg.quickReply = { items: menu.map(i => ({ type: 'action', action: i })) };
+  }
   return client.replyMessage(token, msg);
 }
 
@@ -101,17 +121,7 @@ const teacherMenu = [
 ];
 
 const pendingTeacherLogin = {};
-const courseCreationProgress = {};  // { userId: { step: 0-4, data: {...} } };
-
-function createQuickReplyMessage(text, menu) {
-  return {
-    type: 'text',
-    text,
-    quickReply: {
-      items: menu.map(i => ({ type: 'action', action: i })),
-    },
-  };
-}
+const pendingCourseCreation = {};
 
 app.post('/webhook', line.middleware(config), async (req, res) => {
   res.status(200).end();
@@ -144,46 +154,131 @@ async function handleEvent(event) {
 
   const user = db[userId];
 
-  // 如果用戶正在新增課程中，走新增課程流程
-  if (user.role === 'teacher' && courseCreationProgress[userId]) {
-    return handleCourseCreationFlow(event, userId, db, courses);
+  // 處理老師登入密碼流程
+  if (pendingTeacherLogin[userId]) {
+    if (msg === TEACHER_PASSWORD) {
+      user.role = 'teacher';
+      writeJSON(DATA_FILE, db);
+      delete pendingTeacherLogin[userId];
+      return replyText(replyToken, '👨‍🏫 登入成功，已切換為老師身份', teacherMenu);
+    } else {
+      delete pendingTeacherLogin[userId];
+      return replyText(replyToken, '❌ 密碼錯誤，身份切換失敗', user.role === 'student' ? studentMenu : teacherMenu);
+    }
+  }
+
+  // 處理新增課程流程
+  if (pendingCourseCreation[userId]) {
+    return handleCourseCreationFlow(event, user, db, courses);
   }
 
   // 身份切換指令
   if (msg === '@切換身份') {
     if (user.role === 'student') {
       pendingTeacherLogin[userId] = true;
-      return replyText(replyToken, '請輸入老師密碼：', {
-        items: studentMenu.map(i => ({ type: 'action', action: i })),
-      });
+      return replyText(replyToken, '請輸入老師密碼：', studentMenu);
     } else {
       user.role = 'student';
       writeJSON(DATA_FILE, db);
-      return replyText(replyToken, '👩‍🎓 已切換為學員身份', {
-        items: studentMenu.map(i => ({ type: 'action', action: i })),
-      });
+      return replyText(replyToken, '👩‍🎓 已切換為學員身份', studentMenu);
     }
   }
 
-  // 老師密碼驗證
-  if (pendingTeacherLogin[userId]) {
-    if (msg === TEACHER_PASSWORD) {
-      user.role = 'teacher';
-      writeJSON(DATA_FILE, db);
-      delete pendingTeacherLogin[userId];
-      return replyText(replyToken, '👨‍🏫 登入成功，已切換為老師身份', {
-        items: teacherMenu.map(i => ({ type: 'action', action: i })),
-      });
-    } else {
-      delete pendingTeacherLogin[userId];
-      return replyText(replyToken, '❌ 密碼錯誤，身份切換失敗');
-    }
-  }
-
+  // 指令導向角色功能
   if (user.role === 'student') {
     return handleStudentCommands(event, user, db, courses);
   } else if (user.role === 'teacher') {
     return handleTeacherCommands(event, userId, db, courses);
+  }
+}
+
+async function handleCourseCreationFlow(event, user, db, courses) {
+  const userId = event.source.userId;
+  const msg = event.message.text.trim();
+  const replyToken = event.replyToken;
+  const step = pendingCourseCreation[userId].step;
+  const data = pendingCourseCreation[userId].data || {};
+
+  switch (step) {
+    case 1: // 課程名稱
+      if (!msg) return replyText(replyToken, '請輸入課程名稱：', []);
+      data.title = msg;
+      pendingCourseCreation[userId] = { step: 2, data };
+      return replyText(replyToken, '請選擇課程日期（禮拜幾）：', [
+        { type: 'message', label: '星期一', text: '@日期 星期一' },
+        { type: 'message', label: '星期二', text: '@日期 星期二' },
+        { type: 'message', label: '星期三', text: '@日期 星期三' },
+        { type: 'message', label: '星期四', text: '@日期 星期四' },
+        { type: 'message', label: '星期五', text: '@日期 星期五' },
+        { type: 'message', label: '星期六', text: '@日期 星期六' },
+        { type: 'message', label: '星期日', text: '@日期 星期日' },
+      ]);
+    case 2: // 課程日期
+      if (!msg.startsWith('@日期 ')) return replyText(replyToken, '請使用選單選擇課程日期：');
+      data.weekday = msg.replace('@日期 ', '').trim();
+      pendingCourseCreation[userId] = { step: 3, data };
+      return replyText(replyToken, '請選擇課程時間（24小時制）：', [
+        { type: 'message', label: '08:00', text: '@時間 08:00' },
+        { type: 'message', label: '10:00', text: '@時間 10:00' },
+        { type: 'message', label: '12:00', text: '@時間 12:00' },
+        { type: 'message', label: '14:00', text: '@時間 14:00' },
+        { type: 'message', label: '16:00', text: '@時間 16:00' },
+        { type: 'message', label: '18:00', text: '@時間 18:00' },
+        { type: 'message', label: '20:00', text: '@時間 20:00' },
+      ]);
+    case 3: // 課程時間
+      if (!msg.startsWith('@時間 ')) return replyText(replyToken, '請使用選單選擇課程時間：');
+      data.time = msg.replace('@時間 ', '').trim();
+      pendingCourseCreation[userId] = { step: 4, data };
+      return replyText(replyToken, '請輸入人員上限（數字）：');
+    case 4: // 人員上限
+      const capacity = parseInt(msg);
+      if (isNaN(capacity) || capacity <= 0) return replyText(replyToken, '請輸入有效人員上限數字：');
+      data.capacity = capacity;
+      pendingCourseCreation[userId] = { step: 5, data };
+      return replyText(replyToken, `請確認是否建立課程：\n名稱：${data.title}\n日期：${data.weekday}\n時間：${data.time}\n人數上限：${data.capacity}\n\n回覆「確認」建立，或「取消」放棄`);
+    case 5: // 確認建立
+      if (msg === '確認') {
+        // 產生完整課程時間 (近一週的對應星期幾)
+        const weekdayMap = {
+          '星期一': 1,
+          '星期二': 2,
+          '星期三': 3,
+          '星期四': 4,
+          '星期五': 5,
+          '星期六': 6,
+          '星期日': 0,
+        };
+        const now = new Date();
+        const targetDay = weekdayMap[data.weekday];
+        let daysAhead = targetDay - now.getDay();
+        if (daysAhead <= 0) daysAhead += 7;
+        const courseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysAhead);
+        const [hour, minute] = data.time.split(':');
+        courseDate.setHours(parseInt(hour), parseInt(minute), 0, 0);
+
+        const id = Date.now().toString();
+        courses[id] = {
+          id,
+          title: data.title,
+          time: courseDate.toISOString(),
+          capacity: data.capacity,
+          students: [],
+          waiting: [],
+          notified: false,
+        };
+        writeJSON(COURSE_FILE, courses);
+        delete pendingCourseCreation[userId];
+        return replyText(replyToken, `✅ 課程「${data.title}」已新增於 ${data.weekday} ${data.time}，人數上限 ${data.capacity}。`, teacherMenu);
+      } else if (msg === '取消') {
+        delete pendingCourseCreation[userId];
+        return replyText(replyToken, '❌ 已取消新增課程流程。', teacherMenu);
+      } else {
+        return replyText(replyToken, '請回覆「確認」或「取消」。');
+      }
+    default:
+      delete pendingCourseCreation[userId];
+      return replyText(replyToken, '新增課程流程異常，已終止。', teacherMenu);
   }
 }
 
@@ -194,38 +289,34 @@ async function handleStudentCommands(event, user, db, courses) {
 
   if (msg === '@預約課程' || msg === '@預約') {
     const upcoming = Object.entries(courses)
-      .filter(([_, c]) => new Date(c.time) > new Date())
+      .filter(([id, c]) => new Date(c.time) > new Date())
       .map(([id, c]) => ({
         type: 'action',
         action: {
           type: 'message',
-          label: `${c.time} ${c.title}`,
+          label: `${c.time.slice(5,16)} ${c.title}`,
           text: `我要預約 ${id}`,
         },
       }));
 
     if (upcoming.length === 0) {
-      return replyText(replyToken, '目前沒有可預約的課程');
+      return replyText(replyToken, '目前沒有可預約的課程', studentMenu);
     }
 
-    return client.replyMessage(replyToken, {
-      type: 'text',
-      text: '請選擇課程：',
-      quickReply: { items: upcoming },
-    });
+    return replyText(replyToken, '請選擇課程：', upcoming);
   }
 
   if (msg.startsWith('我要預約')) {
     const id = msg.replace('我要預約', '').trim();
     const course = courses[id];
-    if (!course) return replyText(replyToken, '查無該課程');
+    if (!course) return replyText(replyToken, '課程不存在', studentMenu);
 
     if (!course.students) course.students = [];
     if (!course.waiting) course.waiting = [];
 
-    if (course.students.includes(userId)) return replyText(replyToken, '你已經預約此課程');
-    if (course.waiting.includes(userId)) return replyText(replyToken, '你已在候補名單中，請耐心等待');
-    if (user.points <= 0) return replyText(replyToken, '點數不足，請先購買點數');
+    if (course.students.includes(userId)) return replyText(replyToken, '你已經預約此課程', studentMenu);
+    if (course.waiting.includes(userId)) return replyText(replyToken, '你已在候補名單中，請耐心等待', studentMenu);
+    if (user.points <= 0) return replyText(replyToken, '點數不足，請先購買點數', studentMenu);
 
     if (course.students.length < course.capacity) {
       course.students.push(userId);
@@ -233,11 +324,11 @@ async function handleStudentCommands(event, user, db, courses) {
       user.history.push({ id, action: '預約', time: new Date().toISOString() });
       writeJSON(COURSE_FILE, courses);
       writeJSON(DATA_FILE, db);
-      return replyText(replyToken, '✅ 已成功預約');
+      return replyText(replyToken, '✅ 已成功預約', studentMenu);
     } else {
       course.waiting.push(userId);
       writeJSON(COURSE_FILE, courses);
-      return replyText(replyToken, '課程額滿，已加入候補名單');
+      return replyText(replyToken, '課程額滿，已加入候補名單', studentMenu);
     }
   }
 
@@ -251,32 +342,30 @@ async function handleStudentCommands(event, user, db, courses) {
       }
     }
     writeJSON(COURSE_FILE, courses);
-    return replyText(replyToken, `✅ 已取消 ${count} 筆候補`);
+    return replyText(replyToken, `✅ 已取消 ${count} 筆候補`, studentMenu);
   }
 
   if (msg === '@點數' || msg === '@點數查詢') {
-    return replyText(replyToken, `你目前有 ${user.points} 點`);
+    return replyText(replyToken, `你目前有 ${user.points} 點`, studentMenu);
   }
 
   if (msg === '@我的課程') {
     const myCourses = Object.entries(courses)
-      .filter(([_, c]) => c.students?.includes(userId) || c.waiting?.includes(userId))
-      .map(([_, c]) => {
+      .filter(([id, c]) => c.students?.includes(userId) || c.waiting?.includes(userId))
+      .map(([id, c]) => {
         const status = c.students?.includes(userId) ? '✅ 已預約' : '⏳ 候補中';
-        return `${c.time}｜${c.title}｜${status}`;
+        return `${c.time.slice(5,16)}｜${c.title}｜${status}`;
       });
     const text = myCourses.length ? myCourses.join('\n') : '你目前沒有課程紀錄';
-    return replyText(replyToken, text);
+    return replyText(replyToken, text, studentMenu);
   }
 
   if (msg === '@購點') {
     const formUrl = 'https://forms.gle/your-form-url'; // 請替換為實際購點表單
-    return replyText(replyToken, `請至下列表單填寫購點資訊：\n${formUrl}`);
+    return replyText(replyToken, `請至下列表單填寫購點資訊：\n${formUrl}`, studentMenu);
   }
 
-  return replyText(replyToken, '請使用選單操作或輸入正確指令', {
-    items: studentMenu.map(i => ({ type: 'action', action: i })),
-  });
+  return replyText(replyToken, '請使用選單操作或輸入正確指令', studentMenu);
 }
 
 async function handleTeacherCommands(event, userId, db, courses) {
@@ -285,189 +374,122 @@ async function handleTeacherCommands(event, userId, db, courses) {
 
   if (msg === '@今日名單') {
     const today = new Date().toISOString().slice(0, 10);
-    const todayCourses = Object.entries(courses).filter(([_, c]) => c.time.startsWith(today));
+    const todayCourses = Object.entries(courses).filter(([id, c]) => c.time.startsWith(today));
 
-    if (todayCourses.length === 0) return replyText(replyToken, '今天沒有課程');
+    if (todayCourses.length === 0) return replyText(replyToken, '今天沒有課程', teacherMenu);
 
-    const lines = todayCourses.map(([_, c]) => {
+    const lines = todayCourses.map(([id, c]) => {
       const studentList = c.students?.map(uid => db[uid]?.name || uid).join(', ') || '無';
-      return `${c.time}｜${c.title}\n學員：${studentList}`;
+      return `${c.time.slice(5,16)}｜${c.title}\n學員：${studentList}`;
     });
 
-    return replyText(replyToken, lines.join('\n\n'));
+    return replyText(replyToken, lines.join('\n\n'), teacherMenu);
   }
 
-  if (msg.startsWith('@加點') || msg.startsWith('@扣點')) {
+  if (msg.startsWith('@加點') || msg.startsWith('@扣點'))
+
+  {
     const parts = msg.split(' ');
-    if (parts.length < 3) return replyText(replyToken, '格式錯誤，請使用 @加點|@扣點 [學員ID] [數量]');
+    if (parts.length !== 3) return replyText(replyToken, '指令格式錯誤，範例：@加點 userId 數量', teacherMenu);
+
+    const action = parts[0].slice(1); // 加點 或 扣點
     const targetId = parts[1];
     const amount = parseInt(parts[2]);
-    if (!db[targetId]) return replyText(replyToken, '找不到此學員');
-    if (isNaN(amount) || amount <= 0) return replyText(replyToken, '數量需為正整數');
 
-    if (msg.startsWith('@加點')) {
-      db[targetId].points += amount;
-    } else {
-      db[targetId].points = Math.max(0, db[targetId].points - amount);
+    if (!db[targetId]) return replyText(replyToken, '查無該學員資料', teacherMenu);
+    if (isNaN(amount) || amount <= 0) return replyText(replyToken, '請輸入正確點數數字', teacherMenu);
+
+    if (action === '加點') {
+      db[targetId].points = (db[targetId].points || 0) + amount;
+    } else if (action === '扣點') {
+      db[targetId].points = Math.max((db[targetId].points || 0) - amount, 0);
     }
 
     writeJSON(DATA_FILE, db);
-    return replyText(replyToken, `✅ 已${msg.startsWith('@加點') ? '加' : '扣'}點 ${amount} 點，剩餘 ${db[targetId].points} 點`);
-  }
-
-  if (msg.startsWith('@查')) {
-    const parts = msg.split(' ');
-    if (parts.length < 2) return replyText(replyToken, '請輸入學員ID，如：@查 U1234567890');
-    const targetId = parts[1];
-    const user = db[targetId];
-    if (!user) return replyText(replyToken, '查無相關資料');
-    const history = (user.history || []).map(h => `${h.time.split('T')[0]}｜${h.action} ${h.id}`).join('\n') || '無紀錄';
-    return replyText(replyToken, `姓名：${user.name}\n點數：${user.points}\n紀錄：\n${history}`);
-  }
-
-  if (msg.startsWith('@取消')) {
-    const parts = msg.split(' ');
-    if (parts.length < 2) return replyText(replyToken, '請輸入課程ID，如：@取消 1625234567890');
-    const id = parts[1];
-    const course = courses[id];
-    if (!course) return replyText(replyToken, '查無相關資料');
-
-    (course.students || []).forEach(uid => {
-      if (db[uid]) {
-        db[uid].points++;
-        db[uid].history.push({ id, action: '課程取消退點', time: new Date().toISOString() });
-      }
-    });
-
-    delete courses[id];
-    writeJSON(DATA_FILE, db);
-    writeJSON(COURSE_FILE, courses);
-
-    return replyText(replyToken, `✅ 課程已取消並退還 ${course.students.length} 筆點數`);
+    return replyText(replyToken, `✅ 已${action}${amount}點給${db[targetId].name}`, teacherMenu);
   }
 
   if (msg === '@新增課程') {
-    courseCreationProgress[userId] = { step: 0, data: {} };
-    return replyText(replyToken, '請輸入課程名稱：');
+    // 啟動新增課程流程
+    pendingCourseCreation[userId] = { step: 1, data: {} };
+    return replyText(replyToken, '請輸入課程名稱：', []);
   }
 
-  return replyText(replyToken, '老師請使用選單或正確指令', {
-    items: teacherMenu.map(i => ({ type: 'action', action: i })),
-  });
-}
+  if (msg === '@取消課程') {
+    // 顯示可取消課程清單
+    const upcomingCourses = Object.entries(courses)
+      .filter(([id, c]) => new Date(c.time) > new Date())
+      .map(([id, c]) => ({
+        type: 'message',
+        action: {
+          type: 'message',
+          label: `${c.time.slice(5,16)} ${c.title}`,
+          text: `取消課程 ${id}`,
+        },
+      }));
 
-async function handleCourseCreationFlow(event, userId, db, courses) {
-  const msg = event.message.text.trim();
-  const replyToken = event.replyToken;
+    if (upcomingCourses.length === 0) return replyText(replyToken, '沒有可取消的課程', teacherMenu);
 
-  const progress = courseCreationProgress[userId];
-  if (!progress) return;
+    return replyText(replyToken, '請選擇要取消的課程：', upcomingCourses);
+  }
 
-  switch (progress.step) {
-    case 0:
-      // 課程名稱
-      if (!msg) return replyText(replyToken, '課程名稱不能空白，請重新輸入：');
-      progress.data.title = msg;
-      progress.step++;
-      writeJSON(DATA_FILE, db);
-      return replyText(replyToken, '請選擇課程日期：', {
-        items: [
-          { type: 'action', action: { type: 'message', label: '週一', text: '@日期 週一' } },
-          { type: 'action', action: { type: 'message', label: '週二', text: '@日期 週二' } },
-          { type: 'action', action: { type: 'message', label: '週三', text: '@日期 週三' } },
-          { type: 'action', action: { type: 'message', label: '週四', text: '@日期 週四' } },
-          { type: 'action', action: { type: 'message', label: '週五', text: '@日期 週五' } },
-          { type: 'action', action: { type: 'message', label: '週六', text: '@日期 週六' } },
-          { type: 'action', action: { type: 'message', label: '週日', text: '@日期 週日' } },
-        ],
-      });
+  if (msg.startsWith('取消課程 ')) {
+    const id = msg.replace('取消課程 ', '').trim();
+    const course = courses[id];
+    if (!course) return replyText(replyToken, '查無該課程', teacherMenu);
 
-    case 1:
-      // 課程日期
-      if (!msg.startsWith('@日期 ')) return replyText(replyToken, '請使用選單選擇日期');
-      progress.data.weekday = msg.replace('@日期 ', '').trim();
-      progress.step++;
-      // 時間選擇 0~23
-      const timeOptions = [];
-      for (let h = 0; h < 24; h++) {
-        const label = `${h.toString().padStart(2, '0')}:00`;
-        timeOptions.push({
-          type: 'action',
-          action: { type: 'message', label, text: `@時間 ${label}` },
+    // 退還所有學生點數
+    const dbCopy = db;
+    for (const sid of course.students) {
+      if (dbCopy[sid]) {
+        dbCopy[sid].points = (dbCopy[sid].points || 0) + 1;
+        dbCopy[sid].history.push({ id, action: '退點', time: new Date().toISOString() });
+        client.pushMessage(sid, {
+          type: 'text',
+          text: `你的課程「${course.title}」因取消已退還1點數`,
         });
       }
-      return replyText(replyToken, '請選擇課程時間（24小時制）：', { items: timeOptions });
-
-    case 2:
-      // 課程時間
-      if (!msg.startsWith('@時間 ')) return replyText(replyToken, '請使用選單選擇時間');
-      progress.data.time = msg.replace('@時間 ', '').trim();
-      progress.step++;
-      return replyText(replyToken, '請輸入人員上限（數字）：');
-
-    case 3:
-      // 人員上限
-      const capacity = parseInt(msg);
-      if (isNaN(capacity) || capacity <= 0) {
-        return replyText(replyToken, '人員上限需為正整數，請重新輸入：');
-      }
-      progress.data.capacity = capacity;
-      progress.step++;
-      return replyText(replyToken,
-        `請確認是否建立課程：\n` +
-        `名稱：${progress.data.title}\n` +
-        `日期：${progress.data.weekday}\n` +
-        `時間：${progress.data.time}\n` +
-        `人數上限：${progress.data.capacity}\n\n` +
-        `回覆「確認」建立，或「取消」放棄。`
-      );
-
-    case 4:
-      if (msg === '確認') {
-        // 生成課程ID
-        const newId = Date.now().toString();
-        // 將 weekday + time 轉換成日期字串（此處簡化為當周對應日期）
-        const weekdayMap = { '週一':1, '週二':2, '週三':3, '週四':4, '週五':5, '週六':6, '週日':0 };
-        const now = new Date();
-        const targetWeekday = weekdayMap[progress.data.weekday];
-        if (targetWeekday === undefined) {
-          delete courseCreationProgress[userId];
-          return replyText(replyToken, '日期有誤，請重新新增課程。');
-        }
-        const diff = (targetWeekday + 7 - now.getDay()) % 7;
-        const courseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-        // 把時間字串 "HH:00" 轉成小時
-        const hour = parseInt(progress.data.time.split(':')[0]);
-        courseDate.setHours(hour, 0, 0, 0);
-
-        courses[newId] = {
-          title: progress.data.title,
-          time: courseDate.toISOString().slice(0,16).replace('T', ' '),
-          capacity: progress.data.capacity,
-          students: [],
-          waiting: [],
-        };
-        writeJSON(COURSE_FILE, courses);
-        delete courseCreationProgress[userId];
-        return replyText(replyToken, `✅ 課程已建立：${progress.data.title}，時間：${courses[newId].time}，人數上限：${progress.data.capacity}`);
-      } else if (msg === '取消') {
-        delete courseCreationProgress[userId];
-        return replyText(replyToken, '課程建立已取消。');
-      } else {
-        return replyText(replyToken, '請回覆「確認」或「取消」');
-      }
-
-    default:
-      delete courseCreationProgress[userId];
-      return replyText(replyToken, '課程建立流程異常，已取消。');
+    }
+    delete courses[id];
+    writeJSON(COURSE_FILE, courses);
+    writeJSON(DATA_FILE, dbCopy);
+    return replyText(replyToken, `✅ 課程「${course.title}」已取消並退點`, teacherMenu);
   }
+
+  if (msg === '@查學員') {
+    // 簡單回覆全部學員列表
+    const studentList = Object.entries(db)
+      .filter(([uid, u]) => u.role === 'student')
+      .map(([uid, u]) => `${u.name}（點數：${u.points}）`);
+    const text = studentList.length ? studentList.join('\n') : '沒有學員資料';
+    return replyText(replyToken, text, teacherMenu);
+  }
+
+  if (msg === '@統計報表') {
+    // 簡單回覆報表，示範用
+    const totalStudents = Object.values(db).filter(u => u.role === 'student').length;
+    const totalCourses = Object.keys(courses).length;
+    return replyText(replyToken, `總學員數：${totalStudents}\n總課程數：${totalCourses}`, teacherMenu);
+  }
+
+  return replyText(replyToken, '請使用選單操作或輸入正確指令', teacherMenu);
 }
 
 app.get('/', (req, res) => {
-  res.send('九容瑜伽 LINE Bot 服務中');
+  res.send('九容瑜伽 LINE Bot 運行中');
 });
 
+// 定時備份與自我 ping
+setInterval(() => {
+  backupData();
+}, 3600000); // 每小時備份一次
+
+setInterval(() => {
+  const url = process.env.SELF_URL;
+  if (!url) return;
+  require('node-fetch')(url).catch(() => {});
+}, 15 * 60 * 1000); // 每15分鐘ping一次
+
 app.listen(PORT, () => {
-  console.log(`🚀 九容瑜伽 LINE Bot 正在執行，port：${PORT}`);
-  setInterval(backupData, 1000 * 60 * 60 * 6); // 每6小時備份一次
+  console.log(`伺服器啟動，監聽埠號 ${PORT}`);
 });
