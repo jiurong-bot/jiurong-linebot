@@ -1,9 +1,8 @@
-// index.js - V3.11.3（新增課程多步驟流程）
+// index.js - V3.11.3（改用 Node.js 18+ 內建 fetch）
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const line = require('@line/bot-sdk');
-const fetch = require('node-fetch'); // 新增 node-fetch
 require('dotenv').config();
 
 const app = express();
@@ -324,30 +323,35 @@ async function handleStudentCommands(event, user, db, courses) {
       }
     }
     writeJSON(COURSE_FILE, courses);
-    return replyText(replyToken, `✅ 已取消 ${count} 筆候補`, studentMenu);
-  }
-
-  if (msg === '@點數' || msg === '@點數查詢') {
-    return replyText(replyToken, `你目前有 ${user.points} 點`, studentMenu);
+    return replyText(replyToken, `✅ 已取消 ${count} 等候候補的課程`, studentMenu);
   }
 
   if (msg === '@我的課程') {
-    const myCourses = Object.entries(courses)
-      .filter(([id, c]) => c.students?.includes(userId) || c.waiting?.includes(userId))
-      .map(([id, c]) => {
-        const status = c.students?.includes(userId) ? '✅ 已預約' : '⏳ 候補中';
-        return `${c.time.slice(5, 16)}｜${c.title}｜${status}`;
-      });
-    const text = myCourses.length ? myCourses.join('\n') : '你目前沒有課程紀錄';
-    return replyText(replyToken, text, studentMenu);
+    const now = Date.now();
+    const enrolled = Object.entries(courses).filter(([id, c]) => {
+      return c.students.includes(userId) && new Date(c.time).getTime() > now;
+    });
+    if (enrolled.length === 0) {
+      return replyText(event.replyToken, '你目前沒有預約任何課程', studentMenu);
+    }
+    let list = '你預約的課程：\n';
+    enrolled.forEach(([id, c]) => {
+      list += `${c.title} - ${c.time.slice(0, 16)}\n`;
+    });
+    return replyText(event.replyToken, list, studentMenu);
+  }
+
+  if (msg === '@點數') {
+    return replyText(event.replyToken, `你目前有 ${user.points} 點`, studentMenu);
   }
 
   if (msg === '@購點') {
-    const formUrl = 'https://forms.gle/your-form-url'; // 請替換成實際表單網址
-    return replyText(replyToken, `請至下列表單填寫購點資訊：\n${formUrl}`, studentMenu);
+    // 回傳購點表單連結（可替換成你的購點表單網址）
+    const formUrl = 'https://docs.google.com/forms/d/e/your_form_id/viewform';
+    return replyText(event.replyToken, `請點擊連結購買點數：\n${formUrl}`, studentMenu);
   }
 
-  return replyText(replyToken, '請使用選單操作或輸入正確指令', studentMenu);
+  return replyText(event.replyToken, '指令無效，請使用選單', studentMenu);
 }
 
 // 老師功能指令處理
@@ -356,143 +360,135 @@ async function handleTeacherCommands(event, userId, db, courses) {
   const replyToken = event.replyToken;
 
   if (msg === '@今日名單') {
-    const todayStart = new Date();
-    todayStart.setHours(0,0,0,0);
-    const todayEnd = new Date(todayStart);
-    todayEnd.setDate(todayEnd.getDate() + 1);
-
-    const todayCourses = Object.entries(courses).filter(([id, c]) => {
-      const courseTime = new Date(c.time);
-      return courseTime >= todayStart && courseTime < todayEnd;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayCourses = Object.entries(courses).filter(([id, c]) => c.time.startsWith(todayStr));
+    if (todayCourses.length === 0) {
+      return replyText(replyToken, '今日沒有課程', teacherMenu);
+    }
+    let list = '今日課程及學生名單：\n';
+    todayCourses.forEach(([id, c]) => {
+      list += `${c.title} (${c.time.slice(11,16)})\n`;
+      if (c.students.length === 0) list += '  無學生預約\n';
+      else {
+        c.students.forEach((stuId, i) => {
+          const name = db[stuId]?.name || '匿名';
+          list += `  ${i + 1}. ${name}\n`;
+        });
+      }
+      if (c.waiting.length > 0) {
+        list += '  候補名單:\n';
+        c.waiting.forEach((stuId, i) => {
+          const name = db[stuId]?.name || '匿名';
+          list += `    ${i + 1}. ${name}\n`;
+        });
+      }
     });
-
-    if (todayCourses.length === 0) return replyText(replyToken, '今天沒有課程', teacherMenu);
-
-    const lines = todayCourses.map(([id, c]) => {
-      const studentList = c.students?.map(uid => db[uid]?.name || uid).join(', ') || '無';
-      return `${c.time.slice(11, 16)}｜${c.title}\n學員：${studentList}`;
-    });
-
-    return replyText(replyToken, `📅 今天課程：\n${lines.join('\n\n')}`, teacherMenu);
+    return replyText(replyToken, list, teacherMenu);
   }
 
   if (msg === '@新增課程') {
-    // 啟動新增課程多步驟流程
     pendingCourseCreation[userId] = { step: 1, data: {} };
     return replyText(replyToken, '請輸入課程名稱');
   }
 
-  if (msg.startsWith('@加點')) {
-    // 格式：@加點 userId 數量
-    const parts = msg.split(' ');
-    if (parts.length !== 3) {
-      return replyText(replyToken, '格式錯誤，請輸入：@加點 userId 數量', teacherMenu);
-    }
-    const targetId = parts[1];
-    const amount = parseInt(parts[2], 10);
-    if (!db[targetId]) {
-      return replyText(replyToken, '指定學員不存在', teacherMenu);
-    }
-    if (isNaN(amount)) {
-      return replyText(replyToken, '點數數量格式錯誤', teacherMenu);
-    }
-    db[targetId].points = (db[targetId].points || 0) + amount;
-    writeJSON(DATA_FILE, db);
-    return replyText(replyToken, `已為 ${db[targetId].name} ${amount > 0 ? '加' : '扣'}點 ${Math.abs(amount)} 點`, teacherMenu);
-  }
-
   if (msg === '@取消課程') {
-    // 老師輸入「@取消課程 課程ID」取消課程並退點（可依需求調整為多步驟）
-    return replyText(replyToken, '取消課程請輸入「@取消課程 課程ID」，範例如「@取消課程 course_123456789」', teacherMenu);
+    // 老師取消課程，可進一步實作
+    return replyText(replyToken, '請輸入欲取消的課程 ID，例如：取消 course_1234567890');
   }
 
-  if (msg.startsWith('@取消課程 ')) {
-    const courseId = msg.replace('@取消課程 ', '').trim();
-    const course = courses[courseId];
-    if (!course) return replyText(replyToken, '課程ID不存在', teacherMenu);
-
-    // 退還所有學生點數
-    if (course.students && course.students.length > 0) {
-      for (const sid of course.students) {
-        if (db[sid]) {
-          db[sid].points = (db[sid].points || 0) + 1; // 假設每次扣1點
-        }
-      }
+  if (msg.startsWith('取消 ')) {
+    const id = msg.replace('取消 ', '').trim();
+    const course = courses[id];
+    if (!course) {
+      return replyText(replyToken, '找不到該課程', teacherMenu);
     }
-    delete courses[courseId];
+    // 退還學生點數
+    course.students.forEach(stuId => {
+      if (db[stuId]) {
+        db[stuId].points++;
+        db[stuId].history.push({ id, action: '課程取消退點', time: new Date().toISOString() });
+      }
+    });
+    delete courses[id];
     writeJSON(COURSE_FILE, courses);
     writeJSON(DATA_FILE, db);
-    return replyText(replyToken, `已取消課程並退還點數：${course.title}`, teacherMenu);
+    return replyText(replyToken, `課程「${course.title}」已取消，所有學生點數已退還。`, teacherMenu);
+  }
+
+  if (msg.startsWith('@加點')) {
+    // 格式：@加點 userId 數量（數量可正負）
+    const parts = msg.split(' ');
+    if (parts.length !== 3) return replyText(replyToken, '格式錯誤，請使用：@加點 userId 數量', teacherMenu);
+    const targetId = parts[1];
+    const amount = parseInt(parts[2]);
+    if (!db[targetId]) return replyText(replyToken, '找不到該學員', teacherMenu);
+    if (isNaN(amount)) return replyText(replyToken, '點數數量錯誤', teacherMenu);
+    db[targetId].points = (db[targetId].points || 0) + amount;
+    db[targetId].history.push({ action: amount > 0 ? '加點' : '扣點', amount, time: new Date().toISOString() });
+    writeJSON(DATA_FILE, db);
+    return replyText(replyToken, `學員 ${db[targetId].name} 的點數已調整為 ${db[targetId].points} 點。`, teacherMenu);
   }
 
   if (msg === '@查學員') {
-    // 老師可輸入「@查學員 userId」查詢學員資料
-    return replyText(replyToken, '請輸入「@查學員 userId」查詢學員資料', teacherMenu);
+    return replyText(replyToken, '請輸入學員ID查詢，例如：查學員 U1234567890');
   }
 
-  if (msg.startsWith('@查學員 ')) {
-    const targetId = msg.replace('@查學員 ', '').trim();
-    if (!db[targetId]) {
-      return replyText(replyToken, '學員不存在', teacherMenu);
-    }
-    const user = db[targetId];
-    const text = `學員資料：\n名稱：${user.name}\n點數：${user.points}\n歷史紀錄：\n` +
-      (user.history?.map(h => `${h.time} ${h.action} ${h.id}`).join('\n') || '無');
-    return replyText(replyToken, text, teacherMenu);
+  if (msg.startsWith('查學員 ')) {
+    const targetId = msg.replace('查學員 ', '').trim();
+    const target = db[targetId];
+    if (!target) return replyText(replyToken, '找不到該學員', teacherMenu);
+    let info = `學員：${target.name}\n點數：${target.points}\n預約紀錄：\n`;
+    target.history.slice(-10).forEach(h => {
+      info += `${h.time} - ${h.action}${h.amount ? ' ' + h.amount : ''}\n`;
+    });
+    return replyText(replyToken, info, teacherMenu);
   }
 
   if (msg === '@統計報表') {
-    // 簡易報表範例：目前學員數與課程數
-    const studentCount = Object.values(db).filter(u => u.role === 'student').length;
-    const teacherCount = Object.values(db).filter(u => u.role === 'teacher').length;
+    // 簡易報表：課程數量、總預約數、學生人數
     const courseCount = Object.keys(courses).length;
-    return replyText(replyToken, `統計報表：\n學員數：${studentCount}\n老師數：${teacherCount}\n課程數：${courseCount}`, teacherMenu);
+    let totalReservations = 0;
+    const studentSet = new Set();
+    Object.values(courses).forEach(c => {
+      totalReservations += c.students.length;
+      c.students.forEach(s => studentSet.add(s));
+    });
+    const report = `報表統計：\n課程數量：${courseCount}\n總預約數：${totalReservations}\n預約學生數：${studentSet.size}`;
+    return replyText(replyToken, report, teacherMenu);
   }
 
-  return replyText(replyToken, '指令不明，請使用選單操作', teacherMenu);
+  if (msg === '@切換身份') {
+    db[userId].role = 'student';
+    writeJSON(DATA_FILE, db);
+    return replyText(replyToken, '已切換為學員身份', studentMenu);
+  }
+
+  return replyText(replyToken, '指令無效，請使用選單', teacherMenu);
 }
 
-// 取得原始 body 用於 webhook 驗證
-app.use('/webhook', express.raw({ type: 'application/json' }));
-
-app.post('/webhook', (req, res) => {
-  const signature = req.headers['x-line-signature'];
-  const body = req.body;
-
-  if (!line.validateSignature(body, config.channelSecret, signature)) {
-    return res.status(401).send('Invalid signature');
-  }
-
-  let events;
-  try {
-    events = JSON.parse(body.toString()).events;
-  } catch {
-    return res.status(400).send('Bad request');
-  }
-
-  Promise.all(events.map(handleEvent))
+// Express 路由設定
+app.post('/webhook', line.middleware(config), (req, res) => {
+  Promise.all(req.body.events.map(handleEvent))
     .then(() => res.status(200).send('OK'))
-    .catch((err) => {
+    .catch(err => {
       console.error(err);
-      res.status(500).send('Error');
+      res.status(500).end();
     });
 });
 
-// Keep-alive: 每 10 分鐘 ping 自己一次，防止 Render 關閉
-setInterval(() => {
-  const url = process.env.PING_URL || `http://localhost:${PORT}/`;
-  fetch(url).then(() => {
-    console.log('Pinged self to keep alive');
-  }).catch((e) => {
-    console.error('Ping self failed:', e);
-  });
-}, 600000);
-
-// 基本的 HTTP GET 路由，給外部確認伺服器狀態
 app.get('/', (req, res) => {
-  res.send('九容瑜伽 LINE Bot 服務中');
+  res.send('九容瑜伽 LINE Bot 運行中');
 });
 
+// 定時備份和保活
+setInterval(() => {
+  backupData();
+  // 這裡使用 fetch 進行自我 ping 保活（改用內建 fetch）
+  fetch(`https://你的部署網址/`)
+    .then(() => console.log('自我保活成功'))
+    .catch(e => console.error('保活失敗', e));
+}, 1000 * 60 * 15); // 每15分鐘一次
+
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 伺服器已啟動，埠號: ${PORT}`);
 });
