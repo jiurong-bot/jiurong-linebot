@@ -184,15 +184,15 @@ async function handleEvent(event) {
       case 4:
         const capacity = parseInt(text);
         if (isNaN(capacity) || capacity <= 0) {
-          return replyText(replyToken, '容量格式錯誤，請輸入正整數');
+          return replyText(replyToken, '數量格式錯誤，請輸入正整數');
         }
         stepData.data.capacity = capacity;
         stepData.step = 5;
         return replyText(replyToken,
           `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}`,
           [
-            { type: 'message', label: '是', text: '確認新增課程' },
-            { type: 'message', label: '否', text: '取消新增課程' },
+            { type: 'message', label: '✅ 是', text: '確認新增課程' },
+            { type: 'message', label: '❌ 否', text: '取消新增課程' },
           ]);
       case 5:
         if (text === '確認新增課程') {
