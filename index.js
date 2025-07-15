@@ -221,36 +221,42 @@ async function handleEvent(event) {
   }
 
   // 2. 課程取消確認
+
   if (pendingCourseCancelConfirm[userId]) {
-    const courseId = pendingCourseCancelConfirm[userId];
-    const replyToken = event.replyToken;
+  const courseId = pendingCourseCancelConfirm[userId];
+  const replyToken = event.replyToken;
 
-    if (text === '是') {
-      const db = readJSON(DATA_FILE);
-      const course = courses[courseId];
-      if (!course) {
-        delete pendingCourseCancelConfirm[userId];
-        return replyText(replyToken, '找不到該課程，取消失敗', teacherMenu);
-      }
-
-      course.students.forEach(stuId => {
-        if (db[stuId]) {
-          db[stuId].points++;
-          db[stuId].history.push({ id: courseId, action: '課程取消退點', time: new Date().toISOString() });
-        }
-      });
-
-      delete courses[courseId];
-      writeJSON(COURSE_FILE, courses);
-      writeJSON(DATA_FILE, db);
+  if (text === '✅ 是') {
+    const db = readJSON(DATA_FILE);
+    const course = courses[courseId];
+    if (!course) {
       delete pendingCourseCancelConfirm[userId];
-      return replyText(replyToken, `課程「${course.title}」已取消，所有學生點數已退還。`, teacherMenu);
-    } else if (text === '否') {
-      delete pendingCourseCancelConfirm[userId];
-      return replyText(replyToken, '取消課程已取消', teacherMenu);
-    } else {
-      return replyText(replyToken, '請輸入「是」或「否」以確認是否取消課程');
+      return replyText(replyToken, '找不到該課程，取消失敗', teacherMenu);
     }
+
+    course.students.forEach(stuId => {
+      if (db[stuId]) {
+        db[stuId].points++;
+        db[stuId].history.push({ id: courseId, action: '課程取消退點', time: new Date().toISOString() });
+      }
+    });
+
+    delete courses[courseId];
+    writeJSON(COURSE_FILE, courses);
+    writeJSON(DATA_FILE, db);
+    delete pendingCourseCancelConfirm[userId];
+    return replyText(replyToken, `✅ 課程「${course.title}」已取消，所有學生點數已退還。`, teacherMenu);
+  }
+
+  if (text === '❌ 否') {
+    delete pendingCourseCancelConfirm[userId];
+    return replyText(replyToken, '取消課程操作已中止', teacherMenu);
+  }
+
+  return replyText(replyToken, '請選擇是否取消課程：', [
+    { type: 'message', label: '✅ 是', text: '✅ 是' },
+    { type: 'message', label: '❌ 否', text: '❌ 否' },
+  ]);
   }
 
   // 3. 老師登入切換身份
