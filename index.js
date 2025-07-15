@@ -1,3 +1,4 @@
+// index.js - V3.11.1
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +19,6 @@ const DATA_FILE = './data.json';
 const COURSE_FILE = './courses.json';
 const BACKUP_DIR = './backup';
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '';
 
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
@@ -35,6 +35,12 @@ function readJSON(file) {
 
 function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+function replyText(token, text, menu = null) {
+  const msg = { type: 'text', text };
+  if (menu) msg.quickReply = { items: menu.map(i => ({ type: 'action', action: i })) };
+  return client.replyMessage(token, msg);
 }
 
 function cleanCourses(courses) {
@@ -65,24 +71,6 @@ function backupData() {
   }
 }
 
-function promoteWaitlist(course, db) {
-  while (course.students.length < course.capacity && course.waiting.length > 0) {
-    const nextId = course.waiting.shift();
-    if (!db[nextId] || db[nextId].points <= 0) continue;
-    course.students.push(nextId);
-    db[nextId].points--;
-    db[nextId].history.push({
-      id: course.id,
-      action: '候補轉正',
-      time: new Date().toISOString(),
-    });
-    client.pushMessage(nextId, {
-      type: 'text',
-      text: `🎉 你已從候補轉為課程「${course.title}」的正式學員！`,
-    });
-  }
-}
-
 function chunkArray(arr, size) {
   const result = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -91,48 +79,8 @@ function chunkArray(arr, size) {
   return result;
 }
 
-function replyText(token, text, menu = null) {
-  const msg = { type: 'text', text };
-  if (menu) {
-    msg.quickReply = { items: menu.map(i => ({ type: 'action', action: i })) };
-  }
-  return client.replyMessage(token, msg);
-}
 
-const studentMenu = [
-  { type: 'message', label: '預約課程', text: '@預約課程' },
-  { type: 'message', label: '查詢課程', text: '@課程查詢' },
-  { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '查詢點數', text: '@點數查詢' },
-  { type: 'message', label: '購買點數', text: '@購點' },
-  { type: 'message', label: '我的課程', text: '@我的課程' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-];
-
-const teacherMenu = [
-  { type: 'message', label: '今日名單', text: '@今日名單' },
-  { type: 'message', label: '新增課程', text: '@新增課程' },
-  { type: 'message', label: '查詢學員', text: '@查學員' },
-  { type: 'message', label: '加點', text: '@加點' },
-  { type: 'message', label: '扣點', text: '@扣點' },
-  { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '統計報表', text: '@統計報表' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-];
-
-const pendingTeacherLogin = {};
-const pendingCourseCreation = {};
-
-app.post('/webhook', line.middleware(config), async (req, res) => {
-  res.status(200).end();
-  try {
-    await Promise.all(req.body.events.map(event => handleEvent(event)));
-  } catch (err) {
-    console.error('Webhook 錯誤:', err);
-  }
-});
-
-async function handleEvent(event) {
+function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') return;
   const userId = event.source.userId;
   const msg = event.message.text.trim();
@@ -142,53 +90,51 @@ async function handleEvent(event) {
   const courses = cleanCourses(readJSON(COURSE_FILE));
 
   if (!db[userId]) {
-    const profile = await client.getProfile(userId);
-    db[userId] = {
-      name: profile.displayName,
-      role: 'student',
-      points: 0,
-      history: [],
-    };
-    writeJSON(DATA_FILE, db);
+    return client.getProfile(userId).then(profile => {
+      db[userId] = {
+        name: profile.displayName,
+        role: 'student',
+        points: 0,
+        history: [],
+      };
+      writeJSON(DATA_FILE, db);
+      return replyText(replyToken, '👋 歡迎使用九容瑜伽 LINE Bot！', studentMenu);
+    });
   }
 
   const user = db[userId];
 
-  // 處理老師登入密碼流程
   if (pendingTeacherLogin[userId]) {
     if (msg === TEACHER_PASSWORD) {
       user.role = 'teacher';
       writeJSON(DATA_FILE, db);
       delete pendingTeacherLogin[userId];
-      return replyText(replyToken, '👨‍🏫 登入成功，已切換為老師身份', teacherMenu);
+      return replyText(replyToken, '✅ 老師身份登入成功！', teacherMenu);
     } else {
       delete pendingTeacherLogin[userId];
-      return replyText(replyToken, '❌ 密碼錯誤，身份切換失敗', user.role === 'student' ? studentMenu : teacherMenu);
+      return replyText(replyToken, '❌ 密碼錯誤，請重新切換身份。', studentMenu);
     }
   }
 
-  // 處理新增課程流程
   if (pendingCourseCreation[userId]) {
     return handleCourseCreationFlow(event, user, db, courses);
   }
 
-  // 身份切換指令
   if (msg === '@切換身份') {
     if (user.role === 'student') {
       pendingTeacherLogin[userId] = true;
-      return replyText(replyToken, '請輸入老師密碼：', studentMenu);
+      return replyText(replyToken, '請輸入老師密碼：', []);
     } else {
       user.role = 'student';
       writeJSON(DATA_FILE, db);
-      return replyText(replyToken, '👩‍🎓 已切換為學員身份', studentMenu);
+      return replyText(replyToken, '已切換為學員身份', studentMenu);
     }
   }
 
-  // 指令導向角色功能
-  if (user.role === 'student') {
-    return handleStudentCommands(event, user, db, courses);
-  } else if (user.role === 'teacher') {
+  if (user.role === 'teacher') {
     return handleTeacherCommands(event, userId, db, courses);
+  } else {
+    return handleStudentCommands(event, user, db, courses);
   }
 }
 
@@ -239,7 +185,6 @@ async function handleCourseCreationFlow(event, user, db, courses) {
       return replyText(replyToken, `請確認是否建立課程：\n名稱：${data.title}\n日期：${data.weekday}\n時間：${data.time}\n人數上限：${data.capacity}\n\n回覆「確認」建立，或「取消」放棄`);
     case 5: // 確認建立
       if (msg === '確認') {
-        // 產生完整課程時間 (近一週的對應星期幾)
         const weekdayMap = {
           '星期一': 1,
           '星期二': 2,
@@ -386,9 +331,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
     return replyText(replyToken, lines.join('\n\n'), teacherMenu);
   }
 
-  if (msg.startsWith('@加點') || msg.startsWith('@扣點'))
-
-  {
+  if (msg.startsWith('@加點') || msg.startsWith('@扣點')) {
     const parts = msg.split(' ');
     if (parts.length !== 3) return replyText(replyToken, '指令格式錯誤，範例：@加點 userId 數量', teacherMenu);
 
