@@ -428,8 +428,11 @@ if (msg.startsWith('取消課程')) {
   }
   pendingCourseCancelConfirm[userId] = courseId;
   return replyText(replyToken,
-    `請確認是否取消課程「${courses[courseId].title}」？\n輸入「是」確認，輸入「否」取消操作。`,
-    teacherMenu);
+    `⚠️ 確認取消課程「${courses[courseId].title}」嗎？`,
+    [
+      { type: 'message', label: '✅ 是', text: '✅ 是' },
+      { type: 'message', label: '❌ 否', text: '❌ 否' },
+    ]);
 }
 
   // 預留擴充功能...
