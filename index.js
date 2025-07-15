@@ -491,7 +491,6 @@ setInterval(() => {
 }, 5 * 60 * 1000); // 每 5 分鐘 ping 一次
 
 // ✅ 啟動伺服器
-//const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`九容瑜伽 LINE Bot 運行中：port ${PORT}`);
 });
