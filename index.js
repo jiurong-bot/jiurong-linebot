@@ -226,8 +226,8 @@ courses[newId] = {
           delete pendingCourseCreation[userId];
 
           return replyText(event.replyToken,
-            `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(targetDate.toISOString())}\n人數上限：${stepData.data.capacity}`,
-            teacherMenu);
+  `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
+  teacherMenu);
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
           return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
