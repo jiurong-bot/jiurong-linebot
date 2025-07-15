@@ -12,7 +12,16 @@ function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, nul
 
 function cleanCourses(courses) { const now = Date.now(); for (const id in courses) { const c = courses[id]; if (!c.title || !c.time || !c.students || !c.capacity) { delete courses[id]; continue; } if (!Array.isArray(c.students)) c.students = []; if (!Array.isArray(c.waiting)) c.waiting = []; if (new Date(c.time).getTime() < now - 86400000) { delete courses[id]; } } return courses; }
 
-function backupData() { const timestamp = new Date().toISOString().replace(/[:.]/g, '-'); try { fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, data_backup_${timestamp}.json)); fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, courses_backup_${timestamp}.json)); console.log(✅ 資料備份成功：${timestamp}); } catch (err) { console.error('備份失敗:', err); } }
+function backupData() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  try {
+    fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, `data_backup_${timestamp}.json`));
+    fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, `courses_backup_${timestamp}.json`));
+    console.log(`✅ 資料備份成功：${timestamp}`);
+  } catch (err) {
+    console.error('備份失敗:', err);
+  }
+}
 
 function promoteWaitlist(course, db) { while (course.students.length < course.capacity && course.waiting.length > 0) { const nextId = course.waiting.shift(); if (!db[nextId] || db[nextId].points <= 0) continue; course.students.push(nextId); db[nextId].points--; db[nextId].history.push({ id: course.id, action: '候補轉正', time: new Date().toISOString() }); client.pushMessage(nextId, { type: 'text', text: 🎉 你已從候補轉為課程「${course.title}」的正式學員！ }); } }
 
