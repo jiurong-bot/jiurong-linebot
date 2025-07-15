@@ -378,14 +378,16 @@ async function handleTeacherCommands(event, userId, db, courses) {
   const replyToken = event.replyToken;
 
   if (msg === '@課程名單') {
-    if (Object.keys(courses).length === 0) {
-      return replyText(replyToken, '目前沒有任何課程', teacherMenu);
-    }
-    let list = '📋 已建立課程列表：\n';
-    Object.entries(courses).forEach(([id, c]) => {
-      list += `${formatDateTime(c.time)}｜${c.title}｜上限${c.capacity}｜預約${c.students.length}｜候補${c.waiting.length}\nID：${id}\n\n`;
-    });
-    return replyText(replyToken, list.trim(), teacherMenu);
+  if (Object.keys(courses).length === 0) {
+    return replyText(replyToken, '目前沒有任何課程', teacherMenu);
+  }
+  let list = '📋 已建立課程列表：\n\n';
+  Object.entries(courses).forEach(([id, c]) => {
+    list += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
+    list += `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n`;
+    list += '─'.repeat(25) + '\n';
+  });
+  return replyText(replyToken, list.trim(), teacherMenu);
   }
 
   if (msg === '@新增課程') {
