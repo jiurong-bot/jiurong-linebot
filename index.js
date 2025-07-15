@@ -419,7 +419,7 @@ setInterval(() => {
   require('node-fetch')(keepAliveUrl).catch(() => {});
 }, 5 * 60 * 1000); // 每 5 分鐘
 
-let PORT = process.env.PORT || 3000;
+// const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`九容瑜伽 LINE Bot 運行中：port ${PORT}`);
 });
