@@ -1,10 +1,8 @@
-// ✅ V3.7：統一 quickReply 寫法 + 修正 PORT 與 fs 問題
+// V3.7.1 - 九容瑜伽 LINE Bot 主程式
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const line = require('@line/bot-sdk');
-const axios = require('axios');
-const fetch = require('node-fetch'); // keep-alive 用
 require('dotenv').config();
 
 const app = express();
@@ -16,6 +14,7 @@ const config = {
   channelSecret: process.env.CHANNEL_SECRET,
 };
 const client = new line.Client(config);
+
 const DATA_FILE = './data.json';
 const COURSE_FILE = './courses.json';
 const BACKUP_DIR = './backup';
@@ -487,7 +486,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 已啟動'));
 // ✅ Keep-alive（定時 ping 自己避免 Render 睡著）
 setInterval(() => {
   const keepAliveUrl = process.env.KEEP_ALIVE_URL || 'https://你的-render-app.onrender.com/';
-  require('node-fetch')(keepAliveUrl).catch(() => {});
+  fetch(keepAliveUrl).catch(() => {});
 }, 5 * 60 * 1000); // 每 5 分鐘 ping 一次
 
 // ✅ 啟動伺服器
