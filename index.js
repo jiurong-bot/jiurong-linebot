@@ -289,8 +289,8 @@ async function handleTeacherCommands(event, userId, db, courses) {
   }
 
   if (msg === '@新增課程') {
-    pendingCourseCreation[userId] = { step: 1, data: {} };
-    return replyText(replyToken, '請輸入課程名稱：', []);
+  pendingCourseCreation[userId] = { step: 1, data: {} };
+  return replyText(replyToken, '請輸入課程名稱：');
   }
 
   if (msg === '@取消課程') {
