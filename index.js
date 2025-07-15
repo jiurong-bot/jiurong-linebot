@@ -6,6 +6,7 @@ const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
+app.use('/webhook', express.raw({ type: '*/*' })); // ⭐ 必須在這裡加入 raw parser 給 webhook 用
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
@@ -21,8 +22,6 @@ const LINE_NOTIFY_TOKEN = process.env.LINE_NOTIFY_TOKEN || '';
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
-
-app.use(express.json());
 
 function readJSON(file) {
   try {
