@@ -21,11 +21,6 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
 const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const BACKUP_DIR = './backup'; const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527'; const LINE_NOTIFY_TOKEN = process.env.LINE_NOTIFY_TOKEN || ''; const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '';
 
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}'); if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}'); if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
