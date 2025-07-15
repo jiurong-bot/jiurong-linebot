@@ -104,7 +104,6 @@ function cleanCourses(courses) {
 }
 
 function formatDateTime(dateStr) {
-  // 若為字串格式，手動轉成日期
   const date = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
 
   const mmdd = date.toLocaleDateString('zh-TW', {
@@ -195,45 +194,47 @@ async function handleEvent(event) {
             { type: 'message', label: '❌ 否', text: '取消新增課程' },
           ]);
       case 5:
-        if (text === '確認新增課程') {
-          const today = new Date();
-          const dayOfWeek = today.getDay();
-          const weekdayMap = { '星期日':0,'星期一':1,'星期二':2,'星期三':3,'星期四':4,'星期五':5,'星期六':6 };
-          const targetDay = weekdayMap[stepData.data.weekday];
-          let dayDiff = targetDay - dayOfWeek;
-          if (dayDiff < 0) dayDiff += 7;
-          const targetDate = new Date(today);
-          targetDate.setDate(today.getDate() + dayDiff);
-          const [hour, min] = stepData.data.time.split(':').map(Number);
-          targetDate.setHours(hour, min, 0, 0);
+  if (text === '確認新增課程') {
+    const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+    const today = new Date();
+    const todayWeekday = today.getDay();
+    const targetWeekday = weekdays.indexOf(stepData.data.weekday);
 
-// 改用 sv-SE（瑞典格式）存成 YYYY-MM-DD HH:mm 格式
-const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
-  timeZone: 'Asia/Taipei',
-  hour12: false,
-});
+    let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
+    if (dayDiff === 0) dayDiff = 7;
 
-const newId = 'course_' + Date.now();
-courses[newId] = {
-  title: stepData.data.title,
-  time: taipeiTimeStr,  // 儲存正確的台灣時間字串
-  capacity: stepData.data.capacity,
-  students: [],
-  waiting: [],
-};
+    const targetDate = new Date(today);
+    targetDate.setDate(today.getDate() + dayDiff);
 
-          writeJSON(COURSE_FILE, courses);
-          delete pendingCourseCreation[userId];
+    const [hour, min] = stepData.data.time.split(':').map(Number);
+    targetDate.setHours(hour, min, 0, 0);
 
-          return replyText(event.replyToken,
-  `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
-  teacherMenu);
-        } else if (text === '取消新增課程') {
-          delete pendingCourseCreation[userId];
-          return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
-        } else {
-          return replyText(event.replyToken, '請點選「是」或「否」確認');
-        }
+    const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
+      timeZone: 'Asia/Taipei',
+      hour12: false,
+    });
+
+    const newId = 'course_' + Date.now();
+    courses[newId] = {
+      title: stepData.data.title,
+      time: taipeiTimeStr,
+      capacity: stepData.data.capacity,
+      students: [],
+      waiting: [],
+    };
+
+    writeJSON(COURSE_FILE, courses);
+    delete pendingCourseCreation[userId];
+
+    return replyText(event.replyToken,
+      `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
+      teacherMenu);
+  } else if (text === '取消新增課程') {
+    delete pendingCourseCreation[userId];
+    return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
+  } else {
+    return replyText(event.replyToken, '請點選「是」或「否」確認');
+  }
       default:
         delete pendingCourseCreation[userId];
         return replyText(event.replyToken, '流程異常，已重置', teacherMenu);
