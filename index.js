@@ -1,4 +1,4 @@
-// index.js - V3.11.3（改用 Node.js 18+ 內建 fetch）
+// index.js - V3.11.4（修正課程顯示格式 + 人數上限說明）
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +13,6 @@ const COURSE_FILE = './courses.json';
 const BACKUP_DIR = './backup';
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 
-// 確保檔案與資料夾存在
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
@@ -133,7 +132,7 @@ async function handleEvent(event) {
 
   writeJSON(DATA_FILE, db);
 
-  // 優先判斷新增課程多步驟流程
+// 優先判斷新增課程多步驟流程
   if (pendingCourseCreation[userId]) {
     const stepData = pendingCourseCreation[userId];
     const replyToken = event.replyToken;
@@ -215,8 +214,9 @@ async function handleEvent(event) {
           writeJSON(COURSE_FILE, courses);
           delete pendingCourseCreation[userId];
 
+          // ✅ 這裡修正成較友善時間格式與「人數上限」說明
           return replyText(event.replyToken,
-            `✅ 課程已新增：${stepData.data.title}\n時間：${targetDate.toISOString()}\n容量：${stepData.data.capacity}`,
+            `✅ 課程已新增：${stepData.data.title}\n時間：${targetDate.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }).replace(/\//g, '-')}\n人數上限：${stepData.data.capacity}`,
             teacherMenu);
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
@@ -242,7 +242,7 @@ async function handleEvent(event) {
     }
   }
 
-  if (pendingTeacherLogin[userId]) {
+if (pendingTeacherLogin[userId]) {
     if (event.message.text === TEACHER_PASSWORD) {
       db[userId].role = 'teacher';
       writeJSON(DATA_FILE, db);
@@ -275,7 +275,7 @@ async function handleStudentCommands(event, user, db, courses) {
         type: 'action',
         action: {
           type: 'message',
-          label: `${c.time.slice(5, 16)} ${c.title}`,
+          label: `${new Date(c.time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(/\//g,'-')} ${c.title}`,
           text: `我要預約 ${id}`,
         },
       }));
@@ -336,7 +336,7 @@ async function handleStudentCommands(event, user, db, courses) {
     }
     let list = '你預約的課程：\n';
     enrolled.forEach(([id, c]) => {
-      list += `${c.title} - ${c.time.slice(0, 16)}\n`;
+      list += `${c.title} - ${new Date(c.time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(/\//g,'-')}\n`;
     });
     return replyText(event.replyToken, list, studentMenu);
   }
