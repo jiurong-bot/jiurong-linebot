@@ -6,7 +6,8 @@ const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
-app.use('/webhook', express.raw({ type: '*/*' })); // ⭐ 必須在這裡加入 raw parser 給 webhook 用
+app.use('/webhook', express.raw({ type: '*/*' })); // 必須使用 raw parser 處理 webhook
+
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
@@ -16,9 +17,12 @@ const client = new line.Client(config);
 const DATA_FILE = './data.json';
 const COURSE_FILE = './courses.json';
 const BACKUP_DIR = './backup';
+
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const LINE_NOTIFY_TOKEN = process.env.LINE_NOTIFY_TOKEN || '';
+const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''; // 管理員 ID 用於廣播
 
+// 確保資料檔與備份資料夾存在
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
@@ -124,11 +128,12 @@ function createQuickReplyMessage(text, menu) {
 }
 
 app.post('/webhook', line.middleware(config), async (req, res) => {
-  res.status(200).end();
+  res.status(200).end(); // ✅ 一定要回傳 200，否則 LINE 視為失敗
+
   try {
     await Promise.all(req.body.events.map(event => handleEvent(event)));
   } catch (err) {
-    console.error('Webhook 錯誤:', err);
+    console.error('Webhook 處理錯誤:', err);
   }
 });
 
@@ -247,9 +252,7 @@ async function handleStudentCommands(event, user, db, courses) {
       }
     }
     writeJSON(COURSE_FILE, courses);
-    return reply
-
-  Text(replyToken, `✅ 已取消 ${count} 筆候補`);
+    return replyText(replyToken, `✅ 已取消 ${count} 筆候補`);
   }
 
   if (msg === '@點數' || msg === '@點數查詢') {
@@ -268,7 +271,7 @@ async function handleStudentCommands(event, user, db, courses) {
   }
 
   if (msg === '@購點') {
-    const formUrl = 'https://forms.gle/your-form-url'; // 請替換成你的表單網址
+    const formUrl = 'https://forms.gle/your-form-url'; // 替換成你自己的表單網址
     return replyText(replyToken, `請至下列表單填寫購點資訊：\n${formUrl}`);
   }
 
@@ -369,7 +372,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
     return replyText(replyToken, `✅ 課程「${title}」已新增。\n目前課程共 ${Object.keys(courses).length} 筆`);
   }
 
-  // 管理員推播 (假設管理員 userId 為環境變數 ADMIN_USER_ID)
+  // 管理員推播
   if (msg.startsWith('@廣播')) {
     const adminId = process.env.ADMIN_USER_ID || '';
     if (userId !== adminId) return replyText(replyToken, '只有管理員可以使用此功能');
@@ -379,7 +382,6 @@ async function handleTeacherCommands(event, userId, db, courses) {
     const dbAll = readJSON(DATA_FILE);
     const userIds = Object.keys(dbAll);
 
-    // 批次分批推播避免單次過大流量
     const batches = chunkArray(userIds, 50);
     for (const batch of batches) {
       await client.multicast(batch, { type: 'text', text: broadcastMsg });
@@ -404,7 +406,6 @@ setInterval(async () => {
 
     // 課程前 30 分鐘發提醒
     if (diff > 0 && diff <= 30 * 60 * 1000) {
-      // 通知所有學生（含候補轉正的）
       for (const uid of course.students) {
         if (db[uid]) {
           await client.pushMessage(uid, {
@@ -414,22 +415,22 @@ setInterval(async () => {
         }
       }
 
-      // 標記已提醒
       course.notified = true;
     }
   }
 
   writeJSON(COURSE_FILE, courses);
-}, 10 * 60 * 1000); // 10 分鐘
+}, 10 * 60 * 1000); // 每 10 分鐘
 
+// 測試首頁
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 已啟動'));
 
-// keep-alive：定時自我 ping，避免 Render 休眠
+// keep-alive：定時 ping 自己，避免 Render 休眠
 setInterval(() => {
   fetch('https://你的-render-app.onrender.com/').catch(() => {});
-}, 1000 * 60 * 5); // 5 分鐘
+}, 1000 * 60 * 5); // 每 5 分鐘
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`九容瑜伽 LINE Bot 運行中：port ${PORT}`);
+  console.log(`✅ 九容瑜伽 LINE Bot 運行中，埠號：${PORT}`);
 });
