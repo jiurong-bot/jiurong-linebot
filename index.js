@@ -1,61 +1,168 @@
-// index.js - V3.11.1 (Webhook 修正版) const express = require('express'); const fs = require('fs'); const path = require('path'); const line = require('@line/bot-sdk'); require('dotenv').config();
+// index.js - V3.11.2 (修正版)
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const line = require('@line/bot-sdk');
+require('dotenv').config();
 
-const app = express(); const PORT = process.env.PORT || 3000;
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// 正確處理 LINE Webhook app.post('/webhook', express.raw({ type: '/' }), (req, res) => { try { const signature = req.headers['x-line-signature']; const body = req.body; line.middleware(config)(req, res, () => {}); // for verify const events = JSON.parse(body.toString()).events; Promise.all(events.map(handleEvent)).then(() => res.status(200).end()); } catch (err) { console.error('Webhook error:', err); res.status(200).end(); // 即使錯誤也回傳 200 } });
+const DATA_FILE = './data.json';
+const COURSE_FILE = './courses.json';
+const BACKUP_DIR = './backup';
+const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 
-const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSecret: process.env.CHANNEL_SECRET, }; const client = new line.Client(config);
+// 確保檔案與資料夾存在
+if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
+if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
 
-const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const BACKUP_DIR = './backup'; const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
+const config = {
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.CHANNEL_SECRET,
+};
 
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}'); if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}'); if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
+const client = new line.Client(config);
+// 讀取 JSON 檔案
+function readJSON(file) {
+  try {
+    const content = fs.readFileSync(file, 'utf8');
+    return content ? JSON.parse(content) : {};
+  } catch {
+    return {};
+  }
+}
 
-function readJSON(file) { try { const content = fs.readFileSync(file, 'utf8'); return content ? JSON.parse(content) : {}; } catch { return {}; } }
+// 寫入 JSON 檔案
+function writeJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
 
-function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
+// 備份資料檔案
+function backupData() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  try {
+    fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, `data_backup_${timestamp}.json`));
+    fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, `courses_backup_${timestamp}.json`));
+    console.log(`✅ 資料備份成功：${timestamp}`);
+  } catch (err) {
+    console.error('備份失敗:', err);
+  }
+}
 
-function replyText(token, text, menu = null) { const msg = { type: 'text', text }; if (menu) msg.quickReply = { items: menu.map(i => ({ type: 'action', action: i })) }; return client.replyMessage(token, msg); }
+// 快速回覆文字訊息
+function replyText(token, text, menu = null) {
+  const msg = { type: 'text', text };
+  if (menu) {
+    msg.quickReply = {
+      items: menu.map(i => ({ type: 'action', action: i })),
+    };
+  }
+  return client.replyMessage(token, msg);
+}
 
-function cleanCourses(courses) { const now = Date.now(); for (const id in courses) { const c = courses[id]; if (!c.title || !c.time || !c.students || !c.capacity) { delete courses[id]; continue; } if (!Array.isArray(c.students)) c.students = []; if (!Array.isArray(c.waiting)) c.waiting = []; if (new Date(c.time).getTime() < now - 86400000) { delete courses[id]; } } return courses; }
-
-function backupData() { const timestamp = new Date().toISOString().replace(/[:.]/g, '-'); try { fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, data_backup_${timestamp}.json)); fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, courses_backup_${timestamp}.json)); console.log(✅ 資料備份成功：${timestamp}); } catch (err) { console.error('備份失敗:', err); } }
-
-function chunkArray(arr, size) { const result = []; for (let i = 0; i < arr.length; i += size) { result.push(arr.slice(i, i + size)); } return result; }
-
+// 學員選單
 const studentMenu = [
   { type: 'message', label: '預約課程', text: '@預約課程' },
   { type: 'message', label: '我的課程', text: '@我的課程' },
-  { type: 'message', label: '點數查詢', text: '@點數查詢' },
-  { type: 'message', label: '取消候補', text: '@取消候補' },
+  { type: 'message', label: '點數查詢', text: '@點數' },
   { type: 'message', label: '購買點數', text: '@購點' },
   { type: 'message', label: '切換身份', text: '@切換身份' },
 ];
 
+// 老師選單
 const teacherMenu = [
   { type: 'message', label: '今日名單', text: '@今日名單' },
-  { type: 'message', label: '加扣點數', text: '@加點 userId 數量' },
   { type: 'message', label: '新增課程', text: '@新增課程' },
   { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '查詢學員', text: '@查學員' },
-  { type: 'message', label: '統計報表', text: '@統計報表' },
+  { type: 'message', label: '加點/扣點', text: '@加點 userId 數量' },
+  { type: 'message', label: '查學員', text: '@查學員' },
+  { type: 'message', label: '報表', text: '@統計報表' },
   { type: 'message', label: '切換身份', text: '@切換身份' },
 ];
 
-// 登記暫存狀態的物件
+// 暫存狀態物件
 const pendingTeacherLogin = {};
 const pendingCourseCreation = {};
+// 處理所有 LINE 事件的主函式
+async function handleEvent(event) {
+  if (event.type !== 'message' || !event.message.text) return;
 
-// webhook 事件處理
-app.post('/webhook', (req, res) => {
-  Promise.all(req.body.events.map(handleEvent))
-    .then(() => res.status(200).end())
-    .catch((err) => {
-      console.error('Webhook 錯誤：', err);
-      res.status(500).end();
-    });
-});
+  const db = readJSON(DATA_FILE);
+  const courses = cleanCourses(readJSON(COURSE_FILE));
+  const userId = event.source.userId;
 
-// 學員功能處理（已包含預約、查詢、取消候補、購點等）
+  // 若使用者不存在資料庫，初始化
+  if (!db[userId]) {
+    db[userId] = {
+      name: '',
+      points: 0,
+      role: 'student',
+      history: [],
+    };
+  }
+
+  // 更新使用者名稱（使用 LINE Profile 名稱，避免空白）
+  try {
+    const profile = await client.getProfile(userId);
+    db[userId].name = profile.displayName || db[userId].name || '匿名使用者';
+  } catch (e) {
+    console.error('取得用戶資料失敗', e);
+  }
+
+  writeJSON(DATA_FILE, db);
+
+  // 簡易身份判斷：老師預設需輸入密碼才能切換，否則學生身份
+  if (event.message.text === '@切換身份') {
+    if (db[userId].role === 'teacher') {
+      db[userId].role = 'student';
+      writeJSON(DATA_FILE, db);
+      return replyText(event.replyToken, '已切換為學員身份', studentMenu);
+    } else {
+      pendingTeacherLogin[userId] = true;
+      return replyText(event.replyToken, '請輸入老師密碼登入');
+    }
+  }
+
+  if (pendingTeacherLogin[userId]) {
+    if (event.message.text === TEACHER_PASSWORD) {
+      db[userId].role = 'teacher';
+      writeJSON(DATA_FILE, db);
+      delete pendingTeacherLogin[userId];
+      return replyText(event.replyToken, '老師登入成功', teacherMenu);
+    } else {
+      delete pendingTeacherLogin[userId];
+      return replyText(event.replyToken, '密碼錯誤，登入失敗', studentMenu);
+    }
+  }
+
+  // 根據身份執行對應指令
+  if (db[userId].role === 'teacher') {
+    return handleTeacherCommands(event, userId, db, courses);
+  } else {
+    return handleStudentCommands(event, db[userId], db, courses);
+  }
+}
+
+// 清理過期課程
+function cleanCourses(courses) {
+  const now = Date.now();
+  for (const id in courses) {
+    const c = courses[id];
+    if (!c.title || !c.time || !c.students || !c.capacity) {
+      delete courses[id];
+      continue;
+    }
+    if (!Array.isArray(c.students)) c.students = [];
+    if (!Array.isArray(c.waiting)) c.waiting = [];
+    if (new Date(c.time).getTime() < now - 86400000) {
+      delete courses[id];
+    }
+  }
+  return courses;
+}
+// 學員功能指令處理
 async function handleStudentCommands(event, user, db, courses) {
   const msg = event.message.text.trim();
   const userId = event.source.userId;
@@ -135,14 +242,13 @@ async function handleStudentCommands(event, user, db, courses) {
   }
 
   if (msg === '@購點') {
-    const formUrl = 'https://forms.gle/your-form-url'; // 替換為實際購點表單網址
+    const formUrl = 'https://forms.gle/your-form-url'; // 請替換成實際表單網址
     return replyText(replyToken, `請至下列表單填寫購點資訊：\n${formUrl}`, studentMenu);
   }
 
   return replyText(replyToken, '請使用選單操作或輸入正確指令', studentMenu);
 }
-
-// 老師功能處理（查詢今日名單、加扣點、取消課程、查詢學員等）
+// 老師功能指令處理
 async function handleTeacherCommands(event, userId, db, courses) {
   const msg = event.message.text.trim();
   const replyToken = event.replyToken;
@@ -209,6 +315,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
     const course = courses[id];
     if (!course) return replyText(replyToken, '查無該課程', teacherMenu);
 
+    // 退還點數給已預約學員並通知
     for (const sid of course.students) {
       if (db[sid]) {
         db[sid].points = (db[sid].points || 0) + 1;
@@ -241,38 +348,15 @@ async function handleTeacherCommands(event, userId, db, courses) {
   }
 
   return replyText(replyToken, '請使用選單操作或輸入正確指令', teacherMenu);
-}
+}// 解析 raw body 用於 LINE webhook 驗證
+app.use('/webhook', express.raw({ type: 'application/json' }));
 
-// 自訂選單（範例，可依需求擴充）
-const studentMenu = [
-  { type: 'message', label: '預約課程', text: '@預約課程' },
-  { type: 'message', label: '我的課程', text: '@我的課程' },
-  { type: 'message', label: '點數查詢', text: '@點數' },
-  { type: 'message', label: '購買點數', text: '@購點' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-];
-
-const teacherMenu = [
-  { type: 'message', label: '今日名單', text: '@今日名單' },
-  { type: 'message', label: '新增課程', text: '@新增課程' },
-  { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '加點/扣點', text: '@加點 userId 數量' },
-  { type: 'message', label: '查學員', text: '@查學員' },
-  { type: 'message', label: '報表', text: '@統計報表' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-];
-
-// 暫存登入與課程流程資料
-const pendingTeacherLogin = {};
-const pendingCourseCreation = {};
-
-// LINE Webhook 處理，加入錯誤捕捉避免 500
+// LINE webhook 主路由，包含簽章驗證與事件處理
 app.post('/webhook', (req, res) => {
   try {
     const signature = req.headers['x-line-signature'];
     const body = req.body;
 
-    const events = line.middleware(config)(req, res, () => {});
     if (!line.validateSignature(body, config.channelSecret, signature)) {
       return res.status(401).send('Invalid signature');
     }
@@ -291,17 +375,17 @@ app.post('/webhook', (req, res) => {
   }
 });
 
-// 根路徑測試
+// 根路徑簡單測試
 app.get('/', (req, res) => {
   res.send('九容瑜伽 LINE Bot 運行中');
 });
 
-// 每小時備份一次
+// 每小時備份一次資料
 setInterval(() => {
   backupData();
 }, 3600 * 1000);
 
-// 每 15 分鐘 keep-alive ping 自己
+// 每 15 分鐘 ping 自己保持存活（需要自行設定環境變數 SELF_URL）
 setInterval(() => {
   const url = process.env.SELF_URL;
   if (url) {
@@ -309,8 +393,7 @@ setInterval(() => {
   }
 }, 15 * 60 * 1000);
 
-// 啟動伺服器
+// 啟動 Express 伺服器
 app.listen(PORT, () => {
   console.log(`✅ 九容瑜伽 LINE Bot 已啟動，埠號：${PORT}`);
 });
-
