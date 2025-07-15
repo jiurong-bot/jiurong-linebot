@@ -105,11 +105,24 @@ function cleanCourses(courses) {
 
 function formatDateTime(dateStr) {
   const date = new Date(dateStr);
-  return date.toLocaleString('zh-TW', {
+
+  const mmdd = date.toLocaleDateString('zh-TW', {
     timeZone: 'Asia/Taipei',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
   }).replace(/\//g, '-');
+
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  const weekday = weekdays[date.getDay()];
+
+  const hhmm = date.toLocaleTimeString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `${mmdd}（${weekday}）${hhmm}`;
 }
 
 async function handleEvent(event) {
