@@ -126,6 +126,33 @@ function formatDateTime(dateStr) {
 }
 
 async function handleEvent(event) {
+  // ✅ 加入 postback 處理在這裡（放在最上方）
+  if (event.type === 'postback' && event.postback.data.startsWith('cancel_course_')) {
+    const courseId = event.postback.data.replace('cancel_course_', '');
+    const db = readJSON(DATA_FILE);
+    const courses = cleanCourses(readJSON(COURSE_FILE));
+    const userId = event.source.userId;
+
+    if (!courses[courseId]) {
+      return replyText(event.replyToken, '找不到該課程，取消失敗', teacherMenu);
+    }
+
+    const course = courses[courseId];
+    course.students.forEach(stuId => {
+      if (db[stuId]) {
+        db[stuId].points++;
+        db[stuId].history.push({ id: courseId, action: '課程取消退點', time: new Date().toISOString() });
+      }
+    });
+
+    delete courses[courseId];
+    writeJSON(COURSE_FILE, courses);
+    writeJSON(DATA_FILE, db);
+
+    return replyText(event.replyToken, `✅ 課程「${course.title}」已取消，所有學生點數已退還。`, teacherMenu);
+  }
+
+  // 原本這行往下放就好
   if (event.type !== 'message' || !event.message.text) return;
 
   const db = readJSON(DATA_FILE);
@@ -432,12 +459,20 @@ async function handleTeacherCommands(event, userId, db, courses) {
   if (upcomingCourses.length === 0) {
     return replyText(replyToken, '目前沒有可取消的課程', teacherMenu);
   }
-
-  return replyText(replyToken, '請選擇欲取消的課程：', upcomingCourses.map(c => ({
-    type: 'message',
-    label: c.label.slice(0, 20), // LINE 限制 label 最長 20 字
-    text: `取消課程 ${c.id}`,
-  })));
+  return client.replyMessage(replyToken, {
+  type: 'text',
+  text: '請選擇欲取消的課程：',
+  quickReply: {
+    items: upcomingCourses.map(c => ({
+      type: 'action',
+      action: {
+        type: 'postback',
+        label: c.label.slice(0, 20),
+        data: `cancel_course:${c.id}`,
+      },
+    })),
+  },
+});
 }
 
 if (msg.startsWith('取消課程')) {
