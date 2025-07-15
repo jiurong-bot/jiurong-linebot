@@ -206,14 +206,20 @@ async function handleEvent(event) {
           const [hour, min] = stepData.data.time.split(':').map(Number);
           targetDate.setHours(hour, min, 0, 0);
 
-          const newId = 'course_' + Date.now();
-          courses[newId] = {
-            title: stepData.data.title,
-            time: targetDate.toISOString(),
-            capacity: stepData.data.capacity,
-            students: [],
-            waiting: [],
-          };
+// 改用 sv-SE（瑞典格式）存成 YYYY-MM-DD HH:mm 格式
+const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
+  timeZone: 'Asia/Taipei',
+  hour12: false,
+});
+
+const newId = 'course_' + Date.now();
+courses[newId] = {
+  title: stepData.data.title,
+  time: taipeiTimeStr,  // 儲存正確的台灣時間字串
+  capacity: stepData.data.capacity,
+  students: [],
+  waiting: [],
+};
 
           writeJSON(COURSE_FILE, courses);
           delete pendingCourseCreation[userId];
