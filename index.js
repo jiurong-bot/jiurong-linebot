@@ -468,7 +468,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
       action: {
         type: 'postback',
         label: c.label.slice(0, 20),
-        data: `cancel_course:${c.id}`
+        data: `cancel_course_${c.id}`,
       },
     })),
   },
