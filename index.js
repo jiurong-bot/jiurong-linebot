@@ -1,6 +1,6 @@
 // ✅ V3.7：統一修正 quickReply 寫法 const express = require('express'); const fs = require('fs'); const path = require('path'); const line = require('@line/bot-sdk'); const axios = require('axios'); require('dotenv').config();
 
-const app = express(); app.use('/webhook', express.raw({ type: */* })); const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSecret: process.env.CHANNEL_SECRET, }; const client = new line.Client(config);
+const app = express(); app.use('/webhook', express.raw({ type: '*/*' })); const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSecret: process.env.CHANNEL_SECRET, }; const client = new line.Client(config);
 
 const DATA_FILE = './data.json'; const COURSE_FILE = './courses.json'; const BACKUP_DIR = './backup'; const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527'; const LINE_NOTIFY_TOKEN = process.env.LINE_NOTIFY_TOKEN || ''; const ADMIN_USER_ID = process.env.ADMIN_USER_ID || '';
 
