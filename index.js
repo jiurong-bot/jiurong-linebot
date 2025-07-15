@@ -1,3 +1,4 @@
+// index.js - V3.12（整合課程取消確認、退點、時間顯示與學生預約流程）
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -11,26 +12,22 @@ const DATA_FILE = './data.json';
 const COURSE_FILE = './courses.json';
 const BACKUP_DIR = './backup';
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
-const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/d/e/your_form_id/viewform';
+const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
 
+// 初始化資料檔
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
 
+// LINE Bot 設定
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
 };
-
 const client = new line.Client(config);
 
-// 儲存老師多階段狀態
-const pendingTeacherLogin = {};
-const pendingCourseCreation = {};
-const pendingCourseCancelConfirm = {};
-const pendingCourseCancelSelect = {};  // 新增：課程取消選單化使用
-
+// 工具函式
 function readJSON(file) {
   try {
     const content = fs.readFileSync(file, 'utf8');
@@ -65,6 +62,7 @@ function replyText(token, text, menu = null) {
   return client.replyMessage(token, msg);
 }
 
+// 快速選單
 const studentMenu = [
   { type: 'message', label: '預約課程', text: '@預約課程' },
   { type: 'message', label: '我的課程', text: '@我的課程' },
@@ -82,6 +80,11 @@ const teacherMenu = [
   { type: 'message', label: '報表', text: '@統計報表' },
   { type: 'message', label: '切換身份', text: '@切換身份' },
 ];
+
+// 暫存狀態
+const pendingTeacherLogin = {};
+const pendingCourseCreation = {};
+const pendingCourseCancelConfirm = {};
 
 function cleanCourses(courses) {
   const now = Date.now();
@@ -104,8 +107,8 @@ function formatDateTime(dateStr) {
   const date = new Date(dateStr);
   return date.toLocaleString('zh-TW', {
     timeZone: 'Asia/Taipei',
-    year:'numeric', month:'2-digit', day:'2-digit',
-    hour:'2-digit', minute:'2-digit',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
   }).replace(/\//g, '-');
 }
 
@@ -131,32 +134,112 @@ async function handleEvent(event) {
 
   const text = event.message.text.trim();
 
-  // 課程新增多步驟 (老師)
+  // 1. 多步驟新增課程
   if (pendingCourseCreation[userId]) {
-    // --- 省略，請用之前版本新增課程多步驟程式碼 ---
-    // 你有的流程可以保持不動，這段沒改
+    const stepData = pendingCourseCreation[userId];
+    const replyToken = event.replyToken;
+
+    switch (stepData.step) {
+      case 1:
+        stepData.data.title = text;
+        stepData.step = 2;
+        return replyText(replyToken, '請選擇課程日期（星期幾）：', [
+          { type: 'message', label: '星期一', text: '星期一' },
+          { type: 'message', label: '星期二', text: '星期二' },
+          { type: 'message', label: '星期三', text: '星期三' },
+          { type: 'message', label: '星期四', text: '星期四' },
+          { type: 'message', label: '星期五', text: '星期五' },
+          { type: 'message', label: '星期六', text: '星期六' },
+          { type: 'message', label: '星期日', text: '星期日' },
+        ]);
+      case 2:
+        const weekdays = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+        if (!weekdays.includes(text)) {
+          return replyText(replyToken, '請輸入正確的星期（例如：星期一）');
+        }
+        stepData.data.weekday = text;
+        stepData.step = 3;
+        return replyText(replyToken, '請輸入課程時間（24小時制，如 14:30）');
+      case 3:
+        if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
+          return replyText(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
+        }
+        stepData.data.time = text;
+        stepData.step = 4;
+        return replyText(replyToken, '請輸入人員上限（正整數）');
+      case 4:
+        const capacity = parseInt(text);
+        if (isNaN(capacity) || capacity <= 0) {
+          return replyText(replyToken, '容量格式錯誤，請輸入正整數');
+        }
+        stepData.data.capacity = capacity;
+        stepData.step = 5;
+        return replyText(replyToken,
+          `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}`,
+          [
+            { type: 'message', label: '是', text: '確認新增課程' },
+            { type: 'message', label: '否', text: '取消新增課程' },
+          ]);
+      case 5:
+        if (text === '確認新增課程') {
+          const today = new Date();
+          const dayOfWeek = today.getDay();
+          const weekdayMap = { '星期日':0,'星期一':1,'星期二':2,'星期三':3,'星期四':4,'星期五':5,'星期六':6 };
+          const targetDay = weekdayMap[stepData.data.weekday];
+          let dayDiff = targetDay - dayOfWeek;
+          if (dayDiff < 0) dayDiff += 7;
+          const targetDate = new Date(today);
+          targetDate.setDate(today.getDate() + dayDiff);
+          const [hour, min] = stepData.data.time.split(':').map(Number);
+          targetDate.setHours(hour, min, 0, 0);
+
+          const newId = 'course_' + Date.now();
+          courses[newId] = {
+            title: stepData.data.title,
+            time: targetDate.toISOString(),
+            capacity: stepData.data.capacity,
+            students: [],
+            waiting: [],
+          };
+
+          writeJSON(COURSE_FILE, courses);
+          delete pendingCourseCreation[userId];
+
+          return replyText(event.replyToken,
+            `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(targetDate.toISOString())}\n人數上限：${stepData.data.capacity}`,
+            teacherMenu);
+        } else if (text === '取消新增課程') {
+          delete pendingCourseCreation[userId];
+          return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
+        } else {
+          return replyText(event.replyToken, '請點選「是」或「否」確認');
+        }
+      default:
+        delete pendingCourseCreation[userId];
+        return replyText(event.replyToken, '流程異常，已重置', teacherMenu);
+    }
   }
 
-  // 課程取消確認步驟 (老師)
+  // 2. 課程取消確認
   if (pendingCourseCancelConfirm[userId]) {
     const courseId = pendingCourseCancelConfirm[userId];
     const replyToken = event.replyToken;
 
     if (text === '是') {
-      const courses = cleanCourses(readJSON(COURSE_FILE));
       const db = readJSON(DATA_FILE);
       const course = courses[courseId];
       if (!course) {
         delete pendingCourseCancelConfirm[userId];
         return replyText(replyToken, '找不到該課程，取消失敗', teacherMenu);
       }
-      // 退點
+
       course.students.forEach(stuId => {
         if (db[stuId]) {
           db[stuId].points++;
           db[stuId].history.push({ id: courseId, action: '課程取消退點', time: new Date().toISOString() });
         }
       });
+
       delete courses[courseId];
       writeJSON(COURSE_FILE, courses);
       writeJSON(DATA_FILE, db);
@@ -170,7 +253,7 @@ async function handleEvent(event) {
     }
   }
 
-  // 老師登入切換身份
+  // 3. 老師登入切換身份
   if (text === '@切換身份') {
     if (db[userId].role === 'teacher') {
       db[userId].role = 'student';
@@ -194,7 +277,7 @@ async function handleEvent(event) {
     }
   }
 
-  // 根據身份執行指令
+  // 4. 根據身份切到對應功能
   if (db[userId].role === 'teacher') {
     return handleTeacherCommands(event, userId, db, courses);
   } else {
@@ -294,51 +377,15 @@ async function handleTeacherCommands(event, userId, db, courses) {
   const msg = event.message.text.trim();
   const replyToken = event.replyToken;
 
-  // 課程取消選單化 - 入口
-  if (msg === '@取消課程') {
-    const upcomingCourses = Object.entries(courses)
-      .filter(([id, c]) => new Date(c.time) > new Date());
-
-    if (upcomingCourses.length === 0) {
-      return replyText(replyToken, '目前沒有可取消的課程', teacherMenu);
-    }
-
-    const quickItems = upcomingCourses.slice(0,13).map(([id, c]) => ({
-      type: 'action',
-      action: {
-        type: 'message',
-        label: `${formatDateTime(c.time)} ${c.title} (上限${c.capacity} 預約${c.students.length} 候補${c.waiting.length})`,
-        text: `取消課程選擇 ${id}`,
-      }
-    }));
-
-    pendingCourseCancelSelect[userId] = true;
-
-    return replyText(replyToken, '請選擇欲取消的課程', quickItems);
-  }
-
-  // 老師點選課程選單後，進入確認流程
-  if (pendingCourseCancelSelect[userId] && msg.startsWith('取消課程選擇 ')) {
-    const courseId = msg.replace('取消課程選擇 ', '').trim();
-    if (!courses[courseId]) {
-      delete pendingCourseCancelSelect[userId];
-      return replyText(replyToken, '找不到該課程，請重新操作', teacherMenu);
-    }
-    pendingCourseCancelConfirm[userId] = courseId;
-    delete pendingCourseCancelSelect[userId];
-    return replyText(replyToken, `請確認是否取消課程「${courses[courseId].title}」？\n輸入「是」確認，輸入「否」取消操作。`, teacherMenu);
-  }
-
-  // 其他老師指令保持不變
   if (msg === '@課程名單') {
     if (Object.keys(courses).length === 0) {
       return replyText(replyToken, '目前沒有任何課程', teacherMenu);
     }
     let list = '📋 已建立課程列表：\n';
     Object.entries(courses).forEach(([id, c]) => {
-      list += `${new Date(c.time).getFullYear()}-${new Date(c.time).getMonth()+1}-${new Date(c.time).getDate()} ${c.title}／上限${c.capacity}／預約${c.students.length}／候補${c.waiting.length}\n`;
+      list += `${formatDateTime(c.time)}｜${c.title}｜上限${c.capacity}｜預約${c.students.length}｜候補${c.waiting.length}\nID：${id}\n\n`;
     });
-    return replyText(replyToken, list, teacherMenu);
+    return replyText(replyToken, list.trim(), teacherMenu);
   }
 
   if (msg === '@新增課程') {
@@ -346,8 +393,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
     return replyText(replyToken, '請輸入課程名稱');
   }
 
-  if (msg.startsWith('@取消課程 ')) {
-    // 保留舊版以防需要
+  if (msg.startsWith('@取消課程')) {
     const parts = msg.split(' ');
     if (parts.length < 2) {
       return replyText(replyToken, '請輸入欲取消的課程 ID，例如：@取消課程 course_1234567890', teacherMenu);
@@ -360,11 +406,11 @@ async function handleTeacherCommands(event, userId, db, courses) {
     return replyText(replyToken, `請確認是否取消課程「${courses[courseId].title}」？\n輸入「是」確認，輸入「否」取消操作。`, teacherMenu);
   }
 
-  // TODO: 其他老師指令擴充...
-
+  // 預留擴充功能...
   return replyText(replyToken, '指令無效，請使用選單', teacherMenu);
 }
 
+// LINE Webhook 路由
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise
     .all(req.body.events.map(handleEvent))
@@ -375,12 +421,14 @@ app.post('/webhook', line.middleware(config), (req, res) => {
     });
 });
 
+// 健康檢查
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
+// 啟動伺服器
 app.listen(PORT, () => {
-  console.log(`Server running at port ${PORT}`);
+  console.log(`✅ Server running at port ${PORT}`);
   setInterval(() => {
-    console.log('Keep-alive ping');
+    console.log('⏳ Keep-alive ping...');
     fetch(SELF_URL).catch(() => {});
-  }, 1000 * 60 * 5);
+  }, 1000 * 60 * 5); // 每 5 分鐘 ping 一次
 });
