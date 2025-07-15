@@ -104,7 +104,8 @@ function cleanCourses(courses) {
 }
 
 function formatDateTime(dateStr) {
-  const date = new Date(dateStr);
+  // 若為字串格式，手動轉成日期
+  const date = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
 
   const mmdd = date.toLocaleDateString('zh-TW', {
     timeZone: 'Asia/Taipei',
