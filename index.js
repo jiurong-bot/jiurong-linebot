@@ -400,9 +400,7 @@ async function handleCourseCreationFlow(event, userId, db, courses) {
 
     case 2:
       // 課程時間
-      if (!msg.startsWith('@時間 ')) return replyText(replyToken, '請使用選單
-
-                                                    if (!msg.startsWith('@時間 ')) return replyText(replyToken, '請使用選單選擇時間');
+      if (!msg.startsWith('@時間 ')) return replyText(replyToken, '請使用選單選擇時間');
       progress.data.time = msg.replace('@時間 ', '').trim();
       progress.step++;
       return replyText(replyToken, '請輸入人員上限（數字）：');
