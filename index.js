@@ -79,8 +79,30 @@ function chunkArray(arr, size) {
   return result;
 }
 
+const studentMenu = [
+  { type: 'message', label: '預約課程', text: '@預約課程' },
+  { type: 'message', label: '我的課程', text: '@我的課程' },
+  { type: 'message', label: '取消候補', text: '@取消候補' },
+  { type: 'message', label: '點數查詢', text: '@點數查詢' },
+  { type: 'message', label: '購買點數', text: '@購點' },
+  { type: 'message', label: '切換身份', text: '@切換身份' },
+];
 
-function handleEvent(event) {
+const teacherMenu = [
+  { type: 'message', label: '今日名單', text: '@今日名單' },
+  { type: 'message', label: '新增課程', text: '@新增課程' },
+  { type: 'message', label: '取消課程', text: '@取消課程' },
+  { type: 'message', label: '查學員', text: '@查學員' },
+  { type: 'message', label: '加點', text: '@加點' },
+  { type: 'message', label: '扣點', text: '@扣點' },
+  { type: 'message', label: '統計報表', text: '@統計報表' },
+  { type: 'message', label: '切換身份', text: '@切換身份' },
+];
+
+const pendingTeacherLogin = {};
+const pendingCourseCreation = {};
+
+async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') return;
   const userId = event.source.userId;
   const msg = event.message.text.trim();
@@ -361,7 +383,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
   if (msg === '@取消課程') {
     // 顯示可取消課程清單
     const upcomingCourses = Object.entries(courses)
-      .filter(([id, c]) => new Date(c.time) > new Date())
+      .filter(([id, c]) => new Date(c.time) >new Date())
       .map(([id, c]) => ({
         type: 'message',
         action: {
@@ -371,7 +393,9 @@ async function handleTeacherCommands(event, userId, db, courses) {
         },
       }));
 
-    if (upcomingCourses.length === 0) return replyText(replyToken, '沒有可取消的課程', teacherMenu);
+    if (upcomingCourses.length === 0) {
+      return replyText(replyToken, '目前沒有可取消的課程', teacherMenu);
+    }
 
     return replyText(replyToken, '請選擇要取消的課程：', upcomingCourses);
   }
@@ -379,60 +403,76 @@ async function handleTeacherCommands(event, userId, db, courses) {
   if (msg.startsWith('取消課程 ')) {
     const id = msg.replace('取消課程 ', '').trim();
     const course = courses[id];
-    if (!course) return replyText(replyToken, '查無該課程', teacherMenu);
+    if (!course) return replyText(replyToken, '找不到該課程', teacherMenu);
 
-    // 退還所有學生點數
-    const dbCopy = db;
-    for (const sid of course.students) {
-      if (dbCopy[sid]) {
-        dbCopy[sid].points = (dbCopy[sid].points || 0) + 1;
-        dbCopy[sid].history.push({ id, action: '退點', time: new Date().toISOString() });
-        client.pushMessage(sid, {
-          type: 'text',
-          text: `你的課程「${course.title}」因取消已退還1點數`,
-        });
-      }
+    // 取消課程並退還點數給所有已預約學員
+    if (course.students && course.students.length > 0) {
+      course.students.forEach(uid => {
+        if (db[uid]) {
+          db[uid].points = (db[uid].points || 0) + 1;  // 一堂課扣一點，退點則加1點
+          db[uid].history.push({ id, action: '退還點數', time: new Date().toISOString() });
+        }
+      });
     }
+
     delete courses[id];
     writeJSON(COURSE_FILE, courses);
-    writeJSON(DATA_FILE, dbCopy);
-    return replyText(replyToken, `✅ 課程「${course.title}」已取消並退點`, teacherMenu);
+    writeJSON(DATA_FILE, db);
+    return replyText(replyToken, `✅ 課程已取消並退還點數給學員`, teacherMenu);
   }
 
   if (msg === '@查學員') {
-    // 簡單回覆全部學員列表
-    const studentList = Object.entries(db)
-      .filter(([uid, u]) => u.role === 'student')
-      .map(([uid, u]) => `${u.name}（點數：${u.points}）`);
-    const text = studentList.length ? studentList.join('\n') : '沒有學員資料';
-    return replyText(replyToken, text, teacherMenu);
+    return replyText(replyToken, '請輸入欲查詢學員的 LINE ID 或名稱', teacherMenu);
+  }
+
+  if (msg.startsWith('@查學員 ')) {
+    const keyword = msg.replace('@查學員 ', '').trim();
+    const results = Object.entries(db)
+      .filter(([uid, u]) => u.name.includes(keyword) || uid === keyword)
+      .map(([uid, u]) => `名稱：${u.name}\nID：${uid}\n點數：${u.points}\n預約紀錄：${u.history.length} 筆`);
+    if (results.length === 0) return replyText(replyToken, '查無學員資料', teacherMenu);
+    return replyText(replyToken, results.join('\n\n'), teacherMenu);
   }
 
   if (msg === '@統計報表') {
-    // 簡單回覆報表，示範用
-    const totalStudents = Object.values(db).filter(u => u.role === 'student').length;
-    const totalCourses = Object.keys(courses).length;
-    return replyText(replyToken, `總學員數：${totalStudents}\n總課程數：${totalCourses}`, teacherMenu);
+    let totalStudents = Object.values(db).filter(u => u.role === 'student').length;
+    let totalTeachers = Object.values(db).filter(u => u.role === 'teacher').length;
+    let totalCourses = Object.keys(courses).length;
+    let totalPoints = Object.values(db).reduce((sum, u) => sum + (u.points || 0), 0);
+
+    let report = `【統計報表】\n學員總數：${totalStudents}\n老師總數：${totalTeachers}\n課程總數：${totalCourses}\n剩餘點數總和：${totalPoints}`;
+    return replyText(replyToken, report, teacherMenu);
   }
 
-  return replyText(replyToken, '請使用選單操作或輸入正確指令', teacherMenu);
+  return replyText(replyToken, '請使用老師選單指令', teacherMenu);
 }
 
-app.get('/', (req, res) => {
-  res.send('九容瑜伽 LINE Bot 運行中');
+app.post('/webhook', (req, res) => {
+  Promise.all(req.body.events.map(handleEvent))
+    .then(() => res.status(200).send('OK'))
+    .catch((err) => {
+      console.error(err);
+      res.status(500).end();
+    });
 });
 
-// 定時備份與自我 ping
+// 簡單首頁
+app.get('/', (req, res) => {
+  res.send('九容瑜伽 LINE Bot 服務中');
+});
+
+// 定時備份與自我 Ping
 setInterval(() => {
   backupData();
-}, 3600000); // 每小時備份一次
+}, 1000 * 60 * 60 * 12); // 每12小時備份一次
 
 setInterval(() => {
-  const url = process.env.SELF_URL;
-  if (!url) return;
-  require('node-fetch')(url).catch(() => {});
-}, 15 * 60 * 1000); // 每15分鐘ping一次
+  const url = process.env.PING_URL;
+  if (url) {
+    require('node-fetch')(url).catch(() => {});
+  }
+}, 1000 * 60 * 5); // 每5分鐘Ping自己避免休眠
 
 app.listen(PORT, () => {
-  console.log(`伺服器啟動，監聽埠號 ${PORT}`);
+  console.log(`⚡️ 九容瑜伽 LINE Bot啟動，埠號：${PORT}`);
 });
