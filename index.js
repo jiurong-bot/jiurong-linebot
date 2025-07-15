@@ -393,18 +393,36 @@ async function handleTeacherCommands(event, userId, db, courses) {
     return replyText(replyToken, '請輸入課程名稱');
   }
 
-  if (msg.startsWith('@取消課程')) {
-    const parts = msg.split(' ');
-    if (parts.length < 2) {
-      return replyText(replyToken, '請輸入欲取消的課程 ID，例如：@取消課程 course_1234567890', teacherMenu);
-    }
-    const courseId = parts[1];
-    if (!courses[courseId]) {
-      return replyText(replyToken, '找不到該課程 ID，請確認輸入正確', teacherMenu);
-    }
-    pendingCourseCancelConfirm[userId] = courseId;
-    return replyText(replyToken, `請確認是否取消課程「${courses[courseId].title}」？\n輸入「是」確認，輸入「否」取消操作。`, teacherMenu);
+  if (msg === '@取消課程') {
+  const upcomingCourses = Object.entries(courses)
+    .filter(([id, c]) => new Date(c.time) > new Date())
+    .map(([id, c]) => ({
+      id,
+      label: `${formatDateTime(c.time)} ${c.title}`,
+    }));
+
+  if (upcomingCourses.length === 0) {
+    return replyText(replyToken, '目前沒有可取消的課程', teacherMenu);
   }
+
+  return replyText(replyToken, '請選擇欲取消的課程：', upcomingCourses.map(c => ({
+    type: 'message',
+    label: c.label.slice(0, 20), // LINE 限制 label 最長 20 字
+    text: `取消課程 ${c.id}`,
+  })));
+}
+
+if (msg.startsWith('取消課程')) {
+  const parts = msg.split(' ');
+  const courseId = parts[1];
+  if (!courses[courseId]) {
+    return replyText(replyToken, '找不到該課程 ID，請確認是否已被刪除', teacherMenu);
+  }
+  pendingCourseCancelConfirm[userId] = courseId;
+  return replyText(replyToken,
+    `請確認是否取消課程「${courses[courseId].title}」？\n輸入「是」確認，輸入「否」取消操作。`,
+    teacherMenu);
+}
 
   // 預留擴充功能...
   return replyText(replyToken, '指令無效，請使用選單', teacherMenu);
