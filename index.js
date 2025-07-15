@@ -3,6 +3,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const line = require('@line/bot-sdk');
+const fetch = require('node-fetch'); // 新增 node-fetch
 require('dotenv').config();
 
 const app = express();
@@ -355,148 +356,143 @@ async function handleTeacherCommands(event, userId, db, courses) {
   const replyToken = event.replyToken;
 
   if (msg === '@今日名單') {
-    const today = new Date().toISOString().slice(0, 10);
-    const todayCourses = Object.entries(courses).filter(([id, c]) => c.time.startsWith(today));
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+
+    const todayCourses = Object.entries(courses).filter(([id, c]) => {
+      const courseTime = new Date(c.time);
+      return courseTime >= todayStart && courseTime < todayEnd;
+    });
 
     if (todayCourses.length === 0) return replyText(replyToken, '今天沒有課程', teacherMenu);
 
     const lines = todayCourses.map(([id, c]) => {
       const studentList = c.students?.map(uid => db[uid]?.name || uid).join(', ') || '無';
-      return `${c.time.slice(5, 16)}｜${c.title}\n學員：${studentList}`;
+      return `${c.time.slice(11, 16)}｜${c.title}\n學員：${studentList}`;
     });
 
-    return replyText(replyToken, lines.join('\n\n'), teacherMenu);
-  }
-
-  if (msg.startsWith('@加點') || msg.startsWith('@扣點')) {
-    const parts = msg.split(' ');
-    if (parts.length !== 3) return replyText(replyToken, '指令格式錯誤，範例：@加點 userId 數量', teacherMenu);
-
-    const action = parts[0].slice(1); // 加點 或 扣點
-    const targetId = parts[1];
-    const amount = parseInt(parts[2]);
-
-    if (!db[targetId]) return replyText(replyToken, '查無該學員資料', teacherMenu);
-    if (isNaN(amount) || amount <= 0) return replyText(replyToken, '請輸入正確點數數字', teacherMenu);
-
-    if (action === '加點') {
-      db[targetId].points = (db[targetId].points || 0) + amount;
-    } else if (action === '扣點') {
-      db[targetId].points = Math.max((db[targetId].points || 0) - amount, 0);
-    }
-
-    writeJSON(DATA_FILE, db);
-    return replyText(replyToken, `✅ 已${action}${amount}點給 ${db[targetId].name}`, teacherMenu);
+    return replyText(replyToken, `📅 今天課程：\n${lines.join('\n\n')}`, teacherMenu);
   }
 
   if (msg === '@新增課程') {
+    // 啟動新增課程多步驟流程
     pendingCourseCreation[userId] = { step: 1, data: {} };
-    return replyText(replyToken, '請輸入課程名稱：');
+    return replyText(replyToken, '請輸入課程名稱');
+  }
+
+  if (msg.startsWith('@加點')) {
+    // 格式：@加點 userId 數量
+    const parts = msg.split(' ');
+    if (parts.length !== 3) {
+      return replyText(replyToken, '格式錯誤，請輸入：@加點 userId 數量', teacherMenu);
+    }
+    const targetId = parts[1];
+    const amount = parseInt(parts[2], 10);
+    if (!db[targetId]) {
+      return replyText(replyToken, '指定學員不存在', teacherMenu);
+    }
+    if (isNaN(amount)) {
+      return replyText(replyToken, '點數數量格式錯誤', teacherMenu);
+    }
+    db[targetId].points = (db[targetId].points || 0) + amount;
+    writeJSON(DATA_FILE, db);
+    return replyText(replyToken, `已為 ${db[targetId].name} ${amount > 0 ? '加' : '扣'}點 ${Math.abs(amount)} 點`, teacherMenu);
   }
 
   if (msg === '@取消課程') {
-    const upcomingCourses = Object.entries(courses)
-      .filter(([id, c]) => new Date(c.time) > new Date())
-      .map(([id, c]) => ({
-        type: 'message',
-        action: {
-          type: 'message',
-        label: `${c.time.slice(5, 16)} ${c.title}`,
-        text: `取消課程 ${id}`,
-      },
-    }));
-
-    if (upcomingCourses.length === 0) return replyText(replyToken, '沒有可取消的課程', teacherMenu);
-
-    return replyText(replyToken, '請選擇要取消的課程：', upcomingCourses);
+    // 老師輸入「@取消課程 課程ID」取消課程並退點（可依需求調整為多步驟）
+    return replyText(replyToken, '取消課程請輸入「@取消課程 課程ID」，範例如「@取消課程 course_123456789」', teacherMenu);
   }
 
-  if (msg.startsWith('取消課程 ')) {
-    const id = msg.replace('取消課程 ', '').trim();
-    const course = courses[id];
-    if (!course) return replyText(replyToken, '查無該課程', teacherMenu);
+  if (msg.startsWith('@取消課程 ')) {
+    const courseId = msg.replace('@取消課程 ', '').trim();
+    const course = courses[courseId];
+    if (!course) return replyText(replyToken, '課程ID不存在', teacherMenu);
 
-    // 退還點數給已預約學員並通知
-    for (const sid of course.students) {
-      if (db[sid]) {
-        db[sid].points = (db[sid].points || 0) + 1;
-        db[sid].history.push({ id, action: '退點', time: new Date().toISOString() });
-        client.pushMessage(sid, {
-          type: 'text',
-          text: `你的課程「${course.title}」已取消並退還1點數`,
-        });
+    // 退還所有學生點數
+    if (course.students && course.students.length > 0) {
+      for (const sid of course.students) {
+        if (db[sid]) {
+          db[sid].points = (db[sid].points || 0) + 1; // 假設每次扣1點
+        }
       }
     }
-
-    delete courses[id];
+    delete courses[courseId];
     writeJSON(COURSE_FILE, courses);
     writeJSON(DATA_FILE, db);
-    return replyText(replyToken, `✅ 課程「${course.title}」已取消並退點`, teacherMenu);
+    return replyText(replyToken, `已取消課程並退還點數：${course.title}`, teacherMenu);
   }
 
   if (msg === '@查學員') {
-    const studentList = Object.entries(db)
-      .filter(([uid, u]) => u.role === 'student')
-      .map(([uid, u]) => `${u.name}（點數：${u.points}）`);
-    const text = studentList.length ? studentList.join('\n') : '沒有學員資料';
+    // 老師可輸入「@查學員 userId」查詢學員資料
+    return replyText(replyToken, '請輸入「@查學員 userId」查詢學員資料', teacherMenu);
+  }
+
+  if (msg.startsWith('@查學員 ')) {
+    const targetId = msg.replace('@查學員 ', '').trim();
+    if (!db[targetId]) {
+      return replyText(replyToken, '學員不存在', teacherMenu);
+    }
+    const user = db[targetId];
+    const text = `學員資料：\n名稱：${user.name}\n點數：${user.points}\n歷史紀錄：\n` +
+      (user.history?.map(h => `${h.time} ${h.action} ${h.id}`).join('\n') || '無');
     return replyText(replyToken, text, teacherMenu);
   }
 
   if (msg === '@統計報表') {
-    const totalStudents = Object.values(db).filter(u => u.role === 'student').length;
-    const totalCourses = Object.keys(courses).length;
-    return replyText(replyToken, `總學員數：${totalStudents}\n總課程數：${totalCourses}`, teacherMenu);
+    // 簡易報表範例：目前學員數與課程數
+    const studentCount = Object.values(db).filter(u => u.role === 'student').length;
+    const teacherCount = Object.values(db).filter(u => u.role === 'teacher').length;
+    const courseCount = Object.keys(courses).length;
+    return replyText(replyToken, `統計報表：\n學員數：${studentCount}\n老師數：${teacherCount}\n課程數：${courseCount}`, teacherMenu);
   }
 
-  return replyText(replyToken, '請使用選單操作或輸入正確指令', teacherMenu);
+  return replyText(replyToken, '指令不明，請使用選單操作', teacherMenu);
 }
 
-// 解析 raw body 用於 LINE webhook 驗證
+// 取得原始 body 用於 webhook 驗證
 app.use('/webhook', express.raw({ type: 'application/json' }));
 
-// LINE webhook 主路由，包含簽章驗證與事件處理
 app.post('/webhook', (req, res) => {
+  const signature = req.headers['x-line-signature'];
+  const body = req.body;
+
+  if (!line.validateSignature(body, config.channelSecret, signature)) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  let events;
   try {
-    const signature = req.headers['x-line-signature'];
-    const body = req.body;
-
-    if (!line.validateSignature(body, config.channelSecret, signature)) {
-      return res.status(401).send('Invalid signature');
-    }
-
-    const parsedBody = JSON.parse(body.toString());
-    const promises = parsedBody.events.map(event => handleEvent(event));
-    Promise.all(promises)
-      .then(() => res.status(200).end())
-      .catch(err => {
-        console.error('❌ 處理事件失敗：', err);
-        res.status(500).end();
-      });
-  } catch (e) {
-    console.error('❌ Webhook 錯誤：', e);
-    res.status(500).send('Webhook error');
+    events = JSON.parse(body.toString()).events;
+  } catch {
+    return res.status(400).send('Bad request');
   }
+
+  Promise.all(events.map(handleEvent))
+    .then(() => res.status(200).send('OK'))
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send('Error');
+    });
 });
 
-// 根路徑簡單測試
+// Keep-alive: 每 10 分鐘 ping 自己一次，防止 Render 關閉
+setInterval(() => {
+  const url = process.env.PING_URL || `http://localhost:${PORT}/`;
+  fetch(url).then(() => {
+    console.log('Pinged self to keep alive');
+  }).catch((e) => {
+    console.error('Ping self failed:', e);
+  });
+}, 600000);
+
+// 基本的 HTTP GET 路由，給外部確認伺服器狀態
 app.get('/', (req, res) => {
-  res.send('九容瑜伽 LINE Bot 運行中');
+  res.send('九容瑜伽 LINE Bot 服務中');
 });
 
-// 每小時備份一次資料
-setInterval(() => {
-  backupData();
-}, 3600 * 1000);
-
-// 每 15 分鐘 ping 自己保持存活（需要自行設定環境變數 SELF_URL）
-setInterval(() => {
-  const url = process.env.SELF_URL;
-  if (url) {
-    require('node-fetch')(url).catch(() => {});
-  }
-}, 15 * 60 * 1000);
-
-// 啟動 Express 伺服器
 app.listen(PORT, () => {
-  console.log(`✅ 九容瑜伽 LINE Bot 已啟動，埠號：${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
