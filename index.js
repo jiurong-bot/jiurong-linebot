@@ -1,4 +1,4 @@
-// index.js - V3.11.2 (修正版)
+// index.js - V3.11.3（新增課程多步驟流程）
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -24,6 +24,7 @@ const config = {
 };
 
 const client = new line.Client(config);
+
 // 讀取 JSON 檔案
 function readJSON(file) {
   try {
@@ -85,6 +86,25 @@ const teacherMenu = [
 // 暫存狀態物件
 const pendingTeacherLogin = {};
 const pendingCourseCreation = {};
+
+// 清理過期課程
+function cleanCourses(courses) {
+  const now = Date.now();
+  for (const id in courses) {
+    const c = courses[id];
+    if (!c.title || !c.time || !c.students || !c.capacity) {
+      delete courses[id];
+      continue;
+    }
+    if (!Array.isArray(c.students)) c.students = [];
+    if (!Array.isArray(c.waiting)) c.waiting = [];
+    if (new Date(c.time).getTime() < now - 86400000) {
+      delete courses[id];
+    }
+  }
+  return courses;
+}
+
 // 處理所有 LINE 事件的主函式
 async function handleEvent(event) {
   if (event.type !== 'message' || !event.message.text) return;
@@ -112,6 +132,103 @@ async function handleEvent(event) {
   }
 
   writeJSON(DATA_FILE, db);
+
+  // 優先判斷新增課程多步驟流程
+  if (pendingCourseCreation[userId]) {
+    const stepData = pendingCourseCreation[userId];
+    const replyToken = event.replyToken;
+    const text = event.message.text.trim();
+
+    switch (stepData.step) {
+      case 1: // 課程名稱
+        stepData.data.title = text;
+        stepData.step = 2;
+        return replyText(replyToken, '請選擇課程日期（星期幾）：', [
+          { type: 'message', label: '星期一', text: '星期一' },
+          { type: 'message', label: '星期二', text: '星期二' },
+          { type: 'message', label: '星期三', text: '星期三' },
+          { type: 'message', label: '星期四', text: '星期四' },
+          { type: 'message', label: '星期五', text: '星期五' },
+          { type: 'message', label: '星期六', text: '星期六' },
+          { type: 'message', label: '星期日', text: '星期日' },
+        ]);
+      case 2: // 課程日期（星期幾）
+        const weekdays = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+        if (!weekdays.includes(text)) {
+          return replyText(replyToken, '請輸入正確的星期（例如：星期一）');
+        }
+        stepData.data.weekday = text;
+        stepData.step = 3;
+        return replyText(replyToken, '請輸入課程時間（24小時制，如 14:30）');
+      case 3: // 課程時間
+        if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
+          return replyText(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
+        }
+        stepData.data.time = text;
+        stepData.step = 4;
+        return replyText(replyToken, '請輸入人員上限（正整數）');
+      case 4: // 人員上限
+        const capacity = parseInt(text);
+        if (isNaN(capacity) || capacity <= 0) {
+          return replyText(replyToken, '容量格式錯誤，請輸入正整數');
+        }
+        stepData.data.capacity = capacity;
+        stepData.step = 5;
+
+        return replyText(replyToken,
+          `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}`,
+          [
+            { type: 'message', label: '是', text: '確認新增課程' },
+            { type: 'message', label: '否', text: '取消新增課程' },
+          ]);
+      case 5: // 確認建立或取消
+        if (text === '確認新增課程') {
+          // 建立課程
+          const today = new Date();
+          const dayOfWeek = today.getDay();
+          const weekdayMap = {
+            '星期日': 0,
+            '星期一': 1,
+            '星期二': 2,
+            '星期三': 3,
+            '星期四': 4,
+            '星期五': 5,
+            '星期六': 6,
+          };
+          const targetDay = weekdayMap[stepData.data.weekday];
+          let dayDiff = targetDay - dayOfWeek;
+          if (dayDiff < 0) dayDiff += 7;
+          const targetDate = new Date(today);
+          targetDate.setDate(today.getDate() + dayDiff);
+          const [hour, min] = stepData.data.time.split(':').map(Number);
+          targetDate.setHours(hour, min, 0, 0);
+
+          const newId = 'course_' + Date.now();
+          courses[newId] = {
+            title: stepData.data.title,
+            time: targetDate.toISOString(),
+            capacity: stepData.data.capacity,
+            students: [],
+            waiting: [],
+          };
+
+          writeJSON(COURSE_FILE, courses);
+          delete pendingCourseCreation[userId];
+
+          return replyText(event.replyToken,
+            `✅ 課程已新增：${stepData.data.title}\n時間：${targetDate.toISOString()}\n容量：${stepData.data.capacity}`,
+            teacherMenu);
+        } else if (text === '取消新增課程') {
+          delete pendingCourseCreation[userId];
+          return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
+        } else {
+          return replyText(event.replyToken, '請點選「是」或「否」確認');
+        }
+      default:
+        delete pendingCourseCreation[userId];
+        return replyText(event.replyToken, '流程異常，已重置', teacherMenu);
+    }
+  }
 
   // 簡易身份判斷：老師預設需輸入密碼才能切換，否則學生身份
   if (event.message.text === '@切換身份') {
@@ -145,23 +262,6 @@ async function handleEvent(event) {
   }
 }
 
-// 清理過期課程
-function cleanCourses(courses) {
-  const now = Date.now();
-  for (const id in courses) {
-    const c = courses[id];
-    if (!c.title || !c.time || !c.students || !c.capacity) {
-      delete courses[id];
-      continue;
-    }
-    if (!Array.isArray(c.students)) c.students = [];
-    if (!Array.isArray(c.waiting)) c.waiting = [];
-    if (new Date(c.time).getTime() < now - 86400000) {
-      delete courses[id];
-    }
-  }
-  return courses;
-}
 // 學員功能指令處理
 async function handleStudentCommands(event, user, db, courses) {
   const msg = event.message.text.trim();
@@ -248,6 +348,7 @@ async function handleStudentCommands(event, user, db, courses) {
 
   return replyText(replyToken, '請使用選單操作或輸入正確指令', studentMenu);
 }
+
 // 老師功能指令處理
 async function handleTeacherCommands(event, userId, db, courses) {
   const msg = event.message.text.trim();
@@ -289,8 +390,8 @@ async function handleTeacherCommands(event, userId, db, courses) {
   }
 
   if (msg === '@新增課程') {
-  pendingCourseCreation[userId] = { step: 1, data: {} };
-  return replyText(replyToken, '請輸入課程名稱：');
+    pendingCourseCreation[userId] = { step: 1, data: {} };
+    return replyText(replyToken, '請輸入課程名稱：');
   }
 
   if (msg === '@取消課程') {
@@ -300,10 +401,10 @@ async function handleTeacherCommands(event, userId, db, courses) {
         type: 'message',
         action: {
           type: 'message',
-          label: `${c.time.slice(5, 16)} ${c.title}`,
-          text: `取消課程 ${id}`,
-        },
-      }));
+        label: `${c.time.slice(5, 16)} ${c.title}`,
+        text: `取消課程 ${id}`,
+      },
+    }));
 
     if (upcomingCourses.length === 0) return replyText(replyToken, '沒有可取消的課程', teacherMenu);
 
@@ -348,7 +449,9 @@ async function handleTeacherCommands(event, userId, db, courses) {
   }
 
   return replyText(replyToken, '請使用選單操作或輸入正確指令', teacherMenu);
-}// 解析 raw body 用於 LINE webhook 驗證
+}
+
+// 解析 raw body 用於 LINE webhook 驗證
 app.use('/webhook', express.raw({ type: 'application/json' }));
 
 // LINE webhook 主路由，包含簽章驗證與事件處理
