@@ -955,6 +955,5 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作'));
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   backupData();
-  // 1 小時備份一次
   setInterval(backupData, 3600000);
 });
