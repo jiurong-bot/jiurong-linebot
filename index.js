@@ -15,6 +15,18 @@ const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/'; 
 
+// === ⬇️ 正確處理時區並組合台北時間 ISO 格式字串 ===
+function formatToTaipeiISO(date) {
+  const taipeiDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  const yyyy = taipeiDate.getFullYear();
+  const MM = String(taipeiDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(taipeiDate.getDate()).padStart(2, '0');
+  const hh = String(taipeiDate.getHours()).padStart(2, '0');
+  const mm = String(taipeiDate.getMinutes()).padStart(2, '0');
+  const ss = '00';
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`;
+}
+
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
@@ -270,6 +282,31 @@ async function handleEvent(event) {
     // 寫入課程資料
     const newId = 'course_' + Date.now();
     const courses = readJSON(COURSE_FILE);
+
+   case 5:
+  if (text === '確認新增課程') {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const todayWeekday = today.getDay();
+    const targetWeekday = weekdays.indexOf(stepData.data.weekday);
+
+    let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
+    if (dayDiff === 0) dayDiff = 7; // 預設新增下一週同一天
+
+    const targetDate = new Date(today);
+    targetDate.setDate(today.getDate() + dayDiff);
+
+    const [hour, minute] = stepData.data.time.split(':').map(Number);
+    targetDate.setHours(hour);
+    targetDate.setMinutes(minute);
+    targetDate.setSeconds(0);
+    targetDate.setMilliseconds(0);
+
+    // ✅ 使用台北時區轉換並組合成 ISO 字串（不再被自動轉 UTC）
+    const taipeiTimeStr = formatToTaipeiISO(targetDate);
+
+    const newId = 'course_' + Date.now();
+    const courses = readJSON(COURSE_FILE);
     courses[newId] = {
       title: stepData.data.title,
       time: taipeiTimeStr,
@@ -277,6 +314,7 @@ async function handleEvent(event) {
       students: [],
       waiting: [],
     };
+
     writeJSON(COURSE_FILE, courses);
     delete pendingCourseCreation[userId];
 
@@ -291,7 +329,7 @@ async function handleEvent(event) {
   } else {
     return replyText(event.replyToken, '請點選「是」或「否」確認');
   }
-
+      
       default:
         delete pendingCourseCreation[userId];
         return replyText(event.replyToken, '流程異常，已重置', teacherMenu);
