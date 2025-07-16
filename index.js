@@ -120,21 +120,24 @@ function cleanCourses(courses) {
 
 // ⏰ 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(dateStr) {
-  const taipeiDate = new Date(); 
+  const date = new Date(dateStr);
+
+  // 調整為台北時區（UTC+8）
+  const taipeiDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
 
   const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
     month: '2-digit',
     day: '2-digit',
-  }).replace(/\//g, '-'); 
+  }).replace(/\//g, '-');
 
   const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-  const weekday = weekdays[taipeiDate.getDay()]; 
+  const weekday = weekdays[taipeiDate.getUTCDay()];
 
   const hhmm = taipeiDate.toLocaleTimeString('zh-TW', {
     hour12: false,
     hour: '2-digit',
     minute: '2-digit',
-  }); 
+  });
 
   return `${mmdd}（${weekday}）${hhmm}`;
 } 
