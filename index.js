@@ -116,23 +116,23 @@ return courses;
 
 // ✅ 將時間字串轉為台灣時區格式：07-16（日）14:30
 function formatDateTime(dateStr) {
-const taipeiDate = new Date(new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  const taipeiDate = new Date(new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
 
-const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
-month: '2-digit',
-day: '2-digit',
-}).replace(///g, '-');
+  const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
+    month: '2-digit',
+    day: '2-digit',
+  }).replace(/\//g, '-');
 
-const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-const weekday = weekdays[taipeiDate.getDay()];
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  const weekday = weekdays[taipeiDate.getDay()];
 
-const hhmm = taipeiDate.toLocaleTimeString('zh-TW', {
-hour12: false,
-hour: '2-digit',
-minute: '2-digit',
-});
+  const hhmm = taipeiDate.toLocaleTimeString('zh-TW', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
-return ${mmdd}（${weekday}）${hhmm};
+  return `${mmdd}（${weekday}）${hhmm}`;
 }
 
 // ==================== 🟩 LINE 事件處理主控（handleEvent） ====================
