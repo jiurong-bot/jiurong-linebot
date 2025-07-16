@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const line = require('@line/bot-sdk');
 require('dotenv').config();
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
