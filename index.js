@@ -340,6 +340,14 @@ async function handleEvent(event) {
     }
   }
 
+// ==================== ✅ 根據身份執行功能 ====================
+  if (db[userId].role === 'teacher') {
+    return handleTeacherCommands(event, userId, db, courses);
+  } else {
+    return handleStudentCommands(event, db[userId], db, courses);
+  }
+}
+  
 async function handleStudentCommands(event, user, db, courses) {
   const msg = event.message.text.trim();
   const userId = event.source.userId;
