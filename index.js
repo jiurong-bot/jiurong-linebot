@@ -17,22 +17,17 @@ const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
 
 // === ⬇️ 正確處理時區並組合台北時間 ISO 格式字串 ===
 function formatToTaipeiISO(date) {
-  // 先取得 UTC 時間（毫秒）
-  const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+  // 將原始 UTC 時間加上 +8 小時
+  const taipeiMs = date.getTime() + 8 * 60 * 60 * 1000;
+  const d = new Date(taipeiMs);
 
-  // 加上台北時差 +8 小時
-  const taipeiOffset = 8 * 60 * 60000;
-  const taipei = new Date(utc + taipeiOffset);
+  const yyyy = d.getUTCFullYear();
+  const MM = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
 
-  // 手動格式化成 ISO 字串
-  const yyyy = taipei.getFullYear();
-  const MM = String(taipei.getMonth() + 1).padStart(2, '0');
-  const dd = String(taipei.getDate()).padStart(2, '0');
-  const hh = String(taipei.getHours()).padStart(2, '0');
-  const mm = String(taipei.getMinutes()).padStart(2, '0');
-  const ss = '00';
-
-  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`;
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:00`;
 }
 
 // 初始化資料檔與資料夾
