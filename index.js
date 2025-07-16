@@ -19,8 +19,16 @@ const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, channelSe
 
 function readJSON(file) { try { const content = fs.readFileSync(file, 'utf8'); return content ? JSON.parse(content) : {}; } catch { return {}; } } function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
-function backupData() { const timestamp = new Date().toISOString().replace(/[:.]/g, '-'); try { fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, data_backup_${timestamp}.json)); fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, courses_backup_${timestamp}.json)); console.log(✅ 資料備份成功：${timestamp}); } catch (err) { console.error('❌ 備份失敗:', err); } }
-
+function backupData() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  try {
+    fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, `data_backup_${timestamp}.json`));
+    fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, `courses_backup_${timestamp}.json`));
+    console.log(`✅ 資料備份成功：${timestamp}`);
+  } catch (err) {
+    console.error('❌ 備份失敗:', err);
+  }
+}
 function formatDateTime(dateStr) { const date = new Date(dateStr); const mmdd = date.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' }).replace(///g, '-'); const weekdays = ['日', '一', '二', '三', '四', '五', '六']; const weekday = weekdays[date.getDay()]; const hhmm = date.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' }); return ${mmdd}（${weekday}）${hhmm}; }
 
 function cleanCourses(courses) { const now = Date.now(); for (const id in courses) { const c = courses[id]; if (!c.title || !c.time || !c.students || !c.capacity) { delete courses[id]; continue; } if (!Array.isArray(c.students)) c.students = []; if (!Array.isArray(c.waiting)) c.waiting = []; if (new Date(c.time).getTime() < now - 86400000) { delete courses[id]; } } return courses; }
