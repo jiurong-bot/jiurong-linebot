@@ -237,7 +237,7 @@ async function handleEvent(event) {
    case 5:
   if (text === '確認新增課程') {
     const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const today = new Date();
     const todayWeekday = today.getDay();
     const targetWeekday = weekdays.indexOf(stepData.data.weekday);
 
