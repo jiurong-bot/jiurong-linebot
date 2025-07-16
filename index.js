@@ -17,16 +17,12 @@ const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
 
 // === ⬇️ 正確處理時區並組合台北時間 ISO 格式字串 ===
 function formatToTaipeiISO(date) {
-  const taipeiMs = date.getTime() + 8 * 60 * 60 * 1000;
-  const d = new Date(taipeiMs);
-
-  const yyyy = d.getUTCFullYear();
-  const MM = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-
-  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:00`;
+  const yyyy = date.getFullYear();
+  const MM = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:00`;
 }
 
 // 初始化資料檔與資料夾
@@ -120,27 +116,24 @@ function cleanCourses(courses) {
 
 // ⏰ 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(dateStr) {
-  const date = new Date(dateStr);
+  const date = new Date(dateStr);
 
-  // 調整為台北時區（UTC+8）
-  const taipeiDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  const mmdd = date.toLocaleDateString('zh-TW', {
+    month: '2-digit',
+    day: '2-digit',
+  }).replace(/\//g, '-');
 
-  const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
-    month: '2-digit',
-    day: '2-digit',
-  }).replace(/\//g, '-');
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  const weekday = weekdays[date.getDay()];
 
-  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-  const weekday = weekdays[taipeiDate.getUTCDay()];
+  const hhmm = date.toLocaleTimeString('zh-TW', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
-  const hhmm = taipeiDate.toLocaleTimeString('zh-TW', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-  return `${mmdd}（${weekday}）${hhmm}`;
-} 
+  return `${mmdd}（${weekday}）${hhmm}`;
+}
 
 // 🎯 主事件處理
 async function handleEvent(event) {
