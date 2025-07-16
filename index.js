@@ -17,17 +17,16 @@ const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
 
 // === ⬇️ 正確處理時區並組合台北時間 ISO 格式字串 ===
 function formatToTaipeiISO(date) {
-  // 將原始 UTC 時間加上 +8 小時
-  const taipeiMs = date.getTime() + 8 * 60 * 60 * 1000;
-  const d = new Date(taipeiMs);
+  const taipeiMs = date.getTime() + 8 * 60 * 60 * 1000;
+  const d = new Date(taipeiMs);
 
-  const yyyy = d.getUTCFullYear();
-  const MM = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  const MM = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
 
-  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:00`;
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:00`;
 }
 
 // 初始化資料檔與資料夾
@@ -256,7 +255,7 @@ async function handleEvent(event) {
 
     // ✅ 使用台北時區轉換並組合成 ISO 字串（不再被自動轉 UTC）
     const taipeiTimeStr = formatToTaipeiISO(targetDate);
-
+    console.log('📌 儲存課程時間:', taipeiTimeStr);
     const newId = 'course_' + Date.now();
     const courses = readJSON(COURSE_FILE);
     courses[newId] = {
