@@ -46,14 +46,14 @@ fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
 // ✅ 備份目前資料檔（附加時間戳）
 function backupData() {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  try {
-    fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, `data_backup_${timestamp}.json`));
-    fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, `courses_backup_${timestamp}.json`));
-    console.log(`✅ 資料備份成功：${timestamp}`);
-  } catch (err) {
-    console.error('備份失敗:', err);
-  }
+const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+try {
+fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, data_backup_${timestamp}.json));
+fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, courses_backup_${timestamp}.json));
+console.log(✅ 資料備份成功：${timestamp});
+} catch (err) {
+console.error('備份失敗:', err);
+}
 }
 
 // ✅ 傳送文字訊息（可含快速選單）
