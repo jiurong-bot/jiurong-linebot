@@ -188,7 +188,7 @@ async function handleEvent(event) {
         ]);
 
       case 2:
-        const weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
         if (!weekdays.includes(text)) {
           return replyText(replyToken, '請輸入正確的星期（例如：星期一）');
         }
