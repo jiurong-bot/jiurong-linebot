@@ -124,33 +124,26 @@ function formatDateTime(dateStr) {
 }
 
 async function handleEvent(event) {
-  // ✅ 加入 postback 處理在這裡（放在最上方）
-  if (event.type === 'postback' && event.postback.data.startsWith('cancel_course_')) {
-    const courseId = event.postback.data.replace('cancel_course_', '');
-    const db = readJSON(DATA_FILE);
-    const courses = cleanCourses(readJSON(COURSE_FILE));
-    const userId = event.source.userId;
+ if (event.type === 'postback' && event.postback.data.startsWith('cancel_course_')) {
+  const courseId = event.postback.data.replace('cancel_course_', '');
+  const courses = cleanCourses(readJSON(COURSE_FILE));
+  const userId = event.source.userId;
 
-    if (!courses[courseId]) {
-      return replyText(event.replyToken, '找不到該課程，取消失敗', teacherMenu);
-    }
-
-    const course = courses[courseId];
-    course.students.forEach(stuId => {
-      if (db[stuId]) {
-        db[stuId].points++;
-        db[stuId].history.push({ id: courseId, action: '課程取消退點', time: new Date().toISOString() });
-      }
-    });
-
-    delete courses[courseId];
-    writeJSON(COURSE_FILE, courses);
-    writeJSON(DATA_FILE, db);
-
-    return replyText(event.replyToken, `✅ 課程「${course.title}」已取消，所有學生點數已退還。`, teacherMenu);
+  if (!courses[courseId]) {
+    return replyText(event.replyToken, '找不到該課程，可能已被取消', teacherMenu);
   }
 
-  // 原本這行往下放就好
+  pendingCourseCancelConfirm[userId] = courseId;
+
+  return replyText(event.replyToken,
+    `⚠️ 確認要取消課程「${courses[courseId].title}」嗎？\n一旦取消將退還所有學生點數。`,
+    [
+      { type: 'message', label: '✅ 是', text: '✅ 是' },
+      { type: 'message', label: '❌ 否', text: '❌ 否' },
+    ]);
+ }
+
+  
   if (event.type !== 'message' || !event.message.text) return;
 
   const db = readJSON(DATA_FILE);
