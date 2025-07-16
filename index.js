@@ -104,23 +104,24 @@ function cleanCourses(courses) {
 }
 
 function formatDateTime(dateStr) {
-  const date = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
+  const taipeiDate = new Date(new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
 
-  const mmdd = date.toLocaleDateString('zh-TW', {
-    timeZone: 'Asia/Taipei',
+  const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
     month: '2-digit',
     day: '2-digit',
   }).replace(/\//g, '-');
 
   const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-  const weekday = weekdays[date.getDay()];
+  const weekday = weekdays[taipeiDate.getDay()];
 
-  const hhmm = date.toLocaleTimeString('zh-TW', {
-    timeZone: 'Asia/Taipei',
+  const hhmm = taipeiDate.toLocaleTimeString('zh-TW', {
     hour12: false,
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  return `${mmdd}（${weekday}）${hhmm}`;
+}
 
   return `${mmdd}（${weekday}）${hhmm}`;
 }
