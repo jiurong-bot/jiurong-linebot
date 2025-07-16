@@ -237,10 +237,8 @@ async function handleEvent(event) {
     targetDate.setHours(hour, min, 0, 0);
 
     function toTaipeiISO(date) {
-      const utc = date.getTime() + date.getTimezoneOffset() * 60000;
-      const taipeiOffset = 8 * 60 * 60000;
-      const taipeiDate = new Date(utc + taipeiOffset);
-      return taipeiDate.toISOString().slice(0, 19);
+    const taipeiDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    return taipeiDate.toISOString().slice(0, 19);
     }
 
     const taipeiTimeStr = toTaipeiISO(targetDate);
