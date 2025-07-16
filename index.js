@@ -83,8 +83,7 @@ const teacherMenu = [
   { type: 'message', label: '課程名單', text: '@課程名單' },
   { type: 'message', label: '新增課程', text: '@新增課程' },
   { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '➕️加點', text: '➕️加點' },
-  { type: 'message', label: '➖️減點', text: '➖️減點' },
+  { type: 'message', label: '加/減點', text: '@加減點' },  // ✅ 新增這一項
   { type: 'message', label: '查學員', text: '@查學員' },
   { type: 'message', label: '報表', text: '@統計報表' },
   { type: 'message', label: '切換身份', text: '@切換身份' },
@@ -622,6 +621,13 @@ if (pendingPointAdjust[userId]) {
       { type: 'message', label: '❌ 否', text: '❌ 取消操作' },
     ]);
   }
+
+// ==================== 🔷 加/減點：選擇操作類型 ====================
+if (msg === '@加減點') {
+  return replyText(replyToken, '請選擇操作項目：', [
+    { type: 'message', label: '➕️加點', text: '➕️加點' },
+    { type: 'message', label: '➖️減點', text: '➖️減點' },
+  ]);
 }
   
   // ==================== 🔷 fallback（未實作指令） ====================
