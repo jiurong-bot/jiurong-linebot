@@ -48,9 +48,9 @@ fs.writeFileSync(file, JSON.stringify(data, null, 2));
 function backupData() {
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 try {
-fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, data_backup_${timestamp}.json));
-fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, courses_backup_${timestamp}.json));
-console.log(✅ 資料備份成功：${timestamp});
+fs.copyFileSync(DATA_FILE, path.join(`BACKUP_DIR, data_backup_${timestamp}.json`));
+fs.copyFileSync(COURSE_FILE, path.join(`BACKUP_DIR, courses_backup_${timestamp}.json`));
+console.log(`✅ 資料備份成功：${timestamp}`);
 } catch (err) {
 console.error('備份失敗:', err);
 }
