@@ -672,6 +672,9 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 // ==================== ❤️ 健康檢查路由 ====================
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
+// ✅ 補上 fetch（避免 Render 無定義）
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
 // ==================== 🚀 啟動伺服器與 keep-alive ping ====================
 app.listen(PORT, () => {
   console.log(`✅ Server running at port ${PORT}`);
