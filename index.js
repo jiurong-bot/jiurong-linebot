@@ -93,6 +93,7 @@ const teacherMenu = [
 const pendingTeacherLogin = {};          // 老師登入中使用者
 const pendingCourseCreation = {};        // 老師新增課程中使用者
 const pendingCourseCancelConfirm = {};   // 老師取消課程確認中使用者
+const pendingPointAdjust = {}; // 加點/扣點流程暫存
 
 // ==================== 🟩 課程清理與格式化工具 ====================
 
@@ -516,6 +517,112 @@ async function handleTeacherCommands(event, userId, db, courses) {
       ]);
   }
 
+// ==================== 🔷 加點 / 扣點：起始指令 ====================
+if (msg === '@加點' || msg === '@扣點') {
+  const targetAction = msg === '@加點' ? 'add' : 'deduct';
+  const students = Object.entries(db).filter(([uid, u]) => u.role === 'student');
+
+  if (students.length === 0) {
+    return replyText(replyToken, '目前沒有任何學員帳號', teacherMenu);
+  }
+
+  pendingPointAdjust[userId] = { step: 1, action: targetAction };
+
+  return replyText(replyToken, '請選擇學員：', students.map(([uid, u]) => ({
+    type: 'action',
+    action: {
+      type: 'message',
+      label: `${u.name || uid}（${u.points} 點）`.slice(0, 20),
+      text: `🔹 ${uid}`,
+    }
+  })));
+}
+
+// ==================== 🔷 加點 / 扣點：多步驟處理 ====================
+if (pendingPointAdjust[userId]) {
+  const step = pendingPointAdjust[userId];
+
+  // 選擇學員 ID
+  if (step.step === 1 && msg.startsWith('🔹')) {
+    const targetId = msg.replace('🔹', '').trim();
+    if (!db[targetId]) {
+      delete pendingPointAdjust[userId];
+      return replyText(replyToken, '找不到該學員，操作中止', teacherMenu);
+    }
+
+    step.targetId = targetId;
+    step.step = 2;
+
+    return replyText(replyToken, `請選擇要${step.action === 'add' ? '加' : '扣'}幾點：`, [1, 2, 3, 4, 5].map(n => ({
+      type: 'action',
+      action: {
+        type: 'message',
+        label: `${n} 點`,
+        text: `🔸 ${n}`,
+      }
+    })));
+  }
+
+  // 選擇加／扣 點數數量
+  if (step.step === 2 && msg.startsWith('🔸')) {
+    const amount = parseInt(msg.replace('🔸', '').trim());
+    if (isNaN(amount) || amount <= 0) {
+      delete pendingPointAdjust[userId];
+      return replyText(replyToken, '點數格式錯誤，操作中止', teacherMenu);
+    }
+
+    step.amount = amount;
+    step.step = 3;
+    const targetName = db[step.targetId]?.name || step.targetId;
+
+    return replyText(replyToken,
+      `⚠️ 確認要${step.action === 'add' ? '加' : '扣'}點嗎？\n\n👤 對象：${targetName}\n🔢 點數：${amount}`,
+      [
+        { type: 'message', label: '✅ 是', text: '✅ 確認加扣點' },
+        { type: 'message', label: '❌ 否', text: '❌ 取消操作' },
+      ]);
+  }
+
+  // 最後確認執行
+  if (step.step === 3) {
+    if (msg === '✅ 確認加扣點') {
+      const target = db[step.targetId];
+      if (!target) {
+        delete pendingPointAdjust[userId];
+        return replyText(replyToken, '找不到該學員，操作失敗', teacherMenu);
+      }
+
+      if (step.action === 'deduct' && target.points < step.amount) {
+        delete pendingPointAdjust[userId];
+        return replyText(replyToken, '❌ 學員點數不足，無法扣點', teacherMenu);
+      }
+
+      if (step.action === 'add') {
+        target.points += step.amount;
+        target.history.push({ action: `老師加點 +${step.amount}`, time: new Date().toISOString() });
+      } else {
+        target.points -= step.amount;
+        target.history.push({ action: `老師扣點 -${step.amount}`, time: new Date().toISOString() });
+      }
+
+      writeJSON(DATA_FILE, db);
+      delete pendingPointAdjust[userId];
+
+      return replyText(replyToken, `✅ 點數已更新，${target.name} 目前 ${target.points} 點`, teacherMenu);
+    }
+
+    if (msg === '❌ 取消操作') {
+      delete pendingPointAdjust[userId];
+      return replyText(replyToken, '已取消操作', teacherMenu);
+    }
+
+    return replyText(replyToken, '請選擇 ✅ 或 ❌ 進行確認', [
+      { type: 'message', label: '✅ 是', text: '✅ 確認加扣點' },
+      { type: 'message', label: '❌ 否', text: '❌ 取消操作' },
+    ]);
+  }
+}
+  
   // ==================== 🔷 fallback（未實作指令） ====================
   return replyText(replyToken, '指令無效，請使用選單', teacherMenu);
 }
