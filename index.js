@@ -415,7 +415,11 @@ async function handleStudentCommands(event, user, db, courses) {
     return replyText(event.replyToken, `請點擊連結購買點數：\n${PURCHASE_FORM_URL}`, studentMenu);
   }
 
-  return replyText(event.replyToken, '指令無效，請使用選單', studentMenu);
+  if (!user.name || user.name === '') {
+  return replyText(event.replyToken, '👋 歡迎使用九容瑜伽 LINE！請從下方選單開始操作～', studentMenu);
+} else {
+  return replyText(event.replyToken, '❓ 無法辨識的指令，請使用下方選單操作。', studentMenu);
+  }
 }
 
 async function handleTeacherCommands(event, userId, db, courses) {
@@ -488,7 +492,30 @@ if (msg.startsWith('取消課程')) {
 // LINE Webhook 路由
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise
-    .all(req.body.events.map(handleEvent))
+    .all(req.body.events.map(async (event) => {
+      const db = readJSON(DATA_FILE);
+      const userId = event.source?.userId;
+
+      // 處理使用者加入好友時
+      if (event.type === 'follow' && userId) {
+        if (!db[userId]) {
+          db[userId] = { name: '', points: 0, role: 'student', history: [] };
+          writeJSON(DATA_FILE, db);
+        }
+
+        await client.replyMessage(event.replyToken, {
+          type: 'text',
+          text: '👋 歡迎加入九容瑜伽！\n請使用下方選單開始操作～',
+          quickReply: {
+            items: studentMenu.map(i => ({ type: 'action', action: i })),
+          },
+        });
+        return;
+      }
+
+      // 處理一般訊息或 postback
+      return handleEvent(event);
+    }))
     .then(() => res.status(200).send('OK'))
     .catch((err) => {
       console.error(err);
