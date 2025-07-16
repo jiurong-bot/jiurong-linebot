@@ -1,4 +1,5 @@
-// index.js - V3.12.2（修正課程時間與星期錯誤，語法完整可部署版）
+// index.js - V3.12.3（修正新增課程時間與星期顯示）
+
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -62,25 +63,6 @@ function replyText(token, text, menu = null) {
   return client.replyMessage(token, msg);
 }
 
-// 📋 快速選單
-const studentMenu = [
-  { type: 'message', label: '預約課程', text: '@預約課程' },
-  { type: 'message', label: '我的課程', text: '@我的課程' },
-  { type: 'message', label: '點數查詢', text: '@點數' },
-  { type: 'message', label: '購買點數', text: '@購點' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-];
-
-const teacherMenu = [
-  { type: 'message', label: '課程名單', text: '@課程名單' },
-  { type: 'message', label: '新增課程', text: '@新增課程' },
-  { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '加點/扣點', text: '@加點 userId 數量' },
-  { type: 'message', label: '查學員', text: '@查學員' },
-  { type: 'message', label: '報表', text: '@統計報表' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-];
-
 // 📌 暫存狀態
 const pendingTeacherLogin = {};
 const pendingCourseCreation = {};
@@ -104,9 +86,12 @@ function cleanCourses(courses) {
   return courses;
 }
 
-// ⏰ 課程時間格式化（轉台北時間並顯示）
+// 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(dateStr) {
-  const taipeiDate = new Date(new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  const dt = new Date(dateStr);
+  const taipeiDate = new Date(
+    dt.toLocaleString('en-US', { timeZone: 'Asia/Taipei' })
+  );
 
   const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
     month: '2-digit',
@@ -123,6 +108,26 @@ function formatDateTime(dateStr) {
   });
 
   return `${mmdd}（${weekday}）${hhmm}`;
+}
+
+// 取得指定星期幾的下一個日期 (台北時間)
+function getNextWeekdayDate(targetWeekdayStr) {
+  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  const targetWeekday = weekdays.indexOf(targetWeekdayStr);
+  if (targetWeekday === -1) return null;
+
+  const nowTaipei = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' })
+  );
+  const todayWeekday = nowTaipei.getDay();
+
+  let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
+  if (dayDiff === 0) dayDiff = 7;
+
+  const targetDate = new Date(nowTaipei);
+  targetDate.setDate(nowTaipei.getDate() + dayDiff);
+
+  return targetDate;
 }
 
 // 🎯 主事件處理
@@ -188,7 +193,7 @@ async function handleEvent(event) {
         ]);
 
       case 2:
-        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        const weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
         if (!weekdays.includes(text)) {
           return replyText(replyToken, '請輸入正確的星期（例如：星期一）');
         }
@@ -220,30 +225,23 @@ async function handleEvent(event) {
           ]
         );
 
-    case 5:
+      case 5:
         if (text === '確認新增課程') {
-          const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-          const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-          const todayWeekday = today.getDay();
-          const targetWeekday = weekdays.indexOf(stepData.data.weekday);
-
-          let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
-          if (dayDiff === 0) dayDiff = 7;
-
-          const targetDate = new Date(today);
-          targetDate.setDate(today.getDate() + dayDiff);
+          // 使用 getNextWeekdayDate 取得下一個對應星期日期
+          const targetDate = getNextWeekdayDate(stepData.data.weekday);
+          if (!targetDate) {
+            delete pendingCourseCreation[userId];
+            return replyText(replyToken, '星期格式錯誤，流程中止', teacherMenu);
+          }
 
           const [hour, min] = stepData.data.time.split(':').map(Number);
           targetDate.setHours(hour, min, 0, 0);
 
-          const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
-            timeZone: 'Asia/Taipei',
-            hour12: false,
-          }).replace(' ', 'T');
+          const taipeiTimeStr = targetDate.toISOString();
 
           const newId = 'course_' + Date.now();
-          const courses = readJSON(COURSE_FILE);
-          courses[newId] = {
+          const coursesData = readJSON(COURSE_FILE);
+          coursesData[newId] = {
             title: stepData.data.title,
             time: taipeiTimeStr,
             capacity: stepData.data.capacity,
@@ -251,7 +249,7 @@ async function handleEvent(event) {
             waiting: [],
           };
 
-          writeJSON(COURSE_FILE, courses);
+          writeJSON(COURSE_FILE, coursesData);
           delete pendingCourseCreation[userId];
 
           return replyText(
@@ -272,7 +270,10 @@ async function handleEvent(event) {
     }
   }
 
-  // ✅ 課程取消確認流程
+  // (此處後續還有其他事件處理，下一段會繼續)
+}
+
+// ✅ 課程取消確認流程
   if (pendingCourseCancelConfirm[userId]) {
     const courseId = pendingCourseCancelConfirm[userId];
     const replyToken = event.replyToken;
@@ -339,12 +340,33 @@ async function handleEvent(event) {
     }
   }
 
-// 🔀 根據身份導向
+  // 🔀 根據身份導向
   if (db[userId].role === 'teacher') {
     return handleTeacherCommands(event, userId, db, courses);
   } else {
     return handleStudentCommands(event, db[userId], db, courses);
   }
+}
+
+// 🔧 取得下次指定星期的日期（確保時間準確）
+function getNextWeekdayDate(weekdayName, timeStr) {
+  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  const todayDay = today.getDay();
+  const targetDay = weekdays.indexOf(weekdayName);
+
+  if (targetDay === -1) return null;
+
+  let dayDiff = (targetDay - todayDay + 7) % 7;
+  if (dayDiff === 0) dayDiff = 7;
+
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + dayDiff);
+
+  const [hour, min] = timeStr.split(':').map(Number);
+  targetDate.setHours(hour, min, 0, 0);
+
+  return new Date(targetDate.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
 }
 
 // ====================== 👩‍🎓 學員功能處理 ===========================
@@ -408,7 +430,7 @@ async function handleStudentCommands(event, user, db, courses) {
     }
   }
 
-  // ❌ 取消候補
+// ❌ 取消候補
   if (msg === '@取消候補') {
     let count = 0;
     for (const id in courses) {
@@ -422,7 +444,7 @@ async function handleStudentCommands(event, user, db, courses) {
     return replyText(replyToken, `✅ 已取消 ${count} 個候補課程`, studentMenu);
   }
 
-// 📖 查詢我的課程
+  // 📖 查詢我的課程
   if (msg === '@我的課程') {
     const now = Date.now();
     const enrolled = Object.entries(courses).filter(([id, c]) => {
@@ -509,7 +531,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
     });
   }
 
-// 🧾 手動輸入取消課程 ID
+  // 🧾 手動輸入取消課程 ID
   if (msg.startsWith('取消課程')) {
     const parts = msg.split(' ');
     const courseId = parts[1];
@@ -526,7 +548,59 @@ async function handleTeacherCommands(event, userId, db, courses) {
       ]);
   }
 
-  // 預留擴充功能...
+// ➕ 手動加點 / 扣點
+  if (msg.startsWith('@加點') || msg.startsWith('@扣點')) {
+    const parts = msg.split(' ');
+    if (parts.length < 3) {
+      return replyText(replyToken, '格式錯誤，請輸入：@加點 userId 數量', teacherMenu);
+    }
+
+    const [, targetId, amountStr] = parts;
+    const amount = parseInt(amountStr);
+    if (isNaN(amount)) {
+      return replyText(replyToken, '數量格式錯誤', teacherMenu);
+    }
+
+    const dbUser = db[targetId];
+    if (!dbUser) {
+      return replyText(replyToken, '找不到該學員 ID', teacherMenu);
+    }
+
+    const isAdd = msg.startsWith('@加點');
+    dbUser.points += isAdd ? amount : -amount;
+    if (dbUser.points < 0) dbUser.points = 0;
+
+    dbUser.history.push({
+      id: targetId,
+      action: isAdd ? `老師加點 ${amount}` : `老師扣點 ${amount}`,
+      time: new Date().toISOString(),
+    });
+
+    writeJSON(DATA_FILE, db);
+    return replyText(replyToken, `${isAdd ? '✅ 已加點' : '✅ 已扣點'}：${dbUser.name} 目前點數 ${dbUser.points}`, teacherMenu);
+  }
+
+  // 🔍 查學員資訊
+  if (msg === '@查學員') {
+    const list = Object.entries(db).map(([id, u]) =>
+      `${u.name} (${id})\n點數：${u.points}｜身份：${u.role}`).join('\n\n');
+
+    return replyText(replyToken, `📖 所有學員資料：\n\n${list}`, teacherMenu);
+  }
+
+  // 📊 匯出統計報表
+  if (msg === '@統計報表') {
+    const courseList = Object.entries(courses)
+      .sort((a, b) => new Date(a[1].time) - new Date(b[1].time))
+      .map(([id, c]) => {
+        const date = formatDateTime(c.time);
+        return `${date}｜${c.title}｜${c.students.length}人`;
+      });
+
+    return replyText(replyToken, `📊 課程統計報表：\n\n${courseList.join('\n')}`, teacherMenu);
+  }
+
+  // 📌 預留擴充
   return replyText(replyToken, '指令無效，請使用選單', teacherMenu);
 }
 
