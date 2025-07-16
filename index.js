@@ -250,8 +250,7 @@ async function handleEvent(event) {
   return replyText(event.replyToken,
     `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoString)}\n人數上限：${stepData.data.capacity}`,
     teacherMenu
-  );
-        }
+    );
   }
 
 // 課程取消確認
