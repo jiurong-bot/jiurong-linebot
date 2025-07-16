@@ -120,7 +120,7 @@ function cleanCourses(courses) {
 
 // ⏰ 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(dateStr) {
-  const taipeiDate = new Date(new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' })); 
+  const taipeiDate = new Date(); 
 
   const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
     month: '2-digit',
