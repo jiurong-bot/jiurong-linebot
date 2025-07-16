@@ -222,27 +222,52 @@ async function handleEvent(event) {
 
  case 5:
   if (text === '確認新增課程') {
+    // 星期對照表（星期日=0, 星期一=1...）
     const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-    const todayWeekday = today.getDay();
+
+    // 今天 (台北時間)
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+
+    // 今天星期幾(0-6)
+    const todayWeekday = now.getDay();
+
+    // 目標星期幾 index
     const targetWeekday = weekdays.indexOf(stepData.data.weekday);
 
+    // 計算距離目標日期的天數差
     let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
-    if (dayDiff === 0) dayDiff = 7;
+    if (dayDiff === 0) dayDiff = 7; // 預設至少是下一週同一天
 
-    const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() + dayDiff);
+    // 目標日期（先用台北時間）
+    const targetDate = new Date(now);
+    targetDate.setDate(now.getDate() + dayDiff);
 
-    const [hour, min] = stepData.data.time.split(':').map(Number);
-    targetDate.setHours(hour, min, 0, 0);
+    // 取得時分
+    const [hour, minute] = stepData.data.time.split(':').map(Number);
 
-    function toTaipeiISO(date) {
-    const taipeiDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-    return taipeiDate.toISOString().slice(0, 19);
+    // 把時分設定到目標日期(先用台北時間設定)
+    targetDate.setHours(hour);
+    targetDate.setMinutes(minute);
+    targetDate.setSeconds(0);
+    targetDate.setMilliseconds(0);
+
+    // **以下改用純字串拼接 ISO，不靠 toLocaleString**
+
+    // 取年月日時分秒(台北時間)
+    function pad(n) {
+      return n < 10 ? '0' + n : n;
     }
+    const yyyy = targetDate.getFullYear();
+    const MM = pad(targetDate.getMonth() + 1);
+    const dd = pad(targetDate.getDate());
+    const hh = pad(targetDate.getHours());
+    const mm = pad(targetDate.getMinutes());
+    const ss = pad(targetDate.getSeconds());
 
-    const taipeiTimeStr = toTaipeiISO(targetDate);
+    // 拼成 ISO 格式(本地時間，不轉換)
+    const taipeiTimeStr = `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`;
 
+    // 寫入課程資料
     const newId = 'course_' + Date.now();
     const courses = readJSON(COURSE_FILE);
     courses[newId] = {
@@ -252,7 +277,6 @@ async function handleEvent(event) {
       students: [],
       waiting: [],
     };
-
     writeJSON(COURSE_FILE, courses);
     delete pendingCourseCreation[userId];
 
