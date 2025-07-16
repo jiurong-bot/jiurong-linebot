@@ -123,9 +123,6 @@ function formatDateTime(dateStr) {
   return `${mmdd}（${weekday}）${hhmm}`;
 }
 
-  return `${mmdd}（${weekday}）${hhmm}`;
-}
-
 async function handleEvent(event) {
   // ✅ 加入 postback 處理在這裡（放在最上方）
   if (event.type === 'postback' && event.postback.data.startsWith('cancel_course_')) {
