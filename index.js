@@ -215,48 +215,43 @@ async function handleEvent(event) {
 
       case 5:
         if (text === '確認新增課程') {
-          const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-          const today = new Date();
-          const todayWeekday = today.getDay();
-          const targetWeekday = weekdays.indexOf(stepData.data.weekday);
-          let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
-          if (dayDiff === 0) dayDiff = 7;
+  const weekdays = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
 
-          const targetDate = new Date(today);
-          targetDate.setDate(today.getDate() + dayDiff);
-          const [hour, min] = stepData.data.time.split(':').map(Number);
-          targetDate.setHours(hour, min, 0, 0);
+  // ✅ 使用台北時間當下
+  const nowTaipei = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  const todayWeekday = nowTaipei.getDay();
+  const targetWeekday = weekdays.indexOf(stepData.data.weekday);
 
-          const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
-            timeZone: 'Asia/Taipei',
-            hour12: false,
-          });
+  let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
+  if (dayDiff === 0) dayDiff = 7;
 
-          const newId = 'course_' + Date.now();
-          courses[newId] = {
-            title: stepData.data.title,
-            time: taipeiTimeStr,
-            capacity: stepData.data.capacity,
-            students: [],
-            waiting: [],
-          };
+  // ✅ 建立課程當日的台北時間日期
+  const targetDate = new Date(nowTaipei);
+  targetDate.setDate(nowTaipei.getDate() + dayDiff);
 
-          writeJSON(COURSE_FILE, courses);
-          delete pendingCourseCreation[userId];
-          return replyText(event.replyToken,
-            `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
-            teacherMenu);
-        } else if (text === '取消新增課程') {
-          delete pendingCourseCreation[userId];
-          return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
-        } else {
-          return replyText(event.replyToken, '請點選「是」或「否」確認');
+  const [hour, min] = stepData.data.time.split(':').map(Number);
+  targetDate.setHours(hour, min, 0, 0);
+
+  // ✅ 轉為 UTC ISO 格式儲存（但顯示時會再轉回台北）
+  const isoString = targetDate.toISOString();
+
+  const newId = 'course_' + Date.now();
+  courses[newId] = {
+    title: stepData.data.title,
+    time: isoString,
+    capacity: stepData.data.capacity,
+    students: [],
+    waiting: [],
+  };
+
+  writeJSON(COURSE_FILE, courses);
+  delete pendingCourseCreation[userId];
+
+  return replyText(event.replyToken,
+    `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoString)}\n人數上限：${stepData.data.capacity}`,
+    teacherMenu
+  );
         }
-
-      default:
-        delete pendingCourseCreation[userId];
-        return replyText(event.replyToken, '流程異常，已重置', teacherMenu);
-    }
   }
 
 // 課程取消確認
