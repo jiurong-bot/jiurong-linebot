@@ -1,25 +1,28 @@
-// index.js - V3.13.1（整合課程取消、退點、候補轉正、廣播與提醒功能）
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const line = require('@line/bot-sdk');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SELF_URL = process.env.SELF_URL || ''; // 你的服務網址，用於 keep-alive
 
 const DATA_FILE = './data.json';
 const COURSE_FILE = './courses.json';
 const BACKUP_DIR = './backup';
-const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '8888';
-const ADMIN_USER_IDS = ['你的LINE_USER_ID']; // 管理者推播用
 
+const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '8888';
+const ADMIN_USER_IDS = ['你的LINE_USER_ID']; // 管理者推播用，請替換
+
+// 建立備份資料夾
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
 
 function backupData() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, `data_backup_${timestamp}.json`));
-  fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, `courses_backup_${timestamp}.json`));
+  if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, `data_backup_${timestamp}.json`));
+  if (fs.existsSync(COURSE_FILE)) fs.copyFileSync(COURSE_FILE, path.join(BACKUP_DIR, `courses_backup_${timestamp}.json`));
 }
 
 function loadData() {
@@ -34,6 +37,25 @@ function loadData() {
 function saveData(users, courses) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2));
   fs.writeFileSync(COURSE_FILE, JSON.stringify(courses, null, 2));
+  backupData();
+}
+
+// 清理過期課程（過期一天自動刪除）
+function cleanCourses(courses) {
+  const now = Date.now();
+  for (const id in courses) {
+    const c = courses[id];
+    if (!c.title || !c.time || !c.students || !c.capacity) {
+      delete courses[id];
+      continue;
+    }
+    if (!Array.isArray(c.students)) c.students = [];
+    if (!Array.isArray(c.waiting)) c.waiting = [];
+    if (new Date(c.time).getTime() < now - 86400000) {
+      delete courses[id];
+    }
+  }
+  return courses;
 }
 
 const config = {
@@ -46,15 +68,12 @@ app.use(express.json());
 
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運行中'));
 
-app.post('/webhook', line.middleware(config), (req, res) => {
-  Promise.all(req.body.events.map(handleEvent)).then(() => res.end());
-});
+// 身份切換、老師登入狀態暫存
+const pendingTeacherLogin = {};
+const pendingCourseCreation = {};
+const pendingCourseCancelConfirm = {};
 
-function replyToken(event, msg) {
-  return client.replyMessage(event.replyToken, { type: 'text', text: msg });
-}
-
-// 格式化台北時間 ISO 字串
+// 格式化時間函數
 function formatToTaipeiISO(date) {
   const yyyy = date.getFullYear();
   const MM = String(date.getMonth() + 1).padStart(2, '0');
@@ -64,7 +83,6 @@ function formatToTaipeiISO(date) {
   return `${yyyy}-${MM}-${dd}T${hh}:${mm}:00`;
 }
 
-// 格式化顯示課程時間（mm-dd 星期 hh:mm）
 function formatDateTime(dateStr) {
   const date = new Date(dateStr);
   const mmdd = date.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
@@ -72,24 +90,6 @@ function formatDateTime(dateStr) {
   const weekday = weekdays[date.getDay()];
   const hhmm = date.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
   return `${mmdd}（${weekday}）${hhmm}`;
-}
-
-// 清理過期或無效課程
-function cleanCourses(courses) {
-  const now = Date.now();
-  for (const id in courses) {
-    const c = courses[id];
-    if (!c.title || !c.time || !c.students || !c.capacity) {
-      delete courses[id];
-      continue;
-    }
-    if (!Array.isArray(c.students)) c.students = [];
-    if (!Array.isArray(c.waiting)) c.waiting = [];
-    if (new Date(c.time).getTime() < now - 86400000) {
-      delete courses[id]; // 過期一天刪除
-    }
-  }
-  return courses;
 }
 
 const studentMenu = [
@@ -109,71 +109,105 @@ const teacherMenu = [
   { type: 'message', label: '切換身份', text: '@切換身份' }
 ];
 
-// 暫存狀態物件
-const pendingTeacherLogin = {};
-const pendingCourseCreation = {};
-const pendingCourseCancelConfirm = {};
+// 方便回覆文字
+async function replyText(replyToken, text, quickReplyItems) {
+  const message = { type: 'text', text };
+  if (quickReplyItems) {
+    message.quickReply = { items: quickReplyItems };
+  }
+  return client.replyMessage(replyToken, message);
+}
 
+// 主事件處理
 async function handleEvent(event) {
+  // postback 處理（取消課程選擇）
+  if (event.type === 'postback' && event.postback.data.startsWith('cancel_course_')) {
+    const courseId = event.postback.data.replace('cancel_course_', '');
+    const { users, courses } = loadData();
+    const cleanedCourses = cleanCourses(courses);
+    const userId = event.source.userId;
+
+    if (!cleanedCourses[courseId]) {
+      return replyText(event.replyToken, '找不到該課程，可能已被取消', teacherMenu);
+    }
+
+    pendingCourseCancelConfirm[userId] = courseId;
+    return replyText(
+      event.replyToken,
+      `⚠️ 確認要取消課程「${cleanedCourses[courseId].title}」嗎？\n一旦取消將退還所有學生點數。`,
+      [
+        { type: 'message', label: '✅ 是', text: '✅ 是' },
+        { type: 'message', label: '❌ 否', text: '❌ 否' },
+      ]
+    );
+  }
+
   if (event.type !== 'message' || !event.message.text) return;
 
   const { users, courses } = loadData();
-  cleanCourses(courses);
-
+  const cleanedCourses = cleanCourses(courses);
   const userId = event.source.userId;
+
   if (!users[userId]) {
     users[userId] = { name: '', points: 0, role: 'student', history: [] };
   }
 
-  // 老師身份自動判定（預設在 TEACHER_PASSWORD 驗證成功後設定）
-  if (users[userId].role !== 'teacher' && pendingTeacherLogin[userId] !== true) {
-    // 可在此判斷特定條件自動切換老師身份（留空或後續擴充）
-  }
-
-  // 取得使用者名稱
+  // 嘗試取得用戶名稱
   try {
     const profile = await client.getProfile(userId);
     users[userId].name = profile.displayName || users[userId].name || '匿名';
-  } catch {}
+  } catch (e) {
+    console.error('取得用戶資料失敗', e);
+  }
+
+  saveData(users, cleanedCourses);
 
   const text = event.message.text.trim();
 
-  // 處理多步驟新增課程流程（略，將於下一段提供）
+  // 多步驟新增課程流程處理
+  if (pendingCourseCreation[userId]) {
+    return handleCourseCreation(event, userId, users, cleanedCourses);
+  }
 
-  // 課程取消確認（略，將於下一段提供）
+  // 課程取消確認流程
+  if (pendingCourseCancelConfirm[userId]) {
+    return handleCourseCancelConfirm(event, userId, users, cleanedCourses);
+  }
 
-  // 身份切換邏輯
+  // 身份切換指令
   if (text === '@切換身份') {
     if (users[userId].role === 'teacher') {
       users[userId].role = 'student';
-      saveData(users, courses);
-      return replyToken(event, '已切換為學員身份，請使用選單。');
+      saveData(users, cleanedCourses);
+      return replyText(event.replyToken, '已切換為學員身份', studentMenu);
     } else {
       pendingTeacherLogin[userId] = true;
-      return replyToken(event, '請輸入老師密碼登入');
+      return replyText(event.replyToken, '請輸入老師密碼登入');
     }
   }
 
+  // 老師登入密碼驗證
   if (pendingTeacherLogin[userId]) {
     if (text === TEACHER_PASSWORD) {
       users[userId].role = 'teacher';
-      saveData(users, courses);
+      saveData(users, cleanedCourses);
       delete pendingTeacherLogin[userId];
-      return replyToken(event, '老師登入成功，請使用選單。');
+      return replyText(event.replyToken, '老師登入成功', teacherMenu);
     } else {
       delete pendingTeacherLogin[userId];
-      return replyToken(event, '密碼錯誤，登入失敗');
+      return replyText(event.replyToken, '密碼錯誤，登入失敗', studentMenu);
     }
   }
 
-  // 根據身份路由處理
+  // 依身份調用對應指令處理函數
   if (users[userId].role === 'teacher') {
-    return handleTeacherCommands(event, userId, users, courses);
+    return handleTeacherCommands(event, userId, users, cleanedCourses);
   } else {
-    return handleStudentCommands(event, userId, users, courses);
+    return handleStudentCommands(event, userId, users, cleanedCourses);
   }
 }
 
+// 新增課程多步驟流程
 async function handleCourseCreation(event, userId, users, courses) {
   const stepData = pendingCourseCreation[userId];
   const text = event.message.text.trim();
@@ -253,8 +287,7 @@ async function handleCourseCreation(event, userId, users, courses) {
           waiting: []
         };
 
-        writeJSON(COURSE_FILE, courses);
-        writeJSON(DATA_FILE, users);
+        saveData(users, courses);
         delete pendingCourseCreation[userId];
 
         return replyText(replyToken,
@@ -274,6 +307,7 @@ async function handleCourseCreation(event, userId, users, courses) {
   }
 }
 
+// 課程取消確認與退點
 async function handleCourseCancelConfirm(event, userId, users, courses) {
   const replyToken = event.replyToken;
   const courseId = pendingCourseCancelConfirm[userId];
@@ -299,8 +333,7 @@ async function handleCourseCancelConfirm(event, userId, users, courses) {
     });
 
     delete courses[courseId];
-    writeJSON(COURSE_FILE, courses);
-    writeJSON(DATA_FILE, users);
+    saveData(users, courses);
     delete pendingCourseCancelConfirm[userId];
 
     return replyText(replyToken, `✅ 課程「${course.title}」已取消，所有學生點數已退還。`, teacherMenu);
@@ -316,6 +349,7 @@ async function handleCourseCancelConfirm(event, userId, users, courses) {
   }
 }
 
+// 學員指令處理
 async function handleStudentCommands(event, userId, users, courses) {
   const msg = event.message.text.trim();
   const replyToken = event.replyToken;
@@ -361,12 +395,11 @@ async function handleStudentCommands(event, userId, users, courses) {
       course.students.push(userId);
       user.points--;
       user.history.push({ id, action: '預約', time: new Date().toISOString() });
-      writeJSON(COURSE_FILE, courses);
-      writeJSON(DATA_FILE, users);
+      saveData(users, courses);
       return replyText(replyToken, '✅ 已成功預約', studentMenu);
     } else {
       course.waiting.push(userId);
-      writeJSON(COURSE_FILE, courses);
+      saveData(users, courses);
       return replyText(replyToken, '課程額滿，已加入候補名單', studentMenu);
     }
   }
@@ -381,7 +414,7 @@ async function handleStudentCommands(event, userId, users, courses) {
         count++;
       }
     }
-    writeJSON(COURSE_FILE, courses);
+    saveData(users, courses);
     return replyText(replyToken, `✅ 已取消 ${count} 個候補課程`, studentMenu);
   }
 
@@ -415,6 +448,7 @@ async function handleStudentCommands(event, userId, users, courses) {
   return replyText(replyToken, '指令無效，請使用選單', studentMenu);
 }
 
+// 老師指令處理
 async function handleTeacherCommands(event, userId, users, courses) {
   const msg = event.message.text.trim();
   const replyToken = event.replyToken;
@@ -490,121 +524,49 @@ async function handleTeacherCommands(event, userId, users, courses) {
   return replyText(replyToken, '指令無效，請使用選單', teacherMenu);
 }
 
-async function handleEvent(event) {
-  if (event.type === 'postback' && event.postback.data.startsWith('cancel_course_')) {
-    const courseId = event.postback.data.replace('cancel_course_', '');
-    const courses = cleanCourses(readJSON(COURSE_FILE));
-    const userId = event.source.userId;
-
-    if (!courses[courseId]) {
-      return replyText(event.replyToken, '找不到該課程，可能已被取消', teacherMenu);
-    }
-
-    pendingCourseCancelConfirm[userId] = courseId;
-    return replyText(
-      event.replyToken,
-      `⚠️ 確認要取消課程「${courses[courseId].title}」嗎？\n一旦取消將退還所有學生點數。`,
-      [
-        { type: 'message', label: '✅ 是', text: '✅ 是' },
-        { type: 'message', label: '❌ 否', text: '❌ 否' },
-      ]
-    );
+// 簡易封裝文字回覆
+function replyText(replyToken, text, quickReplyItems) {
+  const message = { type: 'text', text };
+  if (quickReplyItems && quickReplyItems.length > 0) {
+    message.quickReply = { items: quickReplyItems };
   }
+  return client.replyMessage(replyToken, message);
+}
 
-  if (event.type !== 'message' || !event.message.text) return;
-
-  const db = readJSON(DATA_FILE);
-  const courses = cleanCourses(readJSON(COURSE_FILE));
-  const userId = event.source.userId;
-
-  if (!db[userId]) {
-    db[userId] = { name: '', points: 0, role: TEACHER_IDS.includes(userId) ? 'teacher' : 'student', history: [] };
-  } else {
-    // 每次重新判定老師身份
-    if (TEACHER_IDS.includes(userId)) {
-      db[userId].role = 'teacher';
-    }
-  }
-
+// 讀取 JSON 檔案輔助函數
+function readJSON(filename) {
+  if (!fs.existsSync(filename)) return {};
   try {
-    const profile = await client.getProfile(userId);
-    db[userId].name = profile.displayName || db[userId].name || '匿名使用者';
+    return JSON.parse(fs.readFileSync(filename, 'utf-8'));
   } catch (e) {
-    console.error('取得用戶資料失敗', e);
-  }
-
-  writeJSON(DATA_FILE, db);
-
-  const text = event.message.text.trim();
-
-  // 新增課程多步驟流程
-  if (pendingCourseCreation[userId]) {
-    return handleCourseCreation(event, userId, db, courses);
-  }
-
-  // 課程取消確認流程
-  if (pendingCourseCancelConfirm[userId]) {
-    return handleCourseCancelConfirm(event, userId, db, courses);
-  }
-
-  // 身份切換指令
-  if (text === '@切換身份') {
-    if (db[userId].role === 'teacher') {
-      db[userId].role = 'student';
-      writeJSON(DATA_FILE, db);
-      return replyText(event.replyToken, '已切換為學員身份', studentMenu);
-    } else {
-      pendingTeacherLogin[userId] = true;
-      return replyText(event.replyToken, '請輸入老師密碼登入');
-    }
-  }
-
-  // 老師登入密碼驗證
-  if (pendingTeacherLogin[userId]) {
-    if (text === TEACHER_PASSWORD) {
-      db[userId].role = 'teacher';
-      writeJSON(DATA_FILE, db);
-      delete pendingTeacherLogin[userId];
-      return replyText(event.replyToken, '老師登入成功', teacherMenu);
-    } else {
-      delete pendingTeacherLogin[userId];
-      return replyText(event.replyToken, '密碼錯誤，登入失敗', studentMenu);
-    }
-  }
-
-  // 根據身份呼叫對應指令處理
-  if (db[userId].role === 'teacher') {
-    return handleTeacherCommands(event, userId, db, courses);
-  } else {
-    return handleStudentCommands(event, userId, db, courses);
+    console.error(`讀取 ${filename} 失敗`, e);
+    return {};
   }
 }
 
-const express = require('express');
-const fetch = require('node-fetch'); // 如未安裝請執行 npm install node-fetch
+// 寫入 JSON 檔案輔助函數
+function writeJSON(filename, data) {
+  try {
+    fs.writeFileSync(filename, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error(`寫入 ${filename} 失敗`, e);
+  }
+}
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// 簡單格式化課程時間函數，已在前段定義 formatDateTime()
 
-app.use(express.json());
+// 主要常量與設定
+const PURCHASE_FORM_URL = 'https://your-purchase-form-link.example.com'; // 改成你的購點表單連結
+const TEACHER_IDS = ['你的老師 LINE USER ID1', '你的老師 LINE USER ID2']; // 需要可多個老師 ID
 
-app.post('/webhook', line.middleware(config), (req, res) => {
-  Promise.all(req.body.events.map(handleEvent))
-    .then(() => res.status(200).send('OK'))
-    .catch((err) => {
-      console.error(err);
-      res.status(500).end();
-    });
-});
+// 伺服器啟動與 Keep-Alive
+const fetch = require('node-fetch'); // 請先 npm install node-fetch
+const SELF_URL = process.env.SELF_URL || 'https://你的應用網址.example.com/'; // 部署後的網址，保持活躍用
 
-// 健康檢查路由
-app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
-
-// 啟動伺服器並啟用 Keep-alive
 app.listen(PORT, () => {
   console.log(`✅ Server running at port ${PORT}`);
   setInterval(() => {
     console.log('⏳ Keep-alive ping...');
     fetch(SELF_URL).catch(() => {});
-  }, 1000 * 60 * 5); // 每 5 分鐘 ping 一次
+  }, 1000 * 60 * 5); // 每 5 分鐘 ping 一次自己，防止空閒被關閉
 });
