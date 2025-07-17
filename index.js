@@ -382,8 +382,7 @@ async function handleStudentCommands(event, user, db, courses, postbackData = nu
   }
 
   if (postbackData === '@點數') {
-    return replyText(replyToken, `你目前有 ${user.points
-                                         return replyText(replyToken, `你目前有 ${user.points} 點數`, studentMenu);
+    return replyText(replyToken, `你目前有 ${user.points} 點數`, studentMenu);
   }
 
   if (postbackData === '@購點') {
