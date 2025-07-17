@@ -408,6 +408,56 @@ async function handleStudentCommands(event, user, db, courses) {
     }
   } 
 
+// ❌ 取消已預約課程（含自動候補轉正）
+if (msg === '@取消預約') {
+  const enrolled = Object.entries(courses).filter(([id, c]) => c.students.includes(userId));
+  if (enrolled.length === 0) {
+    return replyText(replyToken, '你目前沒有預約的課程可以取消', studentMenu);
+  }
+
+  return replyText(replyToken, '請選擇要取消的課程：', enrolled.map(([id, c]) => ({
+    type: 'action',
+    action: {
+      type: 'message',
+      label: `${formatDateTime(c.time)} ${c.title}`,
+      text: `我要取消 ${id}`,
+    },
+  })));
+}
+
+if (msg.startsWith('我要取消')) {
+  const id = msg.replace('我要取消', '').trim();
+  const course = courses[id];
+  if (!course || !course.students.includes(userId)) {
+    return replyText(replyToken, '你沒有預約此課程，無法取消', studentMenu);
+  }
+
+  // 從課程中移除學生
+  course.students = course.students.filter(sid => sid !== userId);
+  user.points++; // 退還點數
+  user.history.push({ id, action: '取消預約退點', time: new Date().toISOString() });
+
+  // 🔁 嘗試從候補名單補上
+  if (course.waiting.length > 0) {
+    const nextUserId = course.waiting.shift();
+    if (db[nextUserId] && db[nextUserId].points > 0) {
+      course.students.push(nextUserId);
+      db[nextUserId].points--;
+      db[nextUserId].history.push({ id, action: '候補補上', time: new Date().toISOString() });
+
+      // 通知候補者
+      client.pushMessage(nextUserId, {
+        type: 'text',
+        text: `🎉 你已從候補名單補上課程「${course.title}」\n上課時間：${formatDateTime(course.time)}\n系統已自動扣 1 點`,
+      });
+    }
+  }
+
+  writeJSON(COURSE_FILE, courses);
+  writeJSON(DATA_FILE, db);
+  return replyText(replyToken, `✅ 課程「${course.title}」已取消，已退還 1 點`, studentMenu);
+}
+  
   // ❌ 取消候補
   if (msg === '@取消候補') {
     let count = 0;
