@@ -560,9 +560,6 @@ const PURCHASE_FORM_URL = 'https://your-purchase-form-link.example.com'; // 改�
 const TEACHER_IDS = ['你的老師 LINE USER ID1', '你的老師 LINE USER ID2']; // 需要可多個老師 ID
 
 // 伺服器啟動與 Keep-Alive
-const fetch = require('node-fetch'); // 請先 npm install node-fetch
-const SELF_URL = process.env.SELF_URL || 'https://你的應用網址.example.com/'; // 部署後的網址，保持活躍用
-
 app.listen(PORT, () => {
   console.log(`✅ Server running at port ${PORT}`);
   setInterval(() => {
