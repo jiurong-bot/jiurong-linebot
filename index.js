@@ -15,6 +15,17 @@ const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/'; 
 
+//Webhook 接收事件後印出 userId
+app.post('/webhook', line.middleware(config), (req, res) => {
+  const events = req.body.events;
+  events.forEach((event) => {
+    if (event.type === 'message') {
+      console.log('使用者 userId:', event.source.userId);
+    }
+  });
+  res.sendStatus(200);
+});
+
 // 🧑‍🏫 老師帳號綁定（可多個）
 const TEACHER_IDS = ['yeh0930139636']; // 可放多個 userId
 
