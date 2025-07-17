@@ -4,7 +4,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Client, middleware } from '@line/bot-sdk';
 import dotenv from 'dotenv';
-import fetch from 'node-fetch';
 
 dotenv.config();
 
@@ -254,7 +253,7 @@ async function handleCourseCreation(event, userId, users, courses) {
     case 3:
       if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
         return replyText(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
-      }
+
       stepData.data.time = text;
       stepData.step = 4;
       return replyText(replyToken, '請輸入人員上限（正整數）');
@@ -422,7 +421,7 @@ async function handleStudentCommands(event, userId, users, courses) {
     for (const id in courses) {
       const c = courses[id];
       if (c.waiting?.includes(userId)) {
-        c.waiting =c.waiting.filter(uid => uid !== userId);
+        c.waiting = c.waiting.filter(uid => uid !== userId);
         count++;
       }
     }
@@ -512,21 +511,107 @@ async function handleTeacherCommands(event, userId, users, courses) {
   }
 
   if (msg === '@統計報表') {
-    return replyText(replyToken, '報表功能尚未實作', teacherMenu);
+    return replyText(replyToken, '報表功能
+                     // 統計報表功能簡單示範
+async function generateReport(users, courses) {
+  let report = '=== 學員點數統計報表 ===\n\n';
+  for (const [userId, user] of Object.entries(users)) {
+    report += `${user.name}（ID: ${userId}）: 點數 ${user.points}\n`;
+  }
+  report += '\n=== 即將開課課程 ===\n';
+  const upcoming = Object.entries(courses).filter(([_, c]) => new Date(c.time) > new Date());
+  if (upcoming.length === 0) {
+    report += '無\n';
+  } else {
+    upcoming.forEach(([id, c]) => {
+      report += `${c.title} (${formatDateTime(c.time)}) 報名: ${c.students.length}/${c.capacity} 候補: ${c.waiting.length}\n`;
+    });
+  }
+  return report;
+}
+
+async function handleTeacherCommands(event, userId, users, courses) {
+  const msg = event.message.text.trim();
+  const replyToken = event.replyToken;
+
+  if (msg === '@課程名單') {
+    const upcoming = Object.entries(courses)
+      .filter(([_, c]) => new Date(c.time) > new Date());
+
+    if (upcoming.length === 0) {
+      return replyText(replyToken, '目前沒有即將開課的課程', teacherMenu);
+    }
+
+    let reply = '即將開課的課程名單：\n';
+    for (const [id, c] of upcoming) {
+      reply += `\n${formatDateTime(c.time)} ${c.title}\n` +
+        `報名：${c.students.length}/${c.capacity}\n候補：${c.waiting.length}\n` +
+        `取消課程請輸入：取消課程 ${id}\n`;
+    }
+
+    return replyText(replyToken, reply, teacherMenu);
+  }
+
+  if (msg.startsWith('取消課程 ')) {
+    const courseId = msg.split(' ')[1];
+    if (!courses[courseId]) {
+      return replyText(replyToken, '找不到該課程', teacherMenu);
+    }
+    // 啟動取消流程
+    pendingCourseCancelConfirm[userId] = courseId;
+    return replyText(
+      replyToken,
+      `⚠️ 確認要取消課程「${courses[courseId].title}」嗎？一旦取消將退還所有學生點數。\n請回覆「✅ 是」或「❌ 否」`,
+      [
+        { type: 'message', label: '✅ 是', text: '✅ 是' },
+        { type: 'message', label: '❌ 否', text: '❌ 否' },
+      ]
+    );
+  }
+
+  if (msg === '@新增課程') {
+    pendingCourseCreation[userId] = { step: 1, data: {} };
+    return replyText(replyToken, '請輸入課程名稱');
+  }
+
+  if (msg.startsWith('@加點')) {
+    const parts = msg.split(' ');
+    if (parts.length < 3) {
+      return replyText(replyToken, '用法: @加點 userId 數量', teacherMenu);
+    }
+    const targetUserId = parts[1];
+    const amount = parseInt(parts[2], 10);
+    if (!users[targetUserId]) {
+      return replyText(replyToken, '找不到該用戶', teacherMenu);
+    }
+    if (isNaN(amount)) {
+      return replyText(replyToken, '點數數量格式錯誤', teacherMenu);
+    }
+    users[targetUserId].points += amount;
+    saveData(users, courses);
+    return replyText(replyToken, `已為 ${users[targetUserId].name} ${amount > 0 ? '加' : '扣'}點 ${Math.abs(amount)} 點`, teacherMenu);
+  }
+
+  if (msg === '@查學員') {
+    return replyText(replyToken, '請輸入學員ID查詢功能尚未實作', teacherMenu);
+  }
+
+  if (msg === '@統計報表') {
+    const report = await generateReport(users, courses);
+    return replyText(replyToken, report, teacherMenu);
   }
 
   return replyText(replyToken, '指令無效，請使用選單', teacherMenu);
 }
 
-// Keep-Alive 自我 Ping
-setInterval(() => {
-  if (!SELF_URL) return;
-  fetch(SELF_URL)
-    .then(() => console.log('Keep-alive ping success'))
-    .catch(err => console.error('Keep-alive ping failed', err));
-}, 5 * 60 * 1000); // 5 分鐘一次
-
-// 啟動伺服器
+// 啟動 Server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`九容瑜伽 LINE Bot 正在監聽埠口 ${PORT}`);
+  if (SELF_URL) {
+    setInterval(() => {
+      fetch(SELF_URL).then(() => {
+        console.log('自我 Ping 保持服務活躍');
+      }).catch(console.error);
+    }, 25 * 60 * 1000); // 25 分鐘一次
+  }
 });
