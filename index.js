@@ -81,8 +81,7 @@ const studentMenu = [
   { type: 'message', label: '我的課程', text: '@我的課程' },
   { type: 'message', label: '點數查詢', text: '@點數' },
   { type: 'message', label: '購買點數', text: '@購點' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-]; 
+];
 
 const teacherMenu = [
   { type: 'message', label: '課程名單', text: '@課程名單' },
@@ -91,8 +90,8 @@ const teacherMenu = [
   { type: 'message', label: '加點/扣點', text: '@加點 userId 數量' },
   { type: 'message', label: '查學員', text: '@查學員' },
   { type: 'message', label: '報表', text: '@統計報表' },
-  { type: 'message', label: '切換身份', text: '@切換身份' },
-]; 
+  { type: 'message', label: '切換身份', text: '@切換身份' }, // ✅ 老師可切回學員
+];
 
 // 📌 暫存狀態
 const pendingTeacherLogin = {};
@@ -167,8 +166,13 @@ async function handleEvent(event) {
   const userId = event.source.userId; 
 
   if (!db[userId]) {
-    db[userId] = { name: '', points: 0, role: 'student', history: [] };
-  } 
+  db[userId] = { name: '', points: 0, role: TEACHER_IDS.includes(userId) ? 'teacher' : 'student', history: [] };
+} else {
+  // 每次重新判定老師身份（避免被修改）
+  if (TEACHER_IDS.includes(userId)) {
+    db[userId].role = 'teacher';
+  }
+  }
 
   try {
     const profile = await client.getProfile(userId);
