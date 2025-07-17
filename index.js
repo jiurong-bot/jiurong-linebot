@@ -2,7 +2,6 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const line = require('@line/bot-sdk');
-const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
