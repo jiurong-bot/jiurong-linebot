@@ -1,3 +1,4 @@
+// 主要常量與設定
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -14,6 +15,9 @@ const BACKUP_DIR = './backup';
 
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '8888';
 const ADMIN_USER_IDS = ['你的LINE_USER_ID']; // 管理者推播用，請替換
+
+const PURCHASE_FORM_URL = 'https://your-purchase-form-link.example.com'; // 改成你的購點表單連結
+const TEACHER_IDS = ['你的老師 LINE USER ID1', '你的老師 LINE USER ID2']; // 需要可多個老師 ID
 
 // 建立備份資料夾
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
@@ -551,12 +555,6 @@ function writeJSON(filename, data) {
     console.error(`寫入 ${filename} 失敗`, e);
   }
 }
-
-// 簡單格式化課程時間函數，已在前段定義 formatDateTime()
-
-// 主要常量與設定
-const PURCHASE_FORM_URL = 'https://your-purchase-form-link.example.com'; // 改成你的購點表單連結
-const TEACHER_IDS = ['你的老師 LINE USER ID1', '你的老師 LINE USER ID2']; // 需要可多個老師 ID
 
 // 伺服器啟動與 Keep-Alive
 app.listen(PORT, () => {
