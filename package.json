@@ -1,7 +1,7 @@
 {
   "name": "jiurong-yoga-bot",
   "version": "1.0.0",
-  "type": "commonjs"
+  "type": "commonjs",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
