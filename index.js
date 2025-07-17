@@ -69,6 +69,15 @@ const config = {
 const client = new line.Client(config);
 app.use(express.json());
 
+app.post('/webhook', line.middleware(config), (req, res) => {
+  Promise.all(req.body.events.map(handleEvent))
+    .then((result) => res.json(result))
+    .catch((err) => {
+      console.error('Webhook 發生錯誤:', err);
+      res.status(500).end();
+    });
+});
+
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運行中'));
 
 // 身份切換、老師登入狀態暫存
