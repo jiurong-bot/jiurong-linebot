@@ -36,8 +36,7 @@ app.post('/liff/callback', (req, res) => {
 if (event.message.type === 'text' && event.message.text === '啟動') {
   return client.replyMessage(event.replyToken, {
     type: 'text',
-    text: '👋 歡迎回來九容瑜伽，請選擇功能 👇',
-    
+    text: '👋 歡迎回來九容瑜伽，請選擇功能 👇', 
   }
 
 // 初始化資料檔與資料夾
