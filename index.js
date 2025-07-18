@@ -38,7 +38,7 @@ if (event.message.type === 'text' && event.message.text === '啟動') {
     type: 'text',
     text: '👋 歡迎回來九容瑜伽，請選擇功能 👇',
     
-  });
+  }
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
