@@ -15,6 +15,13 @@ const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://jiurong-yoga-bot.onrender.com'; 
 
+// LINE Bot 設定
+const config = {
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.CHANNEL_SECRET,
+};
+const client = new line.Client(config); 
+
 // 提供 /liff/login 靜態頁面
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -50,14 +57,14 @@ function handleEvent(event) {
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR); 
-
+/*
 // LINE Bot 設定
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
 };
 const client = new line.Client(config); 
-
+*/
 // 🛠️ 工具函式
 function readJSON(file) {
   try {
