@@ -1,78 +1,61 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>九容瑜伽｜入室有容</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <title>九容瑜伽 - 登入</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     body {
       margin: 0;
-      background-color: #000;
-      color: #fff;
+      background: black;
+      color: white;
+      font-family: '微軟正黑體', sans-serif;
       display: flex;
       flex-direction: column;
-      justify-content: center;
       align-items: center;
+      justify-content: center;
       height: 100vh;
-      font-family: "Noto Sans TC", sans-serif;
       text-align: center;
     }
-    h1 {
-      font-size: 2.5em;
-      margin: 0.5em 0;
-    }
-    h2 {
-      font-size: 1.2em;
-      font-weight: normal;
-      margin: 0.5em 0 2em;
-    }
+    h1 { font-size: 2.5em; margin: 0.3em 0; }
+    p { font-size: 1.2em; margin-bottom: 2em; }
     button {
+      font-size: 1.2em;
       padding: 1em 2em;
-      font-size: 1.1em;
-      background-color: #fff;
-      color: #000;
-      border: none;
+      background: #ffffff10;
+      border: 1px solid #fff;
+      color: #fff;
       border-radius: 8px;
       cursor: pointer;
     }
+    button:hover { background: #ffffff30; }
   </style>
 </head>
 <body>
   <h1>入室有容</h1>
-  <h2>以瑜伽修心・以古意養形</h2>
-  <button id="startButton">👉 輕觸開始</button>
+  <p>以瑜伽修心・以古意養形</p>
+  <button onclick="start()">👉 輕觸開始</button>
 
   <script>
-    document.getElementById("startButton").addEventListener("click", function () {
-      liff.init({ liffId: "2007777865-Vj283nBj
-
-" })
-        .then(() => {
-          if (!liff.isLoggedIn()) {
-            liff.login(); // 登入 LINE 帳號
-          } else {
-            liff.getProfile().then(profile => {
-              const userId = profile.userId;
-              // 傳送到你的後端
-              fetch("/liff/callback", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId })
-              }).then(() => {
-                liff.sendMessages([
-                  { type: "text", text: "✅ 綁定成功！" }
-                ]).then(() => {
-                  liff.closeWindow();
-                });
-              });
-            });
-          }
-        })
-        .catch(err => {
-          alert("LIFF 初始化失敗：" + err);
-        });
-    });
+    async function start() {
+      try {
+        await liff.init({ liffId: "2007777865-Vj283nBj" }); // << 你的 LIFF ID
+        if (!liff.isLoggedIn()) {
+          liff.login();
+        } else {
+          const profile = await liff.getProfile();
+          const userId = profile.userId;
+          const name = profile.displayName;
+          // 傳送至後端綁定使用者
+          fetch(`/liff/login?userId=${userId}&displayName=${encodeURIComponent(name)}`);
+          alert("登入成功！即將回到九容瑜伽 LINE Bot");
+          liff.closeWindow();
+        }
+      } catch (err) {
+        console.error('LIFF 初始化失敗:', err);
+        alert('LIFF 初始化失敗，請確認 LIFF ID 與後端是否正確設定。');
+      }
+    }
   </script>
 </body>
 </html>
