@@ -1,3 +1,20 @@
+// index.js - V3.12.2a（修正課程時間與星期錯誤，語法完整可部署版）+遞補
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const line = require('@line/bot-sdk');
+require('dotenv').config(); 
+
+const app = express();
+const PORT = process.env.PORT || 3000; 
+
+const DATA_FILE = './data.json';
+const COURSE_FILE = './courses.json';
+const BACKUP_DIR = './backup';
+const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
+const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
+const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/'; 
+
 // 提供 /liff/login 靜態頁面
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -19,23 +36,6 @@ app.post('/api/bind-user', (req, res) => {
 
   res.sendStatus(200);
 });
-
-// index.js - V3.12.2a（修正課程時間與星期錯誤，語法完整可部署版）+遞補
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const line = require('@line/bot-sdk');
-require('dotenv').config(); 
-
-const app = express();
-const PORT = process.env.PORT || 3000; 
-
-const DATA_FILE = './data.json';
-const COURSE_FILE = './courses.json';
-const BACKUP_DIR = './backup';
-const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
-const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
-const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/'; 
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
