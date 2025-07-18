@@ -1,37 +1,76 @@
-!DOCTYPE html>
-<html lang="zh-Hant">
+<!DOCTYPE html>
+<html lang="zh-TW">
 <head>
-  <meta charset="UTF-8"/>
-  <title>九容登入頁</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+  <meta charset="UTF-8" />
+  <title>九容瑜伽｜入室有容</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
-    html,body{margin:0;padding:0;height:100%;overflow:hidden;}
-    body{display:flex;flex-direction:column;justify-content:space-between;
-         background:url('./bg.jpg') center/cover no-repeat;
-         font-family:"Noto Serif TC",serif;color:#333;text-shadow:0 1px 2px rgba(255,255,255,0.8);}
-    #main{text-align:center;margin-top:40vh;}
-    h1{font-size:3rem;margin:0.2em;}
-    h2{text-align:center;font-size:1.2rem;margin:0.1em;}
-    #hint{text-align:center;font-size:1rem;margin-bottom:2em;}
-    #cover{position:absolute;top:0;left:0;width:100%;height:100%;cursor:pointer;}
+    body {
+      margin: 0;
+      background-color: #000;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: "Noto Sans TC", sans-serif;
+      text-align: center;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin: 0.5em 0;
+    }
+    h2 {
+      font-size: 1.2em;
+      font-weight: normal;
+      margin: 0.5em 0 2em;
+    }
+    button {
+      padding: 1em 2em;
+      font-size: 1.1em;
+      background-color: #fff;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
-  <div id="main">
-    <h1>入室有容</h1>
-    <h2>以瑜伽修心，以古意養形</h2>
-  </div>
-  <div id="hint">👉 輕觸開始</div>
-  <div id="cover" onclick="startLineBot()"></div>
+  <h1>入室有容</h1>
+  <h2>以瑜伽修心・以古意養形</h2>
+  <button id="startButton">👉 輕觸開始</button>
 
   <script>
-    async function startLineBot() {
-      await liff.init({ liffId: "2007777865-Vj283nBj" });
-      if (!liff.isLoggedIn()) { liff.login(); return; }
-      await liff.sendMessages([{ type: "text", text: "👋 我已登入，請顯示功能選單" }]);
-      liff.closeWindow();
-    }
+    document.getElementById("startButton").addEventListener("click", function () {
+      liff.init({ liffId: "你的 LIFF ID" })
+        .then(() => {
+          if (!liff.isLoggedIn()) {
+            liff.login(); // 登入 LINE 帳號
+          } else {
+            liff.getProfile().then(profile => {
+              const userId = profile.userId;
+              // 傳送到你的後端
+              fetch("/liff/callback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId })
+              }).then(() => {
+                liff.sendMessages([
+                  { type: "text", text: "✅ 綁定成功！" }
+                ]).then(() => {
+                  liff.closeWindow();
+                });
+              });
+            });
+          }
+        })
+        .catch(err => {
+          alert("LIFF 初始化失敗：" + err);
+        });
+    });
   </script>
 </body>
 </html>
