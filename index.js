@@ -32,13 +32,23 @@ app.post('/liff/callback', (req, res) => {
   res.sendStatus(200);
 });
 
-//接收 '啟動' 的處理
-if (event.message.type === 'text' && event.message.text === '啟動') {
-  return client.replyMessage(event.replyToken, {
-    type: 'text',
-    text: '👋 歡迎回來九容瑜伽，請選擇功能 👇', 
-  });
+// 處理事件（例如使用者輸入 "啟動"）
+function handleEvent(event) {
+  if (event.type === 'message' && event.message.type === 'text') {
+    if (event.message.text === '啟動') {
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: '👋 歡迎回來九容瑜伽，請選擇功能 👇'
+      });
+    }
+  }
+
+  return Promise.resolve(null); // 若不是文字訊息或其他事件就忽略
 }
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+});
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
