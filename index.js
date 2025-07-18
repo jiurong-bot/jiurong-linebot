@@ -28,15 +28,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/liff/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
 });
-/*
-//後端 API /api/bind-user
-app.use(express.json());
 
-app.post('/liff/callback', (req, res) => {
-  const { userId } = req.body;
-  console.log("🔗 綁定使用者:", userId);
-  // 可選：寫入 users.json 或資料庫
-  res.sendStatus(200);
+//後端 API /api/bind-user
+app.post('/api/bind-user', (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).send('缺少 userId');
+    }
+
+    console.log("🔗 綁定使用者:", userId);
+    // TODO: 儲存至 users.json 或資料庫
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('綁定錯誤:', err);
+    res.sendStatus(500);
+  }
 });
 
 // 處理事件（例如使用者輸入 "啟動"）
@@ -52,19 +59,12 @@ function handleEvent(event) {
 
   return Promise.resolve(null); // 若不是文字訊息或其他事件就忽略
 }
-*/
+
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR); 
-/*
-// LINE Bot 設定
-const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.CHANNEL_SECRET,
-};
-const client = new line.Client(config); 
-*/
+
 // 🛠️ 工具函式
 function readJSON(file) {
   try {
