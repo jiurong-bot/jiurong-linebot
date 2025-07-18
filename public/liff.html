@@ -27,7 +27,7 @@
 
   <script>
     async function startLineBot() {
-      await liff.init({ liffId: "YOUR_LIFF_ID" });
+      await liff.init({ liffId: "2007777865-Vj283nBj" });
       if (!liff.isLoggedIn()) { liff.login(); return; }
       await liff.sendMessages([{ type: "text", text: "👋 我已登入，請顯示功能選單" }]);
       liff.closeWindow();
