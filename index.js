@@ -1,4 +1,4 @@
-// index.js - V3.12.2a（修正課程時間與星期錯誤，語法完整可部署版）+遞補
+// index.js - V3.12.2a（首頁登入）
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
