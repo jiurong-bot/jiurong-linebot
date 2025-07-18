@@ -1,3 +1,9 @@
+// 1. 提供 /liff/login 靜態頁面
+const path = require('path');
+app.use('/liff', express.static(path.join(__dirname, 'liff')));
+
+
+
 // index.js - V3.12.2a（修正課程時間與星期錯誤，語法完整可部署版）+遞補
 const express = require('express');
 const fs = require('fs');
