@@ -21,7 +21,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/liff/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
 });
-
+/*
 //後端 API /api/bind-user
 app.use(express.json());
 
@@ -31,7 +31,7 @@ app.post('/liff/callback', (req, res) => {
   // 可選：寫入 users.json 或資料庫
   res.sendStatus(200);
 });
-/*
+
 // 處理事件（例如使用者輸入 "啟動"）
 function handleEvent(event) {
   if (event.type === 'message' && event.message.type === 'text') {
