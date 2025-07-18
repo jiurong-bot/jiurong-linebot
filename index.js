@@ -5,6 +5,21 @@ app.get('/liff/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
 });
 
+//後端 API /api/bind-user
+app.use(express.json());
+
+app.post('/api/bind-user', (req, res) => {
+  const { userId, displayName } = req.body;
+  if (!userId || !displayName) return res.status(400).send("Invalid data");
+
+  const users = JSON.parse(fs.readFileSync('./data/users.json', 'utf8') || '{}');
+  users[userId] = users[userId] || {};
+  users[userId].name = displayName;
+  fs.writeFileSync('./data/users.json', JSON.stringify(users, null, 2));
+
+  res.sendStatus(200);
+});
+
 // index.js - V3.12.2a（修正課程時間與星期錯誤，語法完整可部署版）+遞補
 const express = require('express');
 const fs = require('fs');
