@@ -39,17 +39,20 @@
   <script>
     async function start() {
       try {
-        await liff.init({ liffId: "2007777865-Vj283nBj" }); // LIFF ID
+        await liff.init({ liffId: "2007777865-Vj283nBj" }); // 你的 LIFF ID
+
         if (!liff.isLoggedIn()) {
           liff.login();
         } else {
           const profile = await liff.getProfile();
           const userId = profile.userId;
           const name = profile.displayName;
-          // 傳送至後端綁定使用者
-          fetch(`/liff/login?userId=${userId}&displayName=${encodeURIComponent(name)}`);
-          // 導回 Bot 並發送文字（啟動）
-          window.location.href = "https://line.me/R/oaMessage/@jiurong_yoga/?啟動";
+
+          // 發送到你的後端：可綁定使用者資料 & 發送歡迎訊息
+          await fetch(`/liff/login?userId=${userId}&displayName=${encodeURIComponent(name)}`);
+
+          // 成功後回到 LINE 聊天視窗
+          liff.closeWindow();
         }
       } catch (err) {
         console.error('LIFF 初始化失敗:', err);
