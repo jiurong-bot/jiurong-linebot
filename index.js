@@ -14,14 +14,14 @@ const BACKUP_DIR = './backup';
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://jiurong-yoga-bot.onrender.com'; 
-/*
+
 // 提供 /liff/login 靜態頁面
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/liff/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
 });
-
+/*
 //後端 API /api/bind-user
 app.use(express.json());
 
