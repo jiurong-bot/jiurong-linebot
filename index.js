@@ -25,9 +25,19 @@ app.get('/liff/login', (req, res) => {
 //後端 API /api/bind-user
 app.use(express.json());
 
+app.post('/liff/callback', (req, res) => {
+  const { userId } = req.body;
+  console.log("🔗 綁定使用者:", userId);
+  // 可選：寫入 users.json 或資料庫
+  res.sendStatus(200);
+});
+
+
+/* 
+app.use(express.json());
 app.post('/api/bind-user', (req, res) => {
-  const { userId, displayName } = req.body;
-  if (!userId || !displayName) return res.status(400).send("Invalid data");
+ const { userId, displayName } = req.body;
+ if (!userId || !displayName) return res.status(400).send("Invalid data");
 
   const users = JSON.parse(fs.readFileSync('./data/users.json', 'utf8') || '{}');
   users[userId] = users[userId] || {};
@@ -36,6 +46,7 @@ app.post('/api/bind-user', (req, res) => {
 
   res.sendStatus(200);
 });
+*/
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
