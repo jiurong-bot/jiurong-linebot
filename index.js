@@ -31,7 +31,7 @@ app.post('/liff/callback', (req, res) => {
   // 可選：寫入 users.json 或資料庫
   res.sendStatus(200);
 });
-
+/*
 // 處理事件（例如使用者輸入 "啟動"）
 function handleEvent(event) {
   if (event.type === 'message' && event.message.type === 'text') {
@@ -45,7 +45,7 @@ function handleEvent(event) {
 
   return Promise.resolve(null); // 若不是文字訊息或其他事件就忽略
 }
-
+*/
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
