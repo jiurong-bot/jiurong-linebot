@@ -47,7 +47,7 @@ app.post('/api/bind-user', (req, res) => {
 });
 
 // 處理事件（例如使用者輸入 "啟動"）
-function handleEvent(event) {
+async function handleEvent(event) {
   if (event.type === 'message' && event.message.type === 'text') {
     if (event.message.text === '啟動') {
       return client.replyMessage(event.replyToken, {
@@ -57,7 +57,7 @@ function handleEvent(event) {
     }
   }
 
-  return Promise.resolve(null); // 若不是文字訊息或其他事件就忽略
+  return Promise.resolve(null);
 }
 
 // 初始化資料檔與資料夾
