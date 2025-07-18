@@ -33,21 +33,6 @@ app.post('/liff/callback', (req, res) => {
 });
 
 
-/* 
-app.use(express.json());
-app.post('/api/bind-user', (req, res) => {
- const { userId, displayName } = req.body;
- if (!userId || !displayName) return res.status(400).send("Invalid data");
-
-  const users = JSON.parse(fs.readFileSync('./data/users.json', 'utf8') || '{}');
-  users[userId] = users[userId] || {};
-  users[userId].name = displayName;
-  fs.writeFileSync('./data/users.json', JSON.stringify(users, null, 2));
-
-  res.sendStatus(200);
-});
-*/
-
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
