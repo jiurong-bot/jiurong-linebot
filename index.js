@@ -14,14 +14,30 @@ const BACKUP_DIR = './backup';
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://jiurong-yoga-bot.onrender.com'; 
+const client = new line.Client(config);
 
 // LINE Bot 設定
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
 };
-const client = new line.Client(config);
 
+app.post('/liff/login', express.json(), async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.json({ success: false });
+
+  try {
+    // 儲存 userId（可改為實際登入邏輯）
+    console.log('[LIFF] 使用者登入：', userId);
+    // 若需綁定使用者，可在此處處理
+    res.json({ success: true });
+  } catch (error) {
+    console.error('登入處理失敗:', error);
+    res.json({ success: false });
+  }
+});
+
+/*
 // 提供靜態檔案（含 liff-login.html、bg.jpg 等）
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -64,7 +80,7 @@ async function handleEvent(event) {
   }
   return Promise.resolve(null);
 }
-
+*/
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
