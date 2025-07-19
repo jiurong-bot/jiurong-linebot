@@ -3,79 +3,69 @@
 <head>
   <meta charset="UTF-8" />
   <title>九容登入頁</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     html, body {
       margin: 0;
       padding: 0;
+      background: url('bg.jpg') no-repeat center center fixed;
+      background-size: cover;
       height: 100%;
-      overflow: hidden;
+      font-family: sans-serif;
     }
-    body {
+
+    .container {
+      height: 100%;
       display: flex;
-      flex-direction: column;
-      justify-content: space-between;
+      justify-content: center;
       align-items: center;
-      background: url('/bg.jpg') center/cover no-repeat;
-      color: #333;
-      font-family: "Noto Serif TC", serif;
-      text-shadow: 0 1px 2px rgba(255,255,255,0.8);
-    }
-    #main {
+      color: white;
+      text-shadow: 0 0 5px #000;
+      flex-direction: column;
       text-align: center;
-      margin-top: 40vh;
+      padding: 1rem;
     }
-    h1 {
-      font-size: 3rem;
-      margin: 0.2em;
+
+    .logo {
+      font-size: 2rem;
+      margin-bottom: 1rem;
     }
-    h2 {
-      font-size: 1.2rem;
-      margin: 0.1em;
-    }
-    #hint {
-      text-align: center;
+
+    .status {
       font-size: 1rem;
-      margin-bottom: 2em;
-    }
-    #cover {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div id="main">
-    <h1>入室有容</h1>
-    <h2>以瑜伽修心，以古意養形</h2>
+  <div class="container">
+    <div class="logo">九容瑜伽</div>
+    <div class="status" id="status">登入中，請稍候...</div>
   </div>
-  <div id="hint">👉 輕觸開始</div>
-  <div id="cover" onclick="startLineBot()"></div>
 
   <script>
-    async function startLineBot() {
+    const liffId = "2007777865-Vj283nBj"; // 你的 LIFF ID
+
+    async function main() {
       try {
-        await liff.init({ liffId: "2007777865-Vj283nBj" }); // ✅ 改成你的 LIFF ID
+        await liff.init({ liffId });
 
         if (!liff.isLoggedIn()) {
           liff.login();
-          return;
+        } else {
+          const profile = await liff.getProfile();
+          document.getElementById('status').textContent = `歡迎 ${profile.displayName}！`;
+          
+          // ✅ 成功登入後可跳轉或傳送資料
+          // 例如：window.location.href = "/somewhere";
         }
-
-        // ✅ 發送登入訊息給 LINE Bot
-        await liff.sendMessages([
-          { type: "text", text: "👋 我已登入，請顯示功能選單" }
-        ]);
-
-        liff.closeWindow();
       } catch (err) {
-        console.error('LIFF 錯誤:', err);
-        alert('登入失敗，請稍後再試');
+        console.error("LIFF 初始化失敗", err);
+        document.getElementById('status').textContent = "登入失敗，請稍後再試。";
       }
     }
+
+    main();
   </script>
 </body>
 </html>
