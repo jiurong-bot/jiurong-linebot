@@ -15,7 +15,57 @@ const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://jiurong-yoga-bot.onrender.com'; 
 
+// LINE Bot 設定
+const config = {
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.CHANNEL_SECRET,
+};
+const client = new line.Client(config);
 
+// 提供靜態檔案（含 liff-login.html、bg.jpg 等）
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ✅ 支援 /liff（簡短網址，對應 liff-login.html）
+app.get('/liff', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
+});
+
+// ✅ 支援原本的 /liff/login（可選）
+app.get('/liff/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
+});
+
+// 後端 API：綁定使用者
+app.post('/api/bind-user', (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).send('缺少 userId');
+    }
+
+    console.log("🔗 綁定使用者:", userId);
+    // TODO: 寫入 users.json 或資料庫
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('綁定錯誤:', err);
+    res.sendStatus(500);
+  }
+});
+
+// 處理 LINE Bot 訊息事件（如使用者輸入 "啟動"）
+async function handleEvent(event) {
+  if (event.type === 'message' && event.message.type === 'text') {
+    if (event.message.text === '啟動') {
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: '👋 歡迎回來九容瑜伽，請選擇功能 👇'
+      });
+    }
+  }
+  return Promise.resolve(null);
+}
+
+/*
 // LINE Bot 設定
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
@@ -60,6 +110,7 @@ async function handleEvent(event) {
 
   return Promise.resolve(null);
 }
+*/
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
