@@ -22,6 +22,14 @@ const config = {
 };
 const client = new line.Client(config);
 
+// 提供靜態檔案（含 liff-login.html、bg.jpg 等）
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ✅ 支援 /liff（簡短網址，對應 liff-login.html）
+app.get('/liff', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
+});
+
 app.post('/liff/login', express.json(), async (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.json({ success: false });
@@ -38,14 +46,6 @@ app.post('/liff/login', express.json(), async (req, res) => {
 });
 
 /*
-// 提供靜態檔案（含 liff-login.html、bg.jpg 等）
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ✅ 支援 /liff（簡短網址，對應 liff-login.html）
-app.get('/liff', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
-});
-
 // ✅ 支援原本的 /liff/login（可選）
 app.get('/liff/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
@@ -81,6 +81,7 @@ async function handleEvent(event) {
   return Promise.resolve(null);
 }
 */
+
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
