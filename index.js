@@ -20,6 +20,8 @@ const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
 };
+
+/* 網頁登入
 const client = new line.Client(config);
 
 // 提供靜態檔案（含 liff-login.html、bg.jpg 等）
@@ -78,6 +80,7 @@ async function handleEvent(event) {
   }
   return Promise.resolve(null);
 }
+網頁登入*／
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
