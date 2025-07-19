@@ -3,65 +3,80 @@
 <head>
   <meta charset="UTF-8" />
   <title>九容登入頁</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
   <style>
     html, body {
       margin: 0;
       padding: 0;
-      background: url('bg.jpg') no-repeat center center fixed;
-      background-size: cover;
       height: 100%;
-      font-family: sans-serif;
+      background-image: url('/bg.jpg');
+      background-size: cover;
+      background-position: center;
+      font-family: 'Noto Sans TC', sans-serif;
     }
-
     .container {
       height: 100%;
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
       color: white;
-      text-shadow: 0 0 5px #000;
-      flex-direction: column;
-      text-align: center;
-      padding: 1rem;
+      text-shadow: 1px 1px 4px #000;
+      background-color: rgba(0, 0, 0, 0.3);
     }
-
-    .logo {
-      font-size: 2rem;
-      margin-bottom: 1rem;
+    .title {
+      font-size: 2em;
+      margin-bottom: 20px;
     }
-
-    .status {
-      font-size: 1rem;
+    .loading {
+      font-size: 1.2em;
+    }
+    .error {
+      font-size: 1.2em;
+      color: #ffcccc;
+      background: rgba(0,0,0,0.5);
+      padding: 1em;
+      border-radius: 8px;
     }
   </style>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
 <body>
   <div class="container">
-    <div class="logo">九容瑜伽</div>
-    <div class="status" id="status">登入中，請稍候...</div>
+    <div class="title">九容瑜伽</div>
+    <div id="status" class="loading">登入中，請稍候...</div>
   </div>
 
   <script>
-    const liffId = "2007777865-Vj283nBj"; // 你的 LIFF ID
+    const LIFF_ID = '2007777865-Vj283nBj'; // 請依實際填入
 
     async function main() {
       try {
-        await liff.init({ liffId });
-
+        await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) {
           liff.login();
+          return;
+        }
+
+        const profile = await liff.getProfile();
+        const userId = profile.userId;
+
+        // 呼叫後端儲存 userId
+        const res = await fetch('/liff/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+          document.getElementById('status').innerText = '登入成功，請關閉此頁面';
         } else {
-          const profile = await liff.getProfile();
-          document.getElementById('status').textContent = `歡迎 ${profile.displayName}！`;
-          
-          // ✅ 成功登入後可跳轉或傳送資料
-          // 例如：window.location.href = "/somewhere";
+          document.getElementById('status').innerHTML = '<div class="error">登入失敗，請稍後再試。</div>';
         }
       } catch (err) {
-        console.error("LIFF 初始化失敗", err);
-        document.getElementById('status').textContent = "登入失敗，請稍後再試。";
+        console.error(err);
+        document.getElementById('status').innerHTML = '<div class="error">LIFF 初始化失敗，請確認設定。</div>';
       }
     }
 
