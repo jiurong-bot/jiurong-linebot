@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <title>九容瑜伽 - 登入</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"> <!-- ✅ 強化手機支援 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     html, body {
-      height: 100%; /* ✅ 確保整體高度支援 */
+      height: 100%;
       margin: 0;
       padding: 0;
     }
     body {
-      background: black;
+      background: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e') no-repeat center center;
+      background-size: cover;
       color: white;
       font-family: '微軟正黑體', sans-serif;
       display: flex;
@@ -43,7 +44,7 @@
   <script>
     async function start() {
       try {
-        await liff.init({ liffId: "2007777865-Vj283nBj" }); // 你的 LIFF ID
+        await liff.init({ liffId: "2007777865-Vj283nBj" });
 
         if (!liff.isLoggedIn()) {
           liff.login();
