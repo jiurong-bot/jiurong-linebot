@@ -65,53 +65,6 @@ async function handleEvent(event) {
   return Promise.resolve(null);
 }
 
-/*
-// LINE Bot 設定
-const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.CHANNEL_SECRET,
-};
-const client = new line.Client(config); 
-
-// 提供 /liff/login 靜態頁面
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/liff/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
-});
-
-//後端 API /api/bind-user
-app.post('/api/bind-user', (req, res) => {
-  try {
-    const { userId } = req.body;
-    if (!userId) {
-      return res.status(400).send('缺少 userId');
-    }
-
-    console.log("🔗 綁定使用者:", userId);
-    // TODO: 儲存至 users.json 或資料庫
-    res.sendStatus(200);
-  } catch (err) {
-    console.error('綁定錯誤:', err);
-    res.sendStatus(500);
-  }
-});
-
-// 處理事件（例如使用者輸入 "啟動"）
-async function handleEvent(event) {
-  if (event.type === 'message' && event.message.type === 'text') {
-    if (event.message.text === '啟動') {
-      return client.replyMessage(event.replyToken, {
-        type: 'text',
-        text: '👋 歡迎回來九容瑜伽，請選擇功能 👇'
-      });
-    }
-  }
-
-  return Promise.resolve(null);
-}
-*/
-
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
