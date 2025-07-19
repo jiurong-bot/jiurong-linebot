@@ -1,64 +1,63 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <title>九容瑜伽 - 登入</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>九容瑜伽｜LINE 登入</title>
   <style>
-    html, body {
-      height: 100%;
+    body {
       margin: 0;
       padding: 0;
-    }
-    body {
-      background: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e') no-repeat center center;
+      font-family: "Microsoft JhengHei", sans-serif;
+      height: 100vh;
+      background-image: url('./bg.jpg'); /* ✅ 確保與 index.html 同層 */
       background-size: cover;
-      color: white;
-      font-family: '微軟正黑體', sans-serif;
+      background-position: center;
+      background-repeat: no-repeat;
       display: flex;
-      flex-direction: column;
-      align-items: center;
       justify-content: center;
+      align-items: center;
+      color: white;
+      text-shadow: 1px 1px 2px black;
+    }
+
+    .container {
       text-align: center;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 30px;
+      border-radius: 15px;
     }
-    h1 { font-size: 2.5em; margin: 0.3em 0; }
-    p { font-size: 1.2em; margin-bottom: 2em; }
+
     button {
-      font-size: 1.2em;
-      padding: 1em 2em;
-      background: #ffffff10;
-      border: 1px solid #fff;
-      color: #fff;
-      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 1.2rem;
+      border: none;
+      border-radius: 5px;
       cursor: pointer;
+      background-color: #ffffff;
+      color: #333;
+      margin-top: 20px;
     }
-    button:hover { background: #ffffff30; }
   </style>
 </head>
 <body>
-  <h1>入室有容</h1>
-  <p>以瑜伽修心・以古意養形</p>
-  <button onclick="start()">👉 輕觸開始</button>
+  <div class="container">
+    <h1>九容瑜伽</h1>
+    <p>點選下方按鈕登入</p>
+    <button onclick="liffLogin()">登入 LINE 帳號</button>
+  </div>
 
+  <script src="https://static.line-scdn.net/liff/edge/2.1/sdk.js"></script>
   <script>
-    async function start() {
-      try {
-        await liff.init({ liffId: "2007777865-Vj283nBj" });
-
-        if (!liff.isLoggedIn()) {
-          liff.login();
-        } else {
-          const profile = await liff.getProfile();
-          const userId = profile.userId;
-          const name = profile.displayName;
-
-          await fetch(`/liff/login?userId=${userId}&displayName=${encodeURIComponent(name)}`);
-          liff.closeWindow();
-        }
-      } catch (err) {
-        console.error('LIFF 初始化失敗:', err);
-        alert('LIFF 初始化失敗，請確認 LIFF ID 與後端是否正確設定。');
+    async function liffLogin() {
+      await liff.init({ liffId: "2007777865-Vj283nBj" }); // ⚠️請換成正確 LIFF ID
+      if (!liff.isLoggedIn()) {
+        liff.login();
+      } else {
+        const profile = await liff.getProfile();
+        alert("登入成功，歡迎 " + profile.displayName);
+        // 可選：跳轉或綁定帳號
+        // location.href = "/liff/login?userId=" + profile.userId;
       }
     }
   </script>
