@@ -15,6 +15,19 @@ const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const PURCHASE_FORM_URL = process.env.PURCHASE_FORM_URL || 'https://docs.google.com/forms/your-form-id/viewform';
 const SELF_URL = process.env.SELF_URL || 'https://jiurong-yoga-bot.onrender.com'; 
 
+// === LIFF 登入（綁定學員 ID）===
+app.get('/liff/login', async (req, res) => {
+  const { userId, displayName } = req.query;
+  if (userId) {
+    if (!data.users[userId]) data.users[userId] = { id: userId, name: displayName || '未命名', points: 0, role: 'student' };
+    saveData();
+    res.send('✅ 登入成功！您已綁定 LINE 帳號。');
+  } else {
+    res.send('❌ 登入失敗，找不到 userId。');
+  }
+});
+
+/*
 // LINE Bot 設定
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
@@ -59,7 +72,7 @@ async function handleEvent(event) {
 
   return Promise.resolve(null);
 }
-
+*/
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
 if (!fs.existsSync(COURSE_FILE)) fs.writeFileSync(COURSE_FILE, '{}');
