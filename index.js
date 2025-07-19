@@ -29,6 +29,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/liff', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
 });
+// ✅ 支援原本的 /liff/login（可選）
+app.get('/liff/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
+});
 
 app.post('/liff/login', express.json(), async (req, res) => {
   const { userId } = req.body;
@@ -46,11 +50,6 @@ app.post('/liff/login', express.json(), async (req, res) => {
 });
 
 /*
-// ✅ 支援原本的 /liff/login（可選）
-app.get('/liff/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'liff-login.html'));
-});
-
 // 後端 API：綁定使用者
 app.post('/api/bind-user', (req, res) => {
   try {
