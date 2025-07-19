@@ -80,7 +80,7 @@ async function handleEvent(event) {
   }
   return Promise.resolve(null);
 }
-網頁登入*／
+網頁登入 */
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
