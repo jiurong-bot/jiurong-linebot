@@ -49,7 +49,6 @@ app.post('/liff/login', express.json(), async (req, res) => {
   }
 });
 
-/*
 // 後端 API：綁定使用者
 app.post('/api/bind-user', (req, res) => {
   try {
@@ -79,7 +78,6 @@ async function handleEvent(event) {
   }
   return Promise.resolve(null);
 }
-*/
 
 // 初始化資料檔與資料夾
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '{}');
