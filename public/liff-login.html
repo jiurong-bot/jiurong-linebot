@@ -1,63 +1,79 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>九容瑜伽｜LINE 登入</title>
+  <title>九容登入頁</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
-    body {
+    html, body {
       margin: 0;
       padding: 0;
-      font-family: "Microsoft JhengHei", sans-serif;
-      height: 100vh;
-      background-image: url('./bg.jpg'); /* ✅ 確保與 index.html 同層 */
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
       display: flex;
-      justify-content: center;
+      flex-direction: column;
+      justify-content: space-between;
       align-items: center;
-      color: white;
-      text-shadow: 1px 1px 2px black;
-    }
-
-    .container {
-      text-align: center;
-      background: rgba(0, 0, 0, 0.5);
-      padding: 30px;
-      border-radius: 15px;
-    }
-
-    button {
-      padding: 10px 20px;
-      font-size: 1.2rem;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      background-color: #ffffff;
+      background: url('/bg.jpg') center/cover no-repeat;
       color: #333;
-      margin-top: 20px;
+      font-family: "Noto Serif TC", serif;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+    }
+    #main {
+      text-align: center;
+      margin-top: 40vh;
+    }
+    h1 {
+      font-size: 3rem;
+      margin: 0.2em;
+    }
+    h2 {
+      font-size: 1.2rem;
+      margin: 0.1em;
+    }
+    #hint {
+      text-align: center;
+      font-size: 1rem;
+      margin-bottom: 2em;
+    }
+    #cover {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>九容瑜伽</h1>
-    <p>點選下方按鈕登入</p>
-    <button onclick="liffLogin()">登入 LINE 帳號</button>
+  <div id="main">
+    <h1>入室有容</h1>
+    <h2>以瑜伽修心，以古意養形</h2>
   </div>
+  <div id="hint">👉 輕觸開始</div>
+  <div id="cover" onclick="startLineBot()"></div>
 
-  <script src="https://static.line-scdn.net/liff/edge/2.1/sdk.js"></script>
   <script>
-    async function liffLogin() {
-      await liff.init({ liffId: "2007777865-Vj283nBj" }); // ⚠️請換成正確 LIFF ID
-      if (!liff.isLoggedIn()) {
-        liff.login();
-      } else {
-        const profile = await liff.getProfile();
-        alert("登入成功，歡迎 " + profile.displayName);
-        // 可選：跳轉或綁定帳號
-        // location.href = "/liff/login?userId=" + profile.userId;
+    async function startLineBot() {
+      try {
+        await liff.init({ liffId: "2007777865-Vj283nBj" }); // ✅ 改成你的 LIFF ID
+
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+
+        // ✅ 發送登入訊息給 LINE Bot
+        await liff.sendMessages([
+          { type: "text", text: "👋 我已登入，請顯示功能選單" }
+        ]);
+
+        liff.closeWindow();
+      } catch (err) {
+        console.error('LIFF 錯誤:', err);
+        alert('登入失敗，請稍後再試');
       }
     }
   </script>
