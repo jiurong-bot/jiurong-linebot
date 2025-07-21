@@ -106,7 +106,9 @@ function cleanCourses(courses) {
 
 // ⏰ 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(dateStr) {
-  const taipeiDate = new Date(new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' })); 
+  // 直接使用 toLocaleString 回傳在 Asia/Taipei 時區的正確時間字串
+  const taipeiStr = new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' });
+  const taipeiDate = new Date(taipeiStr); // 避免直接巢狀轉換造成偏差
 
   const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
     month: '2-digit',
@@ -123,7 +125,7 @@ function formatDateTime(dateStr) {
   }); 
 
   return `${mmdd}（${weekday}）${hhmm}`;
-} 
+}
 
 // 🎯 主事件處理
 async function handleEvent(event) {
