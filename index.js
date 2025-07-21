@@ -1,7 +1,7 @@
-// index.js - V3.12.2d（再次修正課程時間與星期錯誤，讓顯示與輸入一致）
+// index.js - V3.12.2d（修正語法及課程時間時區錯誤）
 const express = require('express');
 const fs = require('fs');
-const path = require('path'); // <--- 修正後的程式碼在此
+const path = require('path');
 const line = require('@line/bot-sdk');
 require('dotenv').config();
 
@@ -109,7 +109,7 @@ function cleanCourses(courses) {
   return courses;
 }
 
-// ⏰ 課程時間格式化（轉台北時間並顯示）- 這個函數應該是正確的
+// ⏰ 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(isoString) {
     if (!isoString) return '無效時間';
     const date = new Date(isoString); // 解析 ISO 字串，這會被視為 UTC 時間點
@@ -239,31 +239,39 @@ async function handleEvent(event) {
             '星期四': 4, '星期五': 5, '星期六': 6
           };
 
-          const targetWeekdayIndex = weekdaysMapping[stepData.data.weekday];
-          const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
+          const targetWeekdayIndex = weekdaysMapping[stepData.data.weekday]; // 目標是台北的星期幾
+          const [targetHour, targetMin] = stepData.data.time.split(':').map(Number); // 目標是台北的時間
 
-          // 取得當前台北時間
-          const nowInTaipei = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-          const todayWeekdayIndex = nowInTaipei.getDay(); // 0-6 對應星期日-星期六
-          const currentTaipeiHour = nowInTaipei.getHours();
-          const currentTaipeiMinute = nowInTaipei.getMinutes();
+          // --- 修正後的時區處理邏輯 ---
+          // 1. 所有計算都基於 UTC 進行
+          const now = new Date();
+          const todayWeekdayUTC = now.getUTCDay(); // 取得今天是 UTC 的星期幾
 
-          let dayDiff = (targetWeekdayIndex - todayWeekdayIndex + 7) % 7;
+          // 2. 計算台北目標時間對應的 UTC 時間
+          // 台北時間 (UTC+8) 比 UTC 快 8 小時，所以 UTC 小時 = 台北小時 - 8
+          const targetHourUTC = targetHour - 8;
 
-          // 如果目標是今天，但目標時間已過，則日期設定為下週
+          // 3. 計算日期差異 (dayDiff)，基準是 UTC 的星期幾
+          let dayDiff = (targetWeekdayIndex - todayWeekdayUTC + 7) % 7;
+
+          // 4. 判斷如果目標是"今天"，但時間已過，則順延一週 (用 UTC 時間判斷)
           if (dayDiff === 0) {
-            if (currentTaipeiHour > targetHour || (currentTaipeiHour === targetHour && currentTaipeiMinute >= targetMin)) {
-              dayDiff = 7; // 設定為下週
+            // 取得目前 UTC 的小時和分鐘
+            const currentHourUTC = now.getUTCHours();
+            const currentMinuteUTC = now.getUTCMinutes();
+            if (currentHourUTC > targetHourUTC || (currentHourUTC === targetHourUTC && currentMinuteUTC >= targetMin)) {
+              dayDiff = 7; // 目標時間已過，設定為下週
             }
           }
+          
+          // 5. 建立一個新的 Date 物件，並設定正確的 UTC 日期與時間
+          const courseDate = new Date();
+          courseDate.setUTCDate(courseDate.getUTCDate() + dayDiff);
+          courseDate.setUTCHours(targetHourUTC, targetMin, 0, 0);
 
-          // 建立一個表示目標日期時間的 Date 物件，並假定它就是台北時間
-          const courseDateTaipei = new Date(nowInTaipei); // 基於當前台北時間的日期
-          courseDateTaipei.setDate(nowInTaipei.getDate() + dayDiff); // 調整日期
-          courseDateTaipei.setHours(targetHour, targetMin, 0, 0); // 設定時間，這會是台北時間
-
-          // 將這個台北時間的 Date 物件轉換為其對應的 UTC 時間的 ISO 字串
-          const isoTime = courseDateTaipei.toISOString(); 
+          // 6. 將這個正確的 UTC 時間點轉換為 ISO 字串儲存
+          const isoTime = courseDate.toISOString();
+          // --- 修正結束 ---
 
           // 產生課程 ID 及存檔
           const newId = 'course_' + Date.now();
@@ -279,6 +287,7 @@ async function handleEvent(event) {
           writeJSON(COURSE_FILE, courses);
           delete pendingCourseCreation[userId];
 
+          // 顯示時，formatDateTime 會自動將 isoTime 轉回正確的台北時間
           return replyText(
             event.replyToken,
             `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoTime)}\n人數上限：${stepData.data.capacity}`,
