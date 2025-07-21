@@ -1,5 +1,5 @@
-// index.js - V3.12.2b（修正 SyntaxError: Identifier 'express' has already been declared & 時間顯示問題）+遞補
-const express = require('express'); // 確保這行只有一個
+// index.js - V3.12.2c（再次修正課程時間與星期錯誤，讓顯示與輸入一致）
+const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const line = require('@line/bot-sdk');
@@ -109,31 +109,28 @@ function cleanCourses(courses) {
   return courses;
 }
 
-// ⏰ 課程時間格式化（轉台北時間並顯示）
+// ⏰ 課程時間格式化（轉台北時間並顯示）- 此函數應該是正確的，因為它指定了時區
 function formatDateTime(isoString) {
     if (!isoString) return '無效時間';
-    // 直接用 ISO 字串創建 Date 物件，它會被解析為 UTC 時間點
-    const date = new Date(isoString);
+    const date = new Date(isoString); // 解析 ISO 字串，這會被視為 UTC 時間點
 
-    // 使用 Intl.DateTimeFormat 來處理時區和格式化
     const formatter = new Intl.DateTimeFormat('zh-TW', {
         month: '2-digit',
         day: '2-digit',
-        weekday: 'short', // 'short' 例如：週一，'narrow' 例如：一
+        weekday: 'short',
         hour: '2-digit',
         minute: '2-digit',
         hour12: false,
-        timeZone: 'Asia/Taipei' // 指定台北時間
+        timeZone: 'Asia/Taipei' // 指定台北時間，會將解析後的 UTC 時間點轉換為台北時間
     });
 
     const formattedParts = formatter.formatToParts(date);
     const month = formattedParts.find(p => p.type === 'month').value;
     const day = formattedParts.find(p => p.type === 'day').value;
-    const weekday = formattedParts.find(p => p.type === 'weekday').value; // 例如 "週一"
+    const weekday = formattedParts.find(p => p.type === 'weekday').value;
     const hour = formattedParts.find(p => p.type === 'hour').value;
     const minute = formattedParts.find(p => p.type === 'minute').value;
 
-    // 提取星期中的單一字元，例如 "週一" 變成 "一"
     const displayWeekday = weekday.length > 0 && weekday.startsWith('週') ? weekday.slice(-1) : weekday;
 
     return `${month}-${day}（${displayWeekday}）${hour}:${minute}`;
@@ -245,28 +242,65 @@ async function handleEvent(event) {
           const targetWeekdayIndex = weekdaysMapping[stepData.data.weekday];
           const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
 
-          // 獲取當前台北時間的 Date 物件
-          // 透過 toLocaleString 轉換為台北時間字串，再解析回來，確保 Date 物件內部時區正確對應台北
-          const nowInTaipei = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-          const todayWeekdayIndex = nowInTaipei.getDay(); // 0-6 對應星期日-星期六
+          // 獲取當前時間的 UTC Date 物件
+          const nowUtc = new Date(); // 這會是一個基於 UTC 時間戳的 Date 物件
+
+          // 計算目前台北時間的星期幾和時間
+          // 使用 Intl.DateTimeFormat 獲取當前台北時間的各個部分
+          const taipeiNowFormatter = new Intl.DateTimeFormat('en-US', {
+              weekday: 'long', // full weekday name
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+              timeZone: 'Asia/Taipei'
+          });
+          const taipeiNowParts = taipeiNowFormatter.formatToParts(nowUtc);
+          const currentTaipeiHour = parseInt(taipeiNowParts.find(p => p.type === 'hour').value);
+          const currentTaipeiMinute = parseInt(taipeiNowParts.find(p => p.type === 'minute').value);
+          const currentTaipeiWeekday = taipeiNowParts.find(p => p.type === 'weekday').value; // e.g., "Monday"
+          const todayWeekdayIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(currentTaipeiWeekday);
+
 
           let dayDiff = (targetWeekdayIndex - todayWeekdayIndex + 7) % 7;
 
-          // 如果目標是今天，但目標時間已過，則日期設定為下週
+          // 如果目標日期是今天，但目標時間已過，則設定為下週
           if (dayDiff === 0) {
-            if (nowInTaipei.getHours() > targetHour || (nowInTaipei.getHours() === targetHour && nowInTaipei.getMinutes() >= targetMin)) {
-              dayDiff = 7; // 設定為下週
-            }
+              if (currentTaipeiHour > targetHour || (currentTaipeiHour === targetHour && currentTaipeiMinute >= targetMin)) {
+                  dayDiff = 7; // 下週
+              }
           }
 
-          // 創建課程日期，從當前台北時間開始計算
-          const courseDateInTaipei = new Date(nowInTaipei);
-          courseDateInTaipei.setDate(nowInTaipei.getDate() + dayDiff);
-          courseDateInTaipei.setHours(targetHour, targetMin, 0, 0);
+          // 創建一個新的 Date 物件，並將其設定為 UTC 時間，然後再調整到台北時區的目標日期和時間
+          const courseDate = new Date(nowUtc); // 基於當前 UTC 時間
+          courseDate.setDate(nowUtc.getDate() + dayDiff); // 設置到目標日期
 
-          // 將這個台北時間的 Date 物件轉換為 ISO 字串來儲存
-          // toISOString() 總是返回 UTC 時間，但只要 formatDateTime 能正確處理，就沒問題
-          const isoTime = courseDateInTaipei.toISOString();
+          // 設置小時和分鐘。這裡的關鍵是，Date 的 setHours 在沒有指定 UTC 時，會根據本地時區設定
+          // 但 toISOString() 又會將其轉回 UTC。
+          // 為了確保精確性，我們需要考慮時區偏移量。
+          // 台北時區是 UTC+8，所以如果目標是台北時間 23:00，那對應的 UTC 時間就是 15:00。
+          // 直接將目標時間減去時區偏移量（8小時）來設置 UTC 時間，這會確保 `toISOString` 產生的時間戳是準確的。
+          
+          // 獲取當前系統時區與台北時區的偏移差 (以分鐘為單位)
+          // `new Date().getTimezoneOffset()` 取得的是本地時區與 UTC 的分鐘差，例如台灣本地會是 -480
+          // 'Asia/Taipei' 的偏移是 +8 小時，所以是 480 分鐘
+          const taipeiOffsetMinutes = 480; // UTC+8 = 480分鐘
+          const systemOffsetMinutes = new Date().getTimezoneOffset() * -1; // 系統時區與 UTC 的分鐘差
+          const offsetDiffMinutes = taipeiOffsetMinutes - systemOffsetMinutes; // 台北與系統時區的分鐘差
+          
+          // 將目標台北時間轉換為 UTC 時間
+          // 目標小時 - 8小時 (台北與 UTC 的時差)
+          let utcTargetHour = targetHour - 8; 
+          let utcTargetMin = targetMin;
+
+          // 處理跨天情況，例如 01:00 - 8小時 = -7小時 (前一天)
+          if (utcTargetHour < 0) {
+              utcTargetHour += 24; // 轉換為正數小時
+              courseDate.setDate(courseDate.getDate() - 1); // 日期倒退一天
+          }
+
+          courseDate.setUTCHours(utcTargetHour, utcTargetMin, 0, 0); // 使用 setUTCHours 確保設定的是 UTC 時間
+
+          const isoTime = courseDate.toISOString(); // 儲存為 ISO UTC 時間
 
           // 產生課程 ID 及存檔
           const newId = 'course_' + Date.now();
