@@ -628,19 +628,8 @@ async function handleTeacherCommands(event, userId, db, courses) {
     });
 
     sortedCourses.forEach(([id, c]) => {
-      // 顯示預約和候補學員的名字 (此處不顯示，僅保留計數)
-      // const studentNames = c.students.length > 0
-      //   ? c.students.map(sid => db[sid]?.name || `未知學員(${sid.substring(0, 4)}...)`).join(', ')
-      //   : '無';
-      // const waitingNames = c.waiting.length > 0
-      //   ? c.waiting.map(sid => db[sid]?.name || `未知學員(${sid.substring(0, 4)}...)`).join(', ')
-      //   : '無';
-
-      // list += `ID: ${id}\n`; // 方便老師手動操作 (已移除)
       list += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
       list += `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n`;
-      // list += `  已預約：${studentNames}\n`; // 已移除
-      // list += `  候補中：${waitingNames}\n\n`; // 已移除
       list += `\n`; // 添加空行以分隔不同課程
     });
 
@@ -748,44 +737,65 @@ async function handleTeacherCommands(event, userId, db, courses) {
       return replyText(replyToken, `✅ 已成功為學員 ${db[targetUserId].name} ${operation} ${amount} 點，目前點數：${newPoints} 點`, teacherMenu);
   }
 
-  // ✨ 查詢學員功能骨架
+  // ✨ 查詢學員功能（改為：若無查詢字串則列出所有學員）
   if (msg.startsWith('@查學員')) {
       const parts = msg.split(' ');
       const query = parts[1]; // 可以是 userId 或部分名稱
 
-      if (!query) {
-          return replyText(replyToken, '請輸入要查詢的學員 ID 或部分名稱，例如：@查學員 Uxxxxxxx 或 @查學員 小明', teacherMenu);
-      }
-
       let foundUsers = [];
-      for (const id in db) {
-          const user = db[id];
-          if (id === query || (user.name && user.name.includes(query))) {
-              foundUsers.push({ id, ...user });
+      // 如果沒有提供查詢字串，則列出所有學生（非老師角色）
+      if (!query) {
+          for (const id in db) {
+              if (db[id].role === 'student') { // 只列出學生
+                  foundUsers.push({ id, ...db[id] });
+              }
           }
-      }
+          // 依姓名排序 (可選)
+          foundUsers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-      if (foundUsers.length === 0) {
-          return replyText(replyToken, `找不到符合「${query}」的學員。`, teacherMenu);
-      }
-
-      let reply = `找到以下學員：\n\n`;
-      foundUsers.forEach(user => {
-          reply += `姓名：${user.name}\n`;
-          reply += `ID：${user.id}\n`;
-          reply += `點數：${user.points}\n`;
-          reply += `身份：${user.role === 'teacher' ? '老師' : '學員'}\n`;
-          if (user.history && user.history.length > 0) {
-              reply += `近期操作：\n`;
-              // 顯示最近的3筆操作
-              user.history.slice(-3).forEach(h => {
-                  reply += `  - ${h.action} (${formatDateTime(h.time)})\n`;
-              });
+          if (foundUsers.length === 0) {
+              return replyText(replyToken, '目前沒有任何已註冊的學員。', teacherMenu);
           }
-          reply += '\n';
-      });
 
-      return replyText(replyToken, reply.trim(), teacherMenu);
+          let reply = `📋 **所有學員列表** 📋\n\n`;
+          foundUsers.forEach(user => {
+              reply += `姓名：${user.name}\n`;
+              reply += `ID：${user.id.substring(0, 8)}...\n`; // 截斷ID，保護隱私
+              reply += `點數：${user.points}\n`;
+              reply += `\n`;
+          });
+          return replyText(replyToken, reply.trim(), teacherMenu);
+
+      } else { // 如果有提供查詢字串，則進行搜尋
+          for (const id in db) {
+              const user = db[id];
+              // 搜尋匹配 ID 或名稱
+              if (id === query || (user.name && user.name.includes(query))) {
+                  foundUsers.push({ id, ...user });
+              }
+          }
+
+          if (foundUsers.length === 0) {
+              return replyText(replyToken, `找不到符合「${query}」的學員。`, teacherMenu);
+          }
+
+          let reply = `找到以下學員：\n\n`;
+          foundUsers.forEach(user => {
+              reply += `姓名：${user.name}\n`;
+              reply += `ID：${user.id}\n`;
+              reply += `點數：${user.points}\n`;
+              reply += `身份：${user.role === 'teacher' ? '老師' : '學員'}\n`;
+              if (user.history && user.history.length > 0) {
+                  reply += `近期操作：\n`;
+                  // 顯示最近的3筆操作
+                  user.history.slice(-3).forEach(h => {
+                      reply += `  - ${h.action} (${formatDateTime(h.time)})\n`;
+                  });
+              }
+              reply += '\n';
+          });
+          return replyText(replyToken, reply.trim(), teacherMenu);
+      }
   }
 
   // ✨ 統計報表功能骨架 (簡單版)
