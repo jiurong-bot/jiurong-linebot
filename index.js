@@ -1,4 +1,4 @@
-// index.js - V3.13.0 (優化、新增註解、查學員列出所有學員功能)
+// index.js - V3.14.0 (新增預約課程與我的課程功能)
 
 // 載入必要的模組
 const express = require('express'); // Express 框架，用於建立網頁伺服器
@@ -503,17 +503,17 @@ async function handleStudentCommands(event, user, db, courses) {
   const userId = event.source.userId;
   const replyToken = event.replyToken;
 
-  // 📅 預約課程流程
+  // 📅 預約課程功能
   if (msg === '@預約課程' || msg === '@預約') {
     const upcoming = Object.entries(courses)
-      .filter(([, c]) => new Date(c.time) > new Date()) // 篩選未來的課程
+      .filter(([, c]) => new Date(c.time) > new Date()) // 篩選未來的課程 (確保時間未過)
       .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime()) // 按時間排序
       .map(([id, c]) => ({
         type: 'action',
         action: {
           type: 'message',
-          label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20), // 限制 label 長度
-          text: `我要預約 ${id}`, // 回傳指令包含課程 ID
+          label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20), // 限制 label 長度 (LINE 最多 20 字)
+          text: `我要預約 ${id}`, // 實際發送的指令，包含課程 ID
         },
       }));
 
@@ -524,47 +524,91 @@ async function handleStudentCommands(event, user, db, courses) {
     return replyText(replyToken, '請選擇課程：', upcoming);
   }
 
-  // ✅ 預約指定課程 (由快速選單觸發)
-  if (msg.startsWith('我要預約 ')) { // 注意指令後有空格
-    const id = msg.replace('我要預約 ', '').trim();
-    const course = courses[id];
-    if (!course) return replyText(replyToken, '課程不存在。', studentMenu);
+  // ✅ 執行預約課程 (接收來自選單的 `我要預約 [ID]` 指令)
+  if (msg.startsWith('我要預約 ')) {
+    const courseId = msg.replace('我要預約 ', '').trim(); // 從指令中解析出課程 ID
+    const course = courses[courseId];
 
-    if (new Date(course.time) < new Date()) { // 檢查課程是否已過期
-        return replyText(replyToken, '該課程已過期，無法預約。', studentMenu);
+    if (!course) {
+      return replyText(replyToken, '找不到該課程，或課程已不存在。', studentMenu);
     }
 
-    // 確保 students 和 waiting 陣列存在
-    if (!course.students) course.students = [];
-    if (!course.waiting) course.waiting = [];
+    if (new Date(course.time) < new Date()) {
+      return replyText(replyToken, '該課程已過期，無法預約。', studentMenu);
+    }
+
+    // 再次確保 students 和 waiting 陣列存在 (雖然 cleanCourses 會處理，但多一層防護)
+    if (!Array.isArray(course.students)) course.students = [];
+    if (!Array.isArray(course.waiting)) course.waiting = [];
 
     if (course.students.includes(userId)) {
-      return replyText(replyToken, '你已經預約此課程。', studentMenu);
+      return replyText(replyToken, '你已經預約此課程了。', studentMenu);
     }
 
     if (course.waiting.includes(userId)) {
-      return replyText(replyToken, '你已在候補名單中，請耐心等待。', studentMenu);
+      return replyText(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
     }
 
     if (user.points <= 0) {
-      return replyText(replyToken, '點數不足，請先購買點數。', studentMenu);
+      return replyText(replyToken, '你的點數不足，請先購買點數。', studentMenu);
     }
 
     if (course.students.length < course.capacity) {
-      // 預約成功
+      // 課程有空位，直接預約
       course.students.push(userId);
       user.points--; // 扣除點數
-      user.history.push({ id, action: '預約', time: new Date().toISOString() }); // 記錄歷史
+      user.history.push({ id: courseId, action: '預約成功', time: new Date().toISOString() }); // 記錄操作歷史
       writeJSON(COURSE_FILE, courses);
       writeJSON(DATA_FILE, db);
-      return replyText(replyToken, `✅ 已成功預約課程「${course.title}」。`, studentMenu);
+      return replyText(replyToken, `✅ 已成功預約課程：「${course.title}」。`, studentMenu);
     } else {
-      // 課程額滿，加入候補
+      // 課程額滿，加入候補名單
       course.waiting.push(userId);
+      user.history.push({ id: courseId, action: '加入候補', time: new Date().toISOString() }); // 記錄操作歷史
       writeJSON(COURSE_FILE, courses);
-      return replyText(replyToken, `課程「${course.title}」已額滿，已加入候補名單。`, studentMenu);
+      writeJSON(DATA_FILE, db); // 雖然候補不扣點，但也更新 db 確保 history 寫入
+      return replyText(replyToken, `該課程「${course.title}」已額滿，你已成功加入候補名單。`, studentMenu);
     }
   }
+
+  // 📖 我的課程功能
+  if (msg === '@我的課程') {
+    const now = Date.now();
+    // 篩選學生已預約且尚未過期的課程
+    const enrolledCourses = Object.entries(courses)
+      .filter(([, c]) => c.students.includes(userId) && new Date(c.time).getTime() > now)
+      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime()); // 按時間排序
+
+    // 篩選學生候補中且尚未過期的課程
+    const waitingCourses = Object.entries(courses)
+      .filter(([, c]) => c.waiting.includes(userId) && new Date(c.time).getTime() > now)
+      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime()); // 按時間排序
+
+    let replyMessage = '';
+
+    if (enrolledCourses.length === 0 && waitingCourses.length === 0) {
+      return replyText(replyToken, '你目前沒有預約或候補任何課程。', studentMenu);
+    }
+
+    if (enrolledCourses.length > 0) {
+      replyMessage += '✅ **你已預約的課程：**\n';
+      enrolledCourses.forEach(([, c]) => {
+        replyMessage += `・${c.title} - ${formatDateTime(c.time)}\n`;
+      });
+      replyMessage += '\n';
+    }
+
+    if (waitingCourses.length > 0) {
+      replyMessage += '⏳ **你候補中的課程：**\n';
+      waitingCourses.forEach(([, c]) => {
+        const waitingIndex = c.waiting.indexOf(userId) + 1; // 候補順位 (從 1 開始)
+        replyMessage += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位)\n`;
+      });
+    }
+
+    return replyText(replyToken, replyMessage.trim(), studentMenu);
+  }
+
 
   // ❌ 取消已預約課程（含自動候補轉正）
   if (msg === '@取消預約') {
@@ -676,43 +720,6 @@ async function handleStudentCommands(event, user, db, courses) {
     course.waiting = course.waiting.filter(x => x !== userId); // 從候補名單中移除
     writeJSON(COURSE_FILE, courses);
     return replyText(replyToken, `✅ 已取消課程「${course.title}」的候補。`, studentMenu);
-  }
-
-  // 📖 查詢我的課程 (預約和候補)
-  if (msg === '@我的課程') {
-    const now = Date.now();
-    // 篩選已預約且未過期的課程
-    const enrolled = Object.entries(courses).filter(([, c]) => {
-      return c.students.includes(userId) && new Date(c.time).getTime() > now;
-    }).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime()); // 按時間排序
-
-    // 篩選候補中且未過期的課程
-    const waitingList = Object.entries(courses).filter(([, c]) => {
-        return c.waiting?.includes(userId) && new Date(c.time).getTime() > now;
-    }).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime()); // 按時間排序
-
-    let list = '';
-    if (enrolled.length === 0 && waitingList.length === 0) {
-      return replyText(replyToken, '你目前沒有預約或候補任何課程。', studentMenu);
-    }
-
-    if (enrolled.length > 0) {
-      list += '✅ 你預約的課程：\n';
-      enrolled.forEach(([, c]) => {
-        list += `・${c.title} - ${formatDateTime(c.time)}\n`;
-      });
-    }
-
-    if (waitingList.length > 0) {
-      if (list !== '') list += '\n'; // 如果前面有預約課程，加個換行
-      list += '⏳ 你候補中的課程：\n';
-      waitingList.forEach(([, c]) => {
-        const waitingIndex = c.waiting.indexOf(userId) + 1; // 候補順位 (從 1 開始)
-        list += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位)\n`;
-      });
-    }
-
-    return replyText(replyToken, list.trim(), studentMenu);
   }
 
   // 💎 查詢點數
@@ -913,7 +920,7 @@ async function handleTeacherCommands(event, userId, db, courses) {
               }
               reply += '\n'; // 每位學員間隔空行
           });
-          return replyText(reply.trim(), replyToken, teacherMenu);
+          return replyText(replyToken, reply.trim(), teacherMenu);
       }
   }
 
@@ -973,7 +980,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 🚀 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ Server running at port ${PORT}`);
-  console.log(`Bot 版本: V3.13.0`);
+  console.log(`Bot 版本: V3.14.0`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
