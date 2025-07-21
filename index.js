@@ -219,7 +219,61 @@ async function handleEvent(event) {
             { type: 'message', label: '❌ 否', text: '取消新增課程' },
           ]
         ); 
+       case 5:
+  if (text === '確認新增課程') {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 
+    // 🔄 計算正確時間
+    function getNextDateFromWeekday(weekdayName, timeStr) {
+      const now = new Date();
+      const today = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+      const todayDay = today.getDay();
+      const targetDay = weekdays.indexOf(weekdayName);
+
+      let daysToAdd = (targetDay - todayDay + 7) % 7;
+
+      const [hour, minute] = timeStr.split(':').map(Number);
+      if (daysToAdd === 0) {
+        if (
+          today.getHours() > hour ||
+          (today.getHours() === hour && today.getMinutes() >= minute)
+        ) {
+          daysToAdd = 7;
+        }
+      }
+
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() + daysToAdd);
+      targetDate.setHours(hour, minute, 0, 0);
+
+      return targetDate;
+    }
+
+    const targetDate = getNextDateFromWeekday(stepData.data.weekday, stepData.data.time);
+
+    // ✅ 直接使用 targetDate 的 ISO 字串（不再重新轉時區）
+    const taipeiTimeStr = targetDate.toISOString();
+
+    const newId = 'course_' + Date.now();
+    const courses = readJSON(COURSE_FILE);
+    courses[newId] = {
+      title: stepData.data.title,
+      time: taipeiTimeStr,
+      capacity: stepData.data.capacity,
+      students: [],
+      waiting: [],
+    };
+
+    writeJSON(COURSE_FILE, courses);
+    delete pendingCourseCreation[userId];
+
+    return replyText(
+      event.replyToken,
+      `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
+      teacherMenu
+    );
+                  
+/*        
        case 5:
        if (text === '確認新增課程') {
   const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
@@ -275,6 +329,8 @@ async function handleEvent(event) {
     `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
     teacherMenu
   );
+*/
+  
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
           return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
