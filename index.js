@@ -220,45 +220,60 @@ async function handleEvent(event) {
           ]
         ); 
 
-    case 5:
-        if (text === '確認新增課程') {
-          const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-          const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-          const todayWeekday = today.getDay();
-          const targetWeekday = weekdays.indexOf(stepData.data.weekday); 
+        case 5:
+  if (text === '確認新增課程') {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    // 取得台北當前時間（日期+時間）
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const todayWeekday = now.getDay();
+    const targetWeekday = weekdays.indexOf(stepData.data.weekday);
 
-          let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
-          if (dayDiff === 0) dayDiff = 7; 
+    // 解析輸入的課程時間（24小時制）
+    const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
 
-          const targetDate = new Date(today);
-          targetDate.setDate(today.getDate() + dayDiff); 
+    // 計算距離目標星期幾的天數差
+    let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
 
-          const [hour, min] = stepData.data.time.split(':').map(Number);
-          targetDate.setHours(hour, min, 0, 0); 
+    // 如果目標星期就是今天，判斷課程時間是否已過，若已過則排到下週
+    if (dayDiff === 0) {
+      if (now.getHours() > targetHour || (now.getHours() === targetHour && now.getMinutes() >= targetMin)) {
+        dayDiff = 7;
+      }
+    }
 
-          const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
-            timeZone: 'Asia/Taipei',
-            hour12: false,
-          }).replace(' ', 'T'); 
+    // 建立課程日期時間物件
+    const targetDate = new Date(now);
+    targetDate.setDate(now.getDate() + dayDiff);
+    targetDate.setHours(targetHour, targetMin, 0, 0);
 
-          const newId = 'course_' + Date.now();
-          const courses = readJSON(COURSE_FILE);
-          courses[newId] = {
-            title: stepData.data.title,
-            time: taipeiTimeStr,
-            capacity: stepData.data.capacity,
-            students: [],
-            waiting: [],
-          }; 
+    // 格式化成台北時區的 ISO 字串（類似 2024-07-24T15:00:00）
+    const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
+      timeZone: 'Asia/Taipei',
+      hour12: false,
+    }).replace(' ', 'T');
 
-          writeJSON(COURSE_FILE, courses);
-          delete pendingCourseCreation[userId]; 
+    // 產生課程 ID，讀取課程資料並新增
+    const newId = 'course_' + Date.now();
+    const courses = readJSON(COURSE_FILE);
+    courses[newId] = {
+      title: stepData.data.title,
+      time: taipeiTimeStr,
+      capacity: stepData.data.capacity,
+      students: [],
+      waiting: [],
+    };
 
-          return replyText(
-            event.replyToken,
-            `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
-            teacherMenu
-          );
+    // 寫入檔案，刪除暫存狀態
+    writeJSON(COURSE_FILE, courses);
+    delete pendingCourseCreation[userId];
+
+    // 回覆新增成功訊息並附帶老師選單
+    return replyText(
+      event.replyToken,
+      `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
+      teacherMenu
+    );
+        
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
           return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
