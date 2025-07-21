@@ -229,7 +229,7 @@ async function handleEvent(event) {
 
           let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
           if (dayDiff === 0) dayDiff = 7; 
-/*
+
           const targetDate = new Date(today);
           targetDate.setDate(today.getDate() + dayDiff); 
 
@@ -240,17 +240,6 @@ async function handleEvent(event) {
             timeZone: 'Asia/Taipei',
             hour12: false,
           }).replace(' ', 'T'); 
-*/
-          const [hour, min] = stepData.data.time.split(':').map(Number);
-
-// 建立一個台北時間的 Date 物件
-const targetDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-targetDate.setDate(targetDate.getDate() + dayDiff);
-targetDate.setHours(hour, min, 0, 0);
-
-// 把台北時間轉成 UTC，再存為 ISO 格式（確保不會再偏 8 小時）
-const taipeiTime = new Date(targetDate.getTime() - (targetDate.getTimezoneOffset() * 60000));
-const taipeiTimeStr = taipeiTime.toISOString(); // 儲存為 UTC ISO 格式
           
           const newId = 'course_' + Date.now();
           const courses = readJSON(COURSE_FILE);
