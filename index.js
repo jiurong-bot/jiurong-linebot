@@ -223,41 +223,57 @@ async function handleEvent(event) {
         );
 
       case 5:
-        if (text === '確認新增課程') {
-          const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-          const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-          const todayWeekday = today.getDay();
-          const targetWeekday = weekdays.indexOf(stepData.data.weekday);
+  if (text === '確認新增課程') {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    const targetWeekday = weekdays.indexOf(stepData.data.weekday);
 
-          let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
-          if (dayDiff === 0) dayDiff = 7;
+    // 自訂函式：計算下一個指定星期幾和時間的 Date
+    function getNextWeekdayDate(targetDay, timeStr) {
+      const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+      const [hour, minute] = timeStr.split(':').map(Number);
 
-          const targetDate = new Date(today);
-          targetDate.setDate(today.getDate() + dayDiff);
+      // 今天的指定時間
+      const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
 
-          const [hour, min] = stepData.data.time.split(':').map(Number);
-          targetDate.setHours(hour, min, 0, 0);
+      const dayDiff = (targetDay + 7 - now.getDay()) % 7;
 
-          const taipeiTimeStr = targetDate.toISOString().replace('Z', '');
+      if (dayDiff === 0) {
+        // 今天是目標星期幾，判斷時間是否已過
+        if (candidate > now) {
+          return candidate;
+        } else {
+          candidate.setDate(candidate.getDate() + 7);
+          return candidate;
+        }
+      } else {
+        candidate.setDate(candidate.getDate() + dayDiff);
+        return candidate;
+      }
+    }
 
-          const newId = 'course_' + Date.now();
-          const courses = readJSON(COURSE_FILE);
-          courses[newId] = {
-            title: stepData.data.title,
-            time: taipeiTimeStr,
-            capacity: stepData.data.capacity,
-            students: [],
-            waiting: [],
-          };
+    const targetDate = getNextWeekdayDate(targetWeekday, stepData.data.time);
 
-          writeJSON(COURSE_FILE, courses);
-          delete pendingCourseCreation[userId];
+    // ISO 字串去掉末尾的 Z，保持台北時間不轉 UTC
+    const taipeiTimeStr = targetDate.toISOString().replace('Z', '');
 
-          return replyText(
-            event.replyToken,
-            `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
-            teacherMenu
-          );
+    const newId = 'course_' + Date.now();
+    const courses = readJSON(COURSE_FILE);
+    courses[newId] = {
+      title: stepData.data.title,
+      time: taipeiTimeStr,
+      capacity: stepData.data.capacity,
+      students: [],
+      waiting: [],
+    };
+
+    writeJSON(COURSE_FILE, courses);
+    delete pendingCourseCreation[userId];
+
+    return replyText(
+      event.replyToken,
+      `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
+      teacherMenu
+    );
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
           return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
