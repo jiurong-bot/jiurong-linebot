@@ -223,49 +223,6 @@ async function handleEvent(event) {
     case 5:
         if (text === '確認新增課程') {
           const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-const todayWeekday = today.getDay();
-const targetWeekday = weekdays.indexOf(stepData.data.weekday);
-
-// 計算距離下個目標星期幾還有幾天
-let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
-if (dayDiff === 0) dayDiff = 7; // 一定是下週
-
-// 建立台北時間的日期
-const taipeiTargetDate = new Date(today);
-taipeiTargetDate.setDate(today.getDate() + dayDiff);
-
-// 設定台北時間的時分
-const [hour, min] = stepData.data.time.split(':').map(Number);
-taipeiTargetDate.setHours(hour, min, 0, 0);
-
-// 轉成 ISO 字串（本地時間）
-const localISOString = taipeiTargetDate.toLocaleString('sv-SE', {
-  timeZone: 'Asia/Taipei',
-  hour12: false,
-}).replace(' ', 'T'); // 例如：2025-07-28T13:00
-
-// 儲存課程
-const newId = 'course_' + Date.now();
-const courses = readJSON(COURSE_FILE);
-courses[newId] = {
-  title: stepData.data.title,
-  time: localISOString,
-  capacity: stepData.data.capacity,
-  students: [],
-  waiting: [],
-};
-
-writeJSON(COURSE_FILE, courses);
-delete pendingCourseCreation[userId];
-
-return replyText(
-  event.replyToken,
-  `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(localISOString)}\n人數上限：${stepData.data.capacity}`,
-  teacherMenu
-);
- /*
-          const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
           const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
           const todayWeekday = today.getDay();
           const targetWeekday = weekdays.indexOf(stepData.data.weekday); 
@@ -302,7 +259,7 @@ return replyText(
             `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
             teacherMenu
           );
-*/
+
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
           return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
