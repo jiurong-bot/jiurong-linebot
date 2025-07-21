@@ -106,9 +106,11 @@ function cleanCourses(courses) {
 
 // ⏰ 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(dateStr) {
+  // 將 ISO UTC 時間字串轉為 Taipei 實際時間
   const date = new Date(dateStr);
+  const taipeiDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
 
-  const taipeiOptions = {
+  const options = {
     timeZone: 'Asia/Taipei',
     year: 'numeric',
     month: '2-digit',
@@ -117,18 +119,13 @@ function formatDateTime(dateStr) {
     minute: '2-digit',
     hour12: false,
   };
+  const formatter = new Intl.DateTimeFormat('zh-TW', options);
+  const parts = formatter.formatToParts(taipeiDate);
 
-  const formatter = new Intl.DateTimeFormat('zh-TW', taipeiOptions);
-  const parts = formatter.formatToParts(date);
-
-  const getPart = (type) => parts.find(p => p.type === type)?.value || '';
-
+  const getPart = type => parts.find(p => p.type === type)?.value || '';
   const mmdd = `${getPart('month')}-${getPart('day')}`;
   const hhmm = `${getPart('hour')}:${getPart('minute')}`;
-
-  const weekdayIndex = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Taipei' })).getDay();
-  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-  const weekday = weekdays[weekdayIndex];
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][taipeiDate.getDay()];
 
   return `${mmdd}（${weekday}）${hhmm}`;
 }
@@ -256,7 +253,7 @@ async function handleEvent(event) {
 
       return targetDate;
     }
-
+/*
     const targetDate = getNextDateFromWeekday(stepData.data.weekday, stepData.data.time);
 
     // ✅ 直接使用 targetDate 的 ISO 字串（不再重新轉時區）
@@ -271,7 +268,7 @@ async function handleEvent(event) {
       students: [],
       waiting: [],
     };
-
+*/
     writeJSON(COURSE_FILE, courses);
     delete pendingCourseCreation[userId];
 
@@ -280,64 +277,6 @@ async function handleEvent(event) {
       `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
       teacherMenu
     );
-                  
-/*        
-       case 5:
-       if (text === '確認新增課程') {
-  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-
-  // 🔄 根據輸入 weekday 與 time，取得最近的正確課程時間
-  function getNextDateFromWeekday(weekdayName, timeStr) {
-    const now = new Date();
-    const today = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-    const todayDay = today.getDay();
-    const targetDay = weekdays.indexOf(weekdayName);
-
-    let daysToAdd = (targetDay - todayDay + 7) % 7;
-
-    // 若今天就是目標星期，要比較時間是否已過
-    const [hour, minute] = timeStr.split(':').map(Number);
-    if (daysToAdd === 0) {
-      if (
-        today.getHours() > hour ||
-        (today.getHours() === hour && today.getMinutes() >= minute)
-      ) {
-        daysToAdd = 7;
-      }
-    }
-
-    const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() + daysToAdd);
-    targetDate.setHours(hour, minute, 0, 0);
-
-    return targetDate;
-  }
-
-  const targetDate = getNextDateFromWeekday(stepData.data.weekday, stepData.data.time);
-
-  // ✅ 真正轉為 Asia/Taipei 時區的 ISO 格式（儲存與顯示都正確）
-  const taipeiDate = new Date(targetDate.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-  const taipeiTimeStr = taipeiDate.toISOString(); // 儲存用
-
-  const newId = 'course_' + Date.now();
-  const courses = readJSON(COURSE_FILE);
-  courses[newId] = {
-    title: stepData.data.title,
-    time: taipeiTimeStr,
-    capacity: stepData.data.capacity,
-    students: [],
-    waiting: [],
-  };
-
-  writeJSON(COURSE_FILE, courses);
-  delete pendingCourseCreation[userId];
-
-  return replyText(
-    event.replyToken,
-    `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
-    teacherMenu
-  );
-*/
   
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
