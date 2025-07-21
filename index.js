@@ -220,6 +220,46 @@ async function handleEvent(event) {
           ]
         ); 
 
+       case 5:
+  if (text === '確認新增課程') {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const todayWeekday = today.getDay();
+    const targetWeekday = weekdays.indexOf(stepData.data.weekday);
+
+    let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
+    if (dayDiff === 0) dayDiff = 7;
+
+    const targetDate = new Date(today);
+    targetDate.setDate(today.getDate() + dayDiff);
+
+    const [hour, min] = stepData.data.time.split(':').map(Number);
+    targetDate.setHours(hour, min, 0, 0);
+
+    // ✅ 真正轉為 Asia/Taipei 的 ISO 格式字串
+    const taipeiDate = new Date(targetDate.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+    const taipeiTimeStr = taipeiDate.toISOString();  // 儲存用
+
+    const newId = 'course_' + Date.now();
+    const courses = readJSON(COURSE_FILE);
+    courses[newId] = {
+      title: stepData.data.title,
+      time: taipeiTimeStr,
+      capacity: stepData.data.capacity,
+      students: [],
+      waiting: [],
+    };
+
+    writeJSON(COURSE_FILE, courses);
+    delete pendingCourseCreation[userId];
+
+    return replyText(
+      event.replyToken,
+      `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
+      teacherMenu
+    );
+  }
+/*
     case 5:
         if (text === '確認新增課程') {
           const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
@@ -259,7 +299,7 @@ async function handleEvent(event) {
             `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
             teacherMenu
           );
-
+*/
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
           return replyText(event.replyToken, '❌ 已取消新增課程', teacherMenu);
