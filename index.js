@@ -628,19 +628,20 @@ async function handleTeacherCommands(event, userId, db, courses) {
     });
 
     sortedCourses.forEach(([id, c]) => {
-      // 顯示預約和候補學員的名字
-      const studentNames = c.students.length > 0
-        ? c.students.map(sid => db[sid]?.name || `未知學員(${sid.substring(0, 4)}...)`).join(', ')
-        : '無';
-      const waitingNames = c.waiting.length > 0
-        ? c.waiting.map(sid => db[sid]?.name || `未知學員(${sid.substring(0, 4)}...)`).join(', ')
-        : '無';
+      // 顯示預約和候補學員的名字 (此處不顯示，僅保留計數)
+      // const studentNames = c.students.length > 0
+      //   ? c.students.map(sid => db[sid]?.name || `未知學員(${sid.substring(0, 4)}...)`).join(', ')
+      //   : '無';
+      // const waitingNames = c.waiting.length > 0
+      //   ? c.waiting.map(sid => db[sid]?.name || `未知學員(${sid.substring(0, 4)}...)`).join(', ')
+      //   : '無';
 
-      list += `ID: ${id}\n`; // 方便老師手動操作
+      // list += `ID: ${id}\n`; // 方便老師手動操作 (已移除)
       list += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
       list += `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n`;
-      list += `  已預約：${studentNames}\n`;
-      list += `  候補中：${waitingNames}\n\n`;
+      // list += `  已預約：${studentNames}\n`; // 已移除
+      // list += `  候補中：${waitingNames}\n\n`; // 已移除
+      list += `\n`; // 添加空行以分隔不同課程
     });
 
     return replyText(replyToken, list.trim(), teacherMenu);
