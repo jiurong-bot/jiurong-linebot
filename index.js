@@ -220,39 +220,43 @@ async function handleEvent(event) {
           ]
         ); 
 
-        case 5:
+       case 5:
   if (text === '確認新增課程') {
     const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-    // 取得台北當前時間（日期+時間）
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-    const todayWeekday = now.getDay();
+
+    // 建立一個新的 Date 物件：用 Date.now() 取得目前 UTC 毫秒數
+    const nowUtc = new Date(Date.now());
+
+    // 轉成台北時間
+    const nowTaipei = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+
+    const todayWeekday = nowTaipei.getDay();
     const targetWeekday = weekdays.indexOf(stepData.data.weekday);
 
-    // 解析輸入的課程時間（24小時制）
     const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
 
-    // 計算距離目標星期幾的天數差
     let dayDiff = (targetWeekday - todayWeekday + 7) % 7;
 
-    // 如果目標星期就是今天，判斷課程時間是否已過，若已過則排到下週
+    // 若是同一天，判斷時間是否已過
     if (dayDiff === 0) {
-      if (now.getHours() > targetHour || (now.getHours() === targetHour && now.getMinutes() >= targetMin)) {
+      if (nowTaipei.getHours() > targetHour || (nowTaipei.getHours() === targetHour && nowTaipei.getMinutes() >= targetMin)) {
         dayDiff = 7;
       }
     }
 
-    // 建立課程日期時間物件
-    const targetDate = new Date(now);
-    targetDate.setDate(now.getDate() + dayDiff);
+    // 建立目標課程時間（注意用台北時間物件來操作）
+    const targetDate = new Date(nowTaipei);
+    targetDate.setDate(nowTaipei.getDate() + dayDiff);
     targetDate.setHours(targetHour, targetMin, 0, 0);
 
-    // 格式化成台北時區的 ISO 字串（類似 2024-07-24T15:00:00）
+    // 直接用 toISOString，並用 substring 取出需要的部分（這是 UTC 時間，會有時差！）
+    // 改用 toLocaleString 並指定時區轉字串，再處理格式：
     const taipeiTimeStr = targetDate.toLocaleString('sv-SE', {
       timeZone: 'Asia/Taipei',
       hour12: false,
     }).replace(' ', 'T');
 
-    // 產生課程 ID，讀取課程資料並新增
+    // 產生課程 ID 及存檔
     const newId = 'course_' + Date.now();
     const courses = readJSON(COURSE_FILE);
     courses[newId] = {
@@ -263,11 +267,9 @@ async function handleEvent(event) {
       waiting: [],
     };
 
-    // 寫入檔案，刪除暫存狀態
     writeJSON(COURSE_FILE, courses);
     delete pendingCourseCreation[userId];
 
-    // 回覆新增成功訊息並附帶老師選單
     return replyText(
       event.replyToken,
       `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
