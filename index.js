@@ -258,7 +258,6 @@ async function handleEvent(event) {
       `✅ 課程已新增：${stepData.data.title}\n時間：${formatDateTime(taipeiTimeStr)}\n人數上限：${stepData.data.capacity}`,
       teacherMenu
     );
-  }
 /*
     case 5:
         if (text === '確認新增課程') {
