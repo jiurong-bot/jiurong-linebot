@@ -253,9 +253,9 @@ async function handleEvent(event) {
 
       return targetDate;
     }
-/*
+         
     const targetDate = getNextDateFromWeekday(stepData.data.weekday, stepData.data.time);
-
+/*
     // ✅ 直接使用 targetDate 的 ISO 字串（不再重新轉時區）
     const taipeiTimeStr = targetDate.toISOString();
 
