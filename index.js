@@ -106,23 +106,29 @@ function cleanCourses(courses) {
 
 // ⏰ 課程時間格式化（轉台北時間並顯示）
 function formatDateTime(dateStr) {
-  // 直接使用 toLocaleString 回傳在 Asia/Taipei 時區的正確時間字串
-  const taipeiStr = new Date(dateStr).toLocaleString('en-US', { timeZone: 'Asia/Taipei' });
-  const taipeiDate = new Date(taipeiStr); // 避免直接巢狀轉換造成偏差
+  const date = new Date(dateStr);
 
-  const mmdd = taipeiDate.toLocaleDateString('zh-TW', {
+  const taipeiOptions = {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).replace(/\//g, '-'); 
-
-  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-  const weekday = weekdays[taipeiDate.getDay()]; 
-
-  const hhmm = taipeiDate.toLocaleTimeString('zh-TW', {
-    hour12: false,
     hour: '2-digit',
     minute: '2-digit',
-  }); 
+    hour12: false,
+  };
+
+  const formatter = new Intl.DateTimeFormat('zh-TW', taipeiOptions);
+  const parts = formatter.formatToParts(date);
+
+  const getPart = (type) => parts.find(p => p.type === type)?.value || '';
+
+  const mmdd = `${getPart('month')}-${getPart('day')}`;
+  const hhmm = `${getPart('hour')}:${getPart('minute')}`;
+
+  const weekdayIndex = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Taipei' })).getDay();
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  const weekday = weekdays[weekdayIndex];
 
   return `${mmdd}（${weekday}）${hhmm}`;
 }
