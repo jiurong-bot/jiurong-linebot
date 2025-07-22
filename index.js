@@ -1,4 +1,4 @@
-// index.js - V3.16.0 (點數查詢下分出購買點數/剩餘點數/購買紀錄的功能選單 + 購點確認流程與手動調整) - 進版
+// index.js - V3.16.1 (修正 replyToken is not defined 錯誤) - 進版
 
 // --- 模組載入 ---
 const express = require('express'); // Express 框架，用於建立網頁伺服器
@@ -291,6 +291,7 @@ async function handleEvent(event) {
   const orders = readJSON(ORDER_FILE); // 讀取購點訂單資料
 
   const userId = event.source.userId;
+  const replyToken = event.replyToken; // <--- 關鍵修正：在函式開頭就定義 replyToken
 
   // 如果是新用戶，則在資料庫中建立其條目
   if (!db[userId]) {
@@ -317,7 +318,7 @@ async function handleEvent(event) {
   // 處理 Postback 事件 (例如來自快速選單或按鈕的資料回傳)
   if (event.type === 'postback') {
     const data = event.postback.data;
-    const replyToken = event.replyToken;
+    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義，因為已在函式開頭定義
 
     // 課程取消確認流程
     if (data.startsWith('cancel_course_')) {
@@ -400,8 +401,8 @@ async function handleEvent(event) {
   // --- 🔹 多步驟新增課程流程處理 ---
   if (pendingCourseCreation[userId]) {
     const stepData = pendingCourseCreation[userId];
-    const replyToken = event.replyToken;
-    // ... (此部分程式碼保持不變，與您提供的上一個版本相同，因為它不屬於本次修改範圍)
+    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
+    // ... (此部分程式碼保持不變)
     switch (stepData.step) {
       case 1: // 接收課程名稱
         stepData.data.title = text;
@@ -524,7 +525,7 @@ async function handleEvent(event) {
   // --- ✅ 課程取消確認流程處理 ---
   if (pendingCourseCancelConfirm[userId]) {
     const courseId = pendingCourseCancelConfirm[userId];
-    const replyToken = event.replyToken;
+    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
 
     // 重新讀取課程資料，確保是最新的
     let coursesDataConfirm = readJSON(COURSE_FILE);
@@ -589,7 +590,7 @@ async function handleEvent(event) {
   // --- 🔐 老師手動調整點數流程處理 ---
   if (pendingManualAdjust[userId]) {
     const stepData = pendingManualAdjust[userId];
-    const replyToken = event.replyToken;
+    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
 
     // 預期輸入格式： 學員ID/姓名 數量
     const parts = text.split(' ');
@@ -660,7 +661,7 @@ async function handleEvent(event) {
   // --- 學生購點流程處理 ---
   if (pendingPurchase[userId]) {
       const stepData = pendingPurchase[userId];
-      const replyToken = event.replyToken;
+      // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
 
       switch (stepData.step) {
           case 'select_plan': // 學員選擇購買方案
@@ -748,7 +749,7 @@ async function handleEvent(event) {
 async function handleStudentCommands(event, user, db, courses, orders) {
   const msg = event.message.text.trim();
   const userId = event.source.userId;
-  const replyToken = event.replyToken;
+  const replyToken = event.replyToken; // 確保在子函式中也從 event 獲取 replyToken
 
   // --- 📅 預約課程功能 ---
   if (msg === '@預約課程' || msg === '@預約') {
@@ -1125,7 +1126,7 @@ async function handleStudentCommands(event, user, db, courses, orders) {
 // ====================== 👨‍🏫 老師功能處理 ===========================
 async function handleTeacherCommands(event, userId, db, courses, orders) {
   const msg = event.message.text.trim();
-  const replyToken = event.replyToken;
+  const replyToken = event.replyToken; // 確保在子函式中也從 event 獲取 replyToken
 
   // --- 📋 查詢課程名單 ---
   if (msg === '@課程名單') {
@@ -1368,7 +1369,7 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
 
     let report = `📊 系統統計報表 📊\n\n`;
     report += `👤 總學員數：${totalStudents}\n`;
-    report += `👨‍🏫 總老師數：${totalTeachers}\n`;
+report += `👨‍🏫 總老師數：${totalTeachers}\n`;
     report += `💎 學員總點數：${totalPoints}\n`;
     report += `✨ 活躍學員數（有點數）：${activeStudents}\n`;
     report += `📚 課程總數：${coursesCount}\n`;
@@ -1401,7 +1402,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 🚀 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.0 (點數查詢下分出購買點數/剩餘點數/購買紀錄的功能選單 + 購點確認流程與手動調整)`);
+  console.log(`Bot 版本: V3.16.1 (修正 replyToken is not defined 錯誤)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
