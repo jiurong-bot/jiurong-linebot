@@ -155,6 +155,11 @@ async function initializeDatabase() {
     global.courseIdCounter = maxId + 1;
     console.log(`ℹ️ 課程 ID 計數器初始化為: ${global.courseIdCounter}`);
 
+    // *** 修改處：在所有資料表建立並初始化後，執行首次清理 ***
+    await cleanCoursesDB();
+    console.log('✅ 首次資料庫清理完成。');
+    // *************************************************
+
   } catch (err) {
     console.error('❌ 資料庫初始化失敗:', err.message);
     process.exit(1); // 如果資料庫無法初始化，則終止應用程式
@@ -1541,17 +1546,17 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
 // 伺服器監聽啟動
-app.listen(PORT, async () => { // 將 listen 函式改為 async，因為 initializeDatabase 是異步的
+app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
   console.log(`Bot 版本: V4.0.0 (導入 PostgreSQL 資料庫)`);
 
-  // 在伺服器啟動後，執行一次資料庫清理 (確保資料庫連接成功後再執行)
-  await cleanCoursesDB(); // 啟動時清理一次過期課程
+  // *** 修改處：移除了這裡的 await cleanCoursesDB(); 因為它已經在 initializeDatabase() 中被調用了 ***
+  // await cleanCoursesDB(); // 這行現在應該被移除
 
-  // 設定定時清理任務 (例如每天清理一次)
+  // 設定定時清理任務 (這個保持不變)
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS); // 每 24 小時清理一次
 
-  // 設定定時檢查並發送提醒任務
+  // 設定定時檢查並發送提醒任務 (這個保持不變)
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
 
   // Keep-alive pinging (防止 Render 免費服務休眠)
