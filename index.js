@@ -37,9 +37,11 @@ const TEACHER_ID = process.env.TEACHER_ID;   // 老師的 LINE User ID，用於�
 
 // 時間相關常數
 const ONE_DAY_IN_MS = 86400000;              // 一天的毫秒數 (24 * 60 * 60 * 1000)
-const EIGHT_HOURS_IN_MS = 28800000;          // 8 小時的毫秒數 (8 * 60 * 60 * 1000) // 新增此常量
+const EIGHT_HOURS_IN_MS = 28800000;          // 8 小時的毫秒數 (8 * 60 * 60 * 1000)
+const ONE_HOUR_IN_MS = 3600000;              // 1 小時的毫秒數 (60 * 60 * 1000) // 新增此常量
 const PING_INTERVAL_MS = 1000 * 60 * 5;      // Keep-alive 服務的間隔，5 分鐘
 const BACKUP_INTERVAL_MS = 1000 * 60 * 60 * 24; // 資料備份間隔，24 小時
+const REMINDER_CHECK_INTERVAL_MS = 1000 * 60 * 5; // 提醒檢查間隔，5 分鐘 // 新增此常量
 
 // 購點方案定義
 const PURCHASE_PLANS = [
@@ -356,6 +358,10 @@ const pendingCourseCreation = {};      // 儲存新增課程流程的狀態和�
 const pendingCourseCancelConfirm = {}; // 儲存等待課程取消確認的用戶 ID 和課程 ID
 const pendingPurchase = {};            // 儲存學員購點流程的狀態和資料
 const pendingManualAdjust = {};        // 儲存老師手動調整點數流程的狀態
+
+// 用於追蹤已發送的課程提醒，避免重複發送
+// 每次服務啟動時會重置，這表示如果服務重啟，可能再次發送當前小時內的提醒
+const sentReminders = {};
 
 
 // =====================================
@@ -965,7 +971,6 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
   return reply(replyToken, '指令無效，請使用下方選單或輸入正確指令。', studentMenu);
 }
 
-
 // =====================================
 //      🎯 主事件處理函式 (處理所有 LINE 傳入的訊息和事件)
 // =====================================
@@ -1380,6 +1385,43 @@ async function handleEvent(event) {
 }
 
 // =====================================
+//           自動提醒功能
+// =====================================
+
+/**
+ * 檢查並發送課程開始前 1 小時的提醒。
+ */
+async function checkAndSendReminders() {
+  const now = Date.now();
+  const coursesData = readJSON(COURSE_FILE);
+  const courses = coursesData.courses;
+  const db = readJSON(DATA_FILE);
+
+  for (const id in courses) {
+    const course = courses[id];
+    const courseTime = new Date(course.time).getTime();
+    const timeUntilCourse = courseTime - now;
+
+    // 檢查課程是否在未來 1 小時內，且尚未發送提醒
+    if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && !sentReminders[id]) {
+      console.log(`🔔 準備發送課程提醒：${course.title} (ID: ${id})`);
+      for (const studentId of course.students) {
+        if (db[studentId]) {
+          try {
+            await push(studentId, `🔔 提醒：您預約的課程「${course.title}」將於 1 小時內開始！\n時間：${formatDateTime(course.time)}`);
+            console.log(`   ✅ 已向學員 ${db[studentId].name} (${studentId.substring(0, 8)}...) 發送提醒。`);
+          } catch (e) {
+            console.error(`   ❌ 向學員 ${studentId} 發送提醒失敗:`, e.message);
+          }
+        }
+      }
+      sentReminders[id] = true; // 標記為已發送提醒
+    }
+  }
+}
+
+
+// =====================================
 //           LINE Webhook 與伺服器啟動
 // =====================================
 
@@ -1405,6 +1447,9 @@ app.listen(PORT, () => {
   backupData();
   // 設定定時備份任務
   setInterval(backupData, BACKUP_INTERVAL_MS); // 每 24 小時備份一次
+
+  // 設定定時檢查並發送提醒任務
+  setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS); // 每 5 分鐘檢查一次
 
   // Keep-alive pinging to prevent dyno sleep on Free Tier hosting
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
