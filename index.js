@@ -1,4 +1,4 @@
-// index.js - V3.16.1 (修正 replyToken is not defined 錯誤) - 進版
+// index.js - V3.16.2 (修正新增課程時間錯誤) - 進版
 
 // --- 模組載入 ---
 const express = require('express'); // Express 框架，用於建立網頁伺服器
@@ -291,7 +291,7 @@ async function handleEvent(event) {
   const orders = readJSON(ORDER_FILE); // 讀取購點訂單資料
 
   const userId = event.source.userId;
-  const replyToken = event.replyToken; // <--- 關鍵修正：在函式開頭就定義 replyToken
+  const replyToken = event.replyToken; // <--- 確保在函式開頭就定義 replyToken
 
   // 如果是新用戶，則在資料庫中建立其條目
   if (!db[userId]) {
@@ -318,8 +318,6 @@ async function handleEvent(event) {
   // 處理 Postback 事件 (例如來自快速選單或按鈕的資料回傳)
   if (event.type === 'postback') {
     const data = event.postback.data;
-    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義，因為已在函式開頭定義
-
     // 課程取消確認流程
     if (data.startsWith('cancel_course_')) {
       const courseId = data.replace('cancel_course_', '');
@@ -401,8 +399,6 @@ async function handleEvent(event) {
   // --- 🔹 多步驟新增課程流程處理 ---
   if (pendingCourseCreation[userId]) {
     const stepData = pendingCourseCreation[userId];
-    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
-    // ... (此部分程式碼保持不變)
     switch (stepData.step) {
       case 1: // 接收課程名稱
         stepData.data.title = text;
@@ -461,31 +457,37 @@ async function handleEvent(event) {
           const targetWeekdayIndex = weekdaysMapping[stepData.data.weekday]; // 目標是台北的星期幾 (0-6)
           const [targetHour, targetMin] = stepData.data.time.split(':').map(Number); // 目標是台北的小時和分鐘
 
-          // --- 關鍵時區處理邏輯：確保課程時間正確儲存為 UTC ---
-          const now = new Date();
-          // 取得當前台北時間的 Date 物件
-          const currentTaipeiTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
-          const todayWeekdayTaipei = currentTaipeiTime.getDay(); // 取得今天是台北的星期幾 (0=週日, 6=週六)
+          // --- 修正後的時區處理邏輯：確保課程時間正確儲存為 UTC ---
+          const now = new Date(); // 當前 UTC 時間
+          // 獲取當前台北時間的偏移量 (例如，台灣是 +8)
+          // 這裡不能直接用 new Date().getTimezoneOffset() 因為它是基於伺服器當地時區
+          // 而應該基於目標時區 'Asia/Taipei'
+          const taipeiOffset = -new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei", hour12: false, hour: 'numeric', minute: 'numeric', second: 'numeric' }).indexOf(':') === -1 ? 0 : 480; // 台灣是 UTC+8，偏移量是 -480 分鐘 (480*60*1000 ms)
 
-          let dayDiff = (targetWeekdayIndex - todayWeekdayTaipei + 7) % 7; // 計算相差天數
+          // 創建一個基於 UTC 的日期，並調整到台北的日期和時間
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 今天的 UTC 日期
+          const todayWeekdayUTC = today.getUTCDay(); // 今天的 UTC 星期幾
+
+          let dayDiff = (targetWeekdayIndex - todayWeekdayUTC + 7) % 7; // 計算相對今天 UTC 的天數差
 
           // 判斷如果目標是"今天"，但台北時間已過，則順延一週
+          // 這裡需要用台北時間判斷，所以需要考慮偏移
+          const currentTaipeiTime = new Date(now.getTime() + taipeiOffset * 60 * 1000); // 將當前 UTC 時間加上台北時區偏移，得到台北時間
+          const currentHourTaipei = currentTaipeiTime.getUTCHours(); // 獲取偏移後的 UTC 小時，即台北時間的小時
+          const currentMinuteTaipei = currentTaipeiTime.getUTCMinutes(); // 獲取偏移後的 UTC 分鐘，即台北時間的分鐘
+
           if (dayDiff === 0) {
-              const currentHourTaipei = currentTaipeiTime.getHours();
-              const currentMinuteTaipei = currentTaipeiTime.getMinutes();
               if (currentHourTaipei > targetHour || (currentHourTaipei === targetHour && currentMinuteTaipei >= targetMin)) {
                   dayDiff = 7; // 目標時間已過，設定為下週
               }
           }
 
-          // 創建一個基於當前時間的 Date 物件，並調整到目標日期和台北時間
-          const courseDateTaipei = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
-          courseDateTaipei.setDate(courseDateTaipei.getDate() + dayDiff);
-          courseDateTaipei.setHours(targetHour, targetMin, 0, 0);
+          // 構建一個表示目標時間在台北時區的 Date 物件
+          const courseDateTaipei = new Date(today.getTime() + dayDiff * ONE_DAY_IN_MS); // 先調整到目標日期 (仍然是 UTC 零點)
+          courseDateTaipei.setUTCHours(targetHour - (taipeiOffset / 60), targetMin, 0, 0); // 將目標台北時間轉換為 UTC 時間再設定
 
-          // 將這個台北時間轉換為 UTC 的 ISO 字串儲存
-          const isoTime = courseDateTaipei.toISOString();
-          // --- 時區處理結束 ---
+          const isoTime = courseDateTaipei.toISOString(); // 儲存為 UTC 的 ISO 字串
+          // --- 時區處理修正結束 ---
 
           // 產生課程 ID (使用計數器確保唯一性)
           const newId = `C${String(coursesData.courseIdCounter).padStart(3, '0')}`;
@@ -525,7 +527,6 @@ async function handleEvent(event) {
   // --- ✅ 課程取消確認流程處理 ---
   if (pendingCourseCancelConfirm[userId]) {
     const courseId = pendingCourseCancelConfirm[userId];
-    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
 
     // 重新讀取課程資料，確保是最新的
     let coursesDataConfirm = readJSON(COURSE_FILE);
@@ -590,7 +591,6 @@ async function handleEvent(event) {
   // --- 🔐 老師手動調整點數流程處理 ---
   if (pendingManualAdjust[userId]) {
     const stepData = pendingManualAdjust[userId];
-    // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
 
     // 預期輸入格式： 學員ID/姓名 數量
     const parts = text.split(' ');
@@ -661,7 +661,6 @@ async function handleEvent(event) {
   // --- 學生購點流程處理 ---
   if (pendingPurchase[userId]) {
       const stepData = pendingPurchase[userId];
-      // const replyToken = event.replyToken; // <--- 這裡不再需要重複定義
 
       switch (stepData.step) {
           case 'select_plan': // 學員選擇購買方案
@@ -1261,7 +1260,7 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
       });
 
       // 將多個訂單訊息合併為一個長字串，或者使用多個訊息物件（取決於LINE API限制和可讀性）
-      // 由於 Quick Reply 只能加在單一文字訊息上，且訊息長度有限，這裡我們會發送一個訊息，並將所有訂單資訊拼接起來
+      // 由於 Quick Reply 只能加在單一文字訊息上，且訊息長度有限，這裡會發送一個訊息，並將所有訂單資訊拼接起來
       // 如果訂單過多，可能需要考慮 Flex Message 或分頁
       let finalMessage = '📋 待確認購點訂單列表：\n\n' + replyMessages.join('\n');
 
@@ -1369,7 +1368,7 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
 
     let report = `📊 系統統計報表 📊\n\n`;
     report += `👤 總學員數：${totalStudents}\n`;
-report += `👨‍🏫 總老師數：${totalTeachers}\n`;
+    report += `👨‍🏫 總老師數：${totalTeachers}\n`;
     report += `💎 學員總點數：${totalPoints}\n`;
     report += `✨ 活躍學員數（有點數）：${activeStudents}\n`;
     report += `📚 課程總數：${coursesCount}\n`;
@@ -1402,7 +1401,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 🚀 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.1 (修正 replyToken is not defined 錯誤)`);
+  console.log(`Bot 版本: V3.16.2 (修正新增課程時間錯誤)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
