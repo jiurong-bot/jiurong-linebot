@@ -418,10 +418,14 @@ const teacherMenu = [
 // 這些暫存狀態在服務重啟時會清空，但它們只用於單次對話流程，不是持久資料。
 const pendingTeacherLogin = {};
 const pendingCourseCreation = {};
-const pendingCourseCancelConfirm = {};
+// const pendingCourseCancelConfirm = {}; // <-- 舊的，現在改用 global.confirmingCancelCourse
 const pendingPurchase = {};
 const pendingManualAdjust = {};
 const sentReminders = {}; // 用於追蹤已發送的提醒，避免重複發送
+
+// 處理取消課程的確認步驟狀態，改為全域變數
+global.confirmingCancelCourse = {};
+
 
 // =====================================
 //          👨‍🏫 老師指令處理函式
@@ -457,7 +461,7 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
   }
 
-  // --- 取消課程指令 ---
+  // --- 取消課程指令 (此處進行主要修改) ---
   if (text === COMMANDS.TEACHER.CANCEL_COURSE) {
     const upcomingCourses = Object.values(courses)
       .filter(c => new Date(c.time) > new Date()) // 只顯示未來的課程
@@ -472,7 +476,7 @@ async function handleTeacherCommands(event, userId) {
       action: {
         type: 'postback', // 使用 postback 可以傳遞更多資料，而不顯示在聊天內容中
         label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20), // 限制標籤長度
-        data: `cancel_course_${c.id}`, // 傳遞課程 ID
+        data: `cancel_course_confirm_${c.id}`, // 傳遞課程 ID，並加上 `_confirm_` 標識，用於區分確認流程
       },
     }));
     quickReplyItems.push({ type: 'message', label: '返回課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT });
@@ -868,6 +872,10 @@ async function handleStudentCommands(event, userId) {
       // 課程未滿，直接預約
       course.students.push(userId);
       user.points -= course.pointsCost;
+      // 確保 history 是陣列
+      if (!Array.isArray(user.history)) {
+        user.history = [];
+      }
       user.history.push({ id: courseId, action: `預約成功：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() });
       await saveCourse(course); // 保存課程資料
       await saveUser(user); // 保存用戶資料
@@ -875,6 +883,10 @@ async function handleStudentCommands(event, userId) {
     } else {
       // 課程已滿，加入候補
       course.waiting.push(userId);
+      // 確保 history 是陣列
+      if (!Array.isArray(user.history)) {
+        user.history = [];
+      }
       user.history.push({ id: courseId, action: `加入候補：${course.title}`, time: new Date().toISOString() });
       await saveCourse(course); // 保存課程資料
       await saveUser(user); // 保存用戶資料
@@ -965,6 +977,10 @@ async function handleStudentCommands(event, userId) {
     // 移除學生，退還點數，更新歷史記錄
     course.students = course.students.filter(sid => sid !== userId);
     user.points += course.pointsCost;
+    // 確保 history 是陣列
+    if (!Array.isArray(user.history)) {
+      user.history = [];
+    }
     user.history.push({ id, action: `取消預約退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
 
     let replyMessage = `課程「${course.title}」已取消，已退還 ${course.pointsCost} 點。`;
@@ -979,6 +995,10 @@ async function handleStudentCommands(event, userId) {
         course.waiting.shift(); // 從候補移除
         course.students.push(nextWaitingUserId); // 加入正式學生
         nextWaitingUser.points -= course.pointsCost; // 扣點
+        // 確保 history 是陣列
+        if (!Array.isArray(nextWaitingUser.history)) {
+          nextWaitingUser.history = [];
+        }
         nextWaitingUser.history.push({ id, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() });
 
         await saveUser(nextWaitingUser); // 保存候補學員資料
@@ -1053,6 +1073,10 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, '該課程已過期，無法取消候補。', studentMenu);
     }
     course.waiting = course.waiting.filter(x => x !== userId); // 從候補名單中移除
+    // 確保 history 是陣列
+    if (!Array.isArray(user.history)) {
+      user.history = [];
+    }
     user.history.push({ id, action: `取消候補：${course.title}`, time: new Date().toISOString() });
     await saveCourse(course); // 保存課程資料
     await saveUser(user); // 保存用戶資料
@@ -1103,21 +1127,24 @@ async function handleEvent(event) {
     const data = event.postback.data;
 
     // 課程取消確認流程 (老師專用) - Postback觸發
-    if (data.startsWith('cancel_course_')) {
+    if (data.startsWith('cancel_course_confirm_')) { // 注意這裡的匹配標識
       const currentUser = await getUser(userId); // 獲取最新用戶角色
       if (currentUser.role !== 'teacher') {
         return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
       }
-      const courseId = data.replace('cancel_course_', '');
+      const courseId = data.replace('cancel_course_confirm_', '');
       const courses = await getAllCourses(); // 獲取最新課程資料
       const course = courses[courseId];
       if (!course || new Date(course.time) < new Date()) {
         return reply(replyToken, '找不到該課程，或課程已過期。', teacherCourseSubMenu);
       }
-      pendingCourseCancelConfirm[userId] = courseId; // 暫存待確認的課程 ID
-      return reply(replyToken, `確認要取消課程「${course.title}」嗎？\n一旦取消將退還所有學生點數。`, [
-        { type: 'message', label: COMMANDS.STUDENT.CONFIRM_YES, text: COMMANDS.STUDENT.CONFIRM_YES },
-        { type: 'message', label: COMMANDS.STUDENT.CONFIRM_NO, text: COMMANDS.STUDENT.CONFIRM_NO },
+      // 暫存待確認的課程 ID，將狀態機中的 key 從 `pendingCourseCancelConfirm` 更改為 `confirmingCancelCourse`
+      global.confirmingCancelCourse = global.confirmingCancelCourse || {}; // 確保物件存在
+      global.confirmingCancelCourse[userId] = courseId; //
+
+      return reply(replyToken, `確認要取消課程「${course.title}」（${formatDateTime(course.time)}）嗎？\n一旦取消，已預約學生的點數將會退還，候補學生將收到取消通知。`, [
+        { type: 'message', label: '✅ 是，確認取消', text: `確認取消課程 ${courseId}` }, // 將確認動作綁定到一個新指令
+        { type: 'message', label: '❌ 否，返回', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }, // 取消操作，返回課程管理
       ]);
     }
 
@@ -1142,6 +1169,10 @@ async function handleEvent(event) {
 
       if (action === 'confirm') {
         studentUser.points += order.points; // 為學員加點
+        // 確保 history 是陣列
+        if (!Array.isArray(studentUser.history)) {
+          studentUser.history = [];
+        }
         studentUser.history.push({ action: `購買點數成功：${order.points} 點`, time: new Date().toISOString(), orderId: orderId });
         order.status = 'completed'; // 更新訂單狀態為已完成
         await saveUser(studentUser); // 保存學員資料
@@ -1279,54 +1310,69 @@ async function handleEvent(event) {
     }
   }
 
-  // --- ✅ 課程取消確認流程處理 (老師專用) ---
-  if (pendingCourseCancelConfirm[userId]) {
-    const courseId = pendingCourseCancelConfirm[userId];
+  // --- 課程取消確認流程處理 (老師專用) - 文字訊息觸發 (此處進行主要修改) ---
+  // 處理由老師點擊「✅ 是，確認取消」後發送的文字訊息
+  if (text.startsWith('確認取消課程 ')) {
+    const currentUser = await getUser(userId);
+    if (currentUser.role !== 'teacher') {
+      return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
+    }
+
+    const courseId = text.replace('確認取消課程 ', '').trim();
+    // 檢查是否處於確認狀態，且 ID 匹配
+    if (!global.confirmingCancelCourse || global.confirmingCancelCourse[userId] !== courseId) {
+      return reply(replyToken, '無效的取消確認，請重新操作。', teacherCourseSubMenu);
+    }
+
     const courses = await getAllCourses(); // 獲取最新課程
     const course = courses[courseId];
 
-    if (text === COMMANDS.STUDENT.CONFIRM_YES) {
-      if (!course) {
-        delete pendingCourseCancelConfirm[userId];
-        return reply(replyToken, '找不到該課程，取消失敗或已被刪除。', teacherCourseSubMenu);
-      }
-
-      // 處理學生退點和通知
-      for (const stuId of course.students) {
-        const studentUser = await getUser(stuId); // 從資料庫獲取學生資料
-        if (studentUser) {
-          studentUser.points += course.pointsCost; // 退點
-          studentUser.history.push({ id: courseId, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
-          await saveUser(studentUser); // 保存學生資料
-          push(stuId, `您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消，已退還 ${course.pointsCost} 點。請確認您的「剩餘點數」。`)
-            .catch(e => console.error(`❌ 通知學生 ${stuId} 課程取消失敗:`, e.message));
-        }
-      }
-      // 處理候補學生通知
-      for (const waitId of course.waiting) {
-        const waitingUser = await getUser(waitId); // 從資料庫獲取候補學生資料
-        if (waitingUser) {
-          waitingUser.history.push({ id: courseId, action: `候補課程取消：${course.title}`, time: new Date().toISOString() });
-          await saveUser(waitingUser); // 保存候補學生資料
-          push(waitId, `您候補的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消。`)
-            .catch(e => console.error(`❌ 通知候補者 ${waitId} 課程取消失敗:`, e.message));
-        }
-      }
-
-      await deleteCourse(courseId); // 從資料庫刪除課程
-      delete pendingCourseCancelConfirm[userId]; // 清除流程狀態
-      return reply(replyToken, `課程「${course.title}」已取消，所有學生點數已退還。`, teacherCourseSubMenu);
-    } else if (text === COMMANDS.STUDENT.CONFIRM_NO) {
-      delete pendingCourseCancelConfirm[userId]; // 清除流程狀態
-      return reply(replyToken, '取消課程操作已中止。', teacherCourseSubMenu);
-    } else {
-      // 提示用戶正確的回覆方式
-      return reply(replyToken, `請選擇是否取消課程：\n「${COMMANDS.STUDENT.CONFIRM_YES}」或「${COMMANDS.STUDENT.CONFIRM_NO}」。`, [
-        { type: 'message', label: COMMANDS.STUDENT.CONFIRM_YES, text: COMMANDS.STUDENT.CONFIRM_YES },
-        { type: 'message', label: COMMANDS.STUDENT.CONFIRM_NO, text: COMMANDS.STUDENT.CONFIRM_NO },
-      ]);
+    if (!course) {
+      delete global.confirmingCancelCourse[userId]; // 清除流程狀態
+      return reply(replyToken, '找不到該課程，取消失敗或已被刪除。', teacherCourseSubMenu);
     }
+
+    // 處理學生退點和通知
+    for (const stuId of course.students) {
+      const studentUser = await getUser(stuId); // 從資料庫獲取學生資料
+      if (studentUser) {
+        studentUser.points += course.pointsCost; // 退點
+        // 確保 history 是陣列
+        if (!Array.isArray(studentUser.history)) {
+          studentUser.history = [];
+        }
+        studentUser.history.push({ id: courseId, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
+        await saveUser(studentUser); // 保存學生資料
+        push(stuId, `您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消，已退還 ${course.pointsCost} 點。請確認您的「剩餘點數」。`)
+          .catch(e => console.error(`❌ 通知學生 ${stuId} 課程取消失敗:`, e.message));
+      }
+    }
+    // 處理候補學生通知
+    for (const waitId of course.waiting) {
+      const waitingUser = await getUser(waitId); // 從資料庫獲取候補學生資料
+      if (waitingUser) {
+        // 確保 history 是陣列
+        if (!Array.isArray(waitingUser.history)) {
+          waitingUser.history = [];
+        }
+        waitingUser.history.push({ id: courseId, action: `候補課程取消：${course.title}`, time: new Date().toISOString() });
+        await saveUser(waitingUser); // 保存候補學生資料
+        push(waitId, `您候補的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消。`)
+          .catch(e => console.error(`❌ 通知候補者 ${waitId} 課程取消失敗:`, e.message));
+      }
+    }
+
+    await deleteCourse(courseId); // 從資料庫刪除課程
+    delete global.confirmingCancelCourse[userId]; // 清除流程狀態
+    return reply(replyToken, `課程「${course.title}」已取消，所有相關學員已收到通知。`, teacherCourseSubMenu);
   }
+
+  // --- 處理老師取消確認的「❌ 否，返回」指令 ---
+  if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT && global.confirmingCancelCourse && global.confirmingCancelCourse[userId]) {
+      delete global.confirmingCancelCourse[userId]; // 清除流程狀態
+      return reply(replyToken, '已中止取消課程操作，並返回課程管理。', teacherCourseSubMenu);
+  }
+
 
   // --- 🔐 老師手動調整點數流程處理 (老師專用) ---
   if (pendingManualAdjust[userId]) {
@@ -1391,6 +1437,10 @@ async function handleEvent(event) {
 
     foundUser.points = newPoints;
     // 記錄歷史操作
+    // 確保 history 是陣列
+    if (!Array.isArray(foundUser.history)) {
+      foundUser.history = [];
+    }
     foundUser.history.push({
       action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId
     });
