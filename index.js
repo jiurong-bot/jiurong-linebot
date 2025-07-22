@@ -37,6 +37,7 @@ const TEACHER_ID = process.env.TEACHER_ID;   // 老師的 LINE User ID，用於�
 
 // 時間相關常數
 const ONE_DAY_IN_MS = 86400000;              // 一天的毫秒數 (24 * 60 * 60 * 1000)
+const EIGHT_HOURS_IN_MS = 28800000;          // 8 小時的毫秒數 (8 * 60 * 60 * 1000) // 新增此常量
 const PING_INTERVAL_MS = 1000 * 60 * 5;      // Keep-alive 服務的間隔，5 分鐘
 const BACKUP_INTERVAL_MS = 1000 * 60 * 60 * 24; // 資料備份間隔，24 小時
 
@@ -747,7 +748,7 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
 
     return client.replyMessage(replyToken, {
       type: 'text',
-      text: '以下是目前可以預約的課程，點擊即可預約並扣除對應點數。',
+      text: '以下是目前可以預約的課程，點擊即可預約並扣除對應點數。\n\n💡 請注意：課程開始前 8 小時不可退課。', // 在這裡新增提醒
       quickReply: { items: quickReplyItems.slice(0, 13) }, // 確保不超過13個
     });
   }
@@ -780,13 +781,13 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
       user.history.push({ id: courseId, action: `預約成功：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() });
       writeJSON(COURSE_FILE, coursesData); // 傳入 coursesData 整個物件
       writeJSON(DATA_FILE, db);
-      return reply(replyToken, `已成功預約課程：「${course.title}」，扣除 ${course.pointsCost} 點。`, studentMenu);
+      return reply(replyToken, `已成功預約課程：「${course.title}」，扣除 ${course.pointsCost} 點。\n\n💡 請注意：課程開始前 8 小時不可退課。`, studentMenu); // 在這裡新增提醒
     } else {
       course.waiting.push(userId);
       user.history.push({ id: courseId, action: `加入候補：${course.title}`, time: new Date().toISOString() });
       writeJSON(COURSE_FILE, coursesData); // 傳入 coursesData 整個物件
       writeJSON(DATA_FILE, db);
-      return reply(replyToken, `該課程「${course.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${course.pointsCost} 點。`, studentMenu);
+      return reply(replyToken, `該課程「${course.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${course.pointsCost} 點。\n\n💡 請注意：課程開始前 8 小時不可退課。`, studentMenu); // 在這裡新增提醒
     }
   }
 
@@ -859,11 +860,17 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
   if (text.startsWith('我要取消預約 ')) {
     const id = text.replace('我要取消預約 ', '').trim();
     const course = courses[id];
+    const now = Date.now(); // 獲取當前時間
+
     if (!course || !course.students.includes(userId)) {
       return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
     }
-    if (new Date(course.time) < new Date()) {
+    if (new Date(course.time) < now) { // 檢查課程是否已過期
       return reply(replyToken, '該課程已過期，無法取消。', studentMenu);
+    }
+    // 新增：檢查是否在課程開始前 8 小時內
+    if (new Date(course.time).getTime() - now < EIGHT_HOURS_IN_MS) {
+      return reply(replyToken, `課程「${course.title}」即將開始，距離上課時間已不足 8 小時，無法取消退點。`, studentMenu);
     }
 
     course.students = course.students.filter(sid => sid !== userId);
@@ -881,7 +888,7 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
         db[nextWaitingUserId].history.push({ id, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() });
 
         push(nextWaitingUserId,
-          `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(course.time)}\n系統已自動扣除 ${course.pointsCost} 點。請確認你的「我的課程」。`
+          `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(course.time)}\n系統已自動扣除 ${course.pointsCost} 點。請確認你的「我的課程」。\n\n💡 請注意：課程開始前 8 小時不可退課。` // 候補成功也提醒
         ).catch(e => console.error(`❌ 通知候補者 ${nextWaitingUserId} 失敗:`, e.message));
 
         replyMessage += '\n有候補學生已遞補成功。';
@@ -1402,6 +1409,9 @@ app.listen(PORT, () => {
   // Keep-alive pinging to prevent dyno sleep on Free Tier hosting
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
     console.log(`⚡ 啟用 Keep-alive 功能，將每 ${PING_INTERVAL_MS / 1000 / 60} 分鐘 Ping 自身。`);
+    fetch(SELF_URL) // 啟動時立即 ping 一次
+        .then(res => console.log(`Keep-alive initial response: ${res.status}`))
+        .catch((err) => console.error('❌ Keep-alive initial ping 失敗:', err.message));
     setInterval(() => {
         fetch(SELF_URL)
             .then(res => console.log(`Keep-alive response: ${res.status}`))
