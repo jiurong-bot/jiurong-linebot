@@ -1,4 +1,4 @@
-// index.js - V3.16.4 (修改選單名稱並增加返回選項)
+// index.js - V3.16.4 (修改選單名稱並增加返回選項，修正 LINE client 初始化錯誤)
 
 // --- 模組載入 ---
 const express = require('express'); // Express 框架，用於建立網頁伺服器
@@ -10,6 +10,15 @@ require('dotenv').config();       // 載入 .env 檔案中的環境變數，確�
 // --- 應用程式常數定義 ---
 const app = express();
 const PORT = process.env.PORT || 3000; // 伺服器監聽埠號，優先使用環境變數 PORT，否則預設 3000
+
+// 從環境變數讀取 LINE Bot 設定
+const config = {
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.CHANNEL_SECRET,
+};
+
+// 創建 LINE Bot 客戶端實例
+const client = new line.Client(config); // <--- 這裡新增了 client 的初始化！
 
 // 資料檔案路徑
 const DATA_FILE = './data.json';     // 用戶資料檔案：儲存用戶點數、角色、歷史記錄等
@@ -217,8 +226,8 @@ function cleanCourses(coursesData) {
 
 /**
  * 格式化 ISO 時間字串為台灣當地時間顯示格式。
- * @param {string} isoString - ISO 格式的日期時間字串 (e.g., "2023-10-27T02:30:00.000Z")。
- * @returns {string} 格式化後的日期時間字串 (e.g., "10-27 (五) 10:30")。
+ * @param {string} isoString - ISO 格式的日期時間字串 (e.g., "2023-10-27T02:30:00.000Z").
+ * @returns {string} 格式化後的日期時間字串 (e.g., "10-27 (五) 10:30").
  */
 function formatDateTime(isoString) {
   if (!isoString) return '無效時間';
@@ -676,7 +685,7 @@ async function handleEvent(event) {
     ).catch(e => console.error(`❌ 通知學員 ${foundUserId} 點數變動失敗:`, e.message));
 
     delete pendingManualAdjust[userId]; // 清除狀態
-    return reply(replyToken, `✅ 已成功為學員 ${foundUserName} ${operation} ${absAmount} 點，目前點數：${newPoints} 點。`, teacherPointMenu); // 回覆使用點數管理選單
+    return reply(replyToken, `✅ 已成功為學員 ${foundUserName} ${operation} ${absAmount} 點，目前點數：${newPoints} 點。`, teacherPointMenu); // 回覆時使用點數管理選單
   }
 
   // --- 學生購點流程處理 ---
@@ -1160,270 +1169,6 @@ async function handleEvent(event) {
   }
 }
 
-// ====================== 👨‍🏫 老師功能處理 ===========================
-async function handleTeacherCommands(event, userId, db, courses, orders) {
-  const msg = event.message.text.trim();
-  const replyToken = event.replyToken;
-
-  // --- 處理返回老師主選單的指令 ---
-  if (msg === '@返回老師主選單') {
-    return reply(replyToken, '已返回老師主選單。', teacherMenu);
-  }
-
-  // --- 進入課程管理子選單 ---
-  if (msg === '@課程管理') { // 修改指令
-    return reply(replyToken, '請選擇課程管理功能：', teacherCourseMenu);
-  }
-
-  // --- 進入點數管理子選單 ---
-  if (msg === '@點數管理') { // 修改指令
-      return reply(replyToken, '請選擇點數管理功能：', teacherPointMenu);
-  }
-
-  // --- 📋 查詢課程名單 ---
-  if (msg === '@課程名單') {
-    if (Object.keys(courses).length === 0) {
-      return reply(replyToken, '目前沒有任何課程。', teacherCourseMenu); // 回覆時使用新的選單
-    }
-
-    let list = '📋 已建立課程列表：\n\n';
-    // 按照時間排序課程，讓老師更容易查看未來的課程
-    const sortedCourses = Object.entries(courses).sort(([, cA], [, cB]) => {
-      return new Date(cA.time).getTime() - new Date(cB.time).getTime();
-    });
-
-    sortedCourses.forEach(([courseId, c]) => {
-      list += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
-      list += `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n`;
-      list += `課程 ID: ${courseId}\n\n`; // 顯示課程 ID 方便取消或管理
-    });
-
-    return reply(replyToken, list.trim(), teacherCourseMenu); // 回覆時使用新的選單
-  }
-
-  // --- ➕ 新增課程 ---
-  if (msg === '@新增課程') {
-    pendingCourseCreation[userId] = { step: 1, data: {} }; // 初始化新增課程流程狀態
-    return reply(replyToken, '請輸入課程名稱。'); // 這裡不需要選單，因為進入了多步驟流程
-  }
-
-  // --- ❌ 取消課程 (提供選單模式) ---
-  if (msg === '@取消課程') {
-    const upcomingCourses = Object.entries(courses)
-      .filter(([, c]) => new Date(c.time) > new Date()) // 只列出未來的課程
-      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime()) // 按時間排序
-      .map(([id, c]) => ({
-        id,
-        label: `${formatDateTime(c.time)} ${c.title}`,
-      }));
-
-    if (upcomingCourses.length === 0) {
-      return reply(replyToken, '目前沒有可取消的課程。', teacherCourseMenu); // 回覆時使用新的選單
-    }
-
-    // 使用 Quick Reply 顯示課程列表供選擇
-    return client.replyMessage(replyToken, {
-      type: 'text',
-      text: '請選擇欲取消的課程：',
-      quickReply: {
-        items: upcomingCourses.map(c => ({
-          type: 'action',
-          action: {
-            type: 'postback', // 使用 postback 傳回 ID，不直接顯示給用戶
-            label: c.label.slice(0, 20), // LINE Quick Reply label 最多 20 字
-            data: `cancel_course_${c.id}`, // Postback 資料包含課程 ID
-          },
-        })),
-      },
-    });
-  }
-
-  // --- 🧾 手動輸入取消課程 ID (備用模式) ---
-  if (msg.startsWith('@取消課程 ')) { // 注意指令後有空格
-    const parts = msg.split(' ');
-    const courseId = parts[1];
-    if (!courseId) {
-      return reply(replyToken, '請輸入要取消的課程 ID，例如：@取消課程 C001', teacherCourseMenu); // 修正範例 ID，並使用新的選單
-    }
-    if (!courses[courseId]) {
-      return reply(replyToken, '找不到該課程 ID，請確認是否已被刪除或已過期。', teacherCourseMenu); // 使用新的選單
-    }
-    if (new Date(courses[courseId].time) < new Date()) {
-      return reply(replyToken, '該課程已過期，無法取消。', teacherCourseMenu); // 使用新的選單
-    }
-
-    pendingCourseCancelConfirm[userId] = courseId; // 進入取消課程確認流程
-    return reply(replyToken,
-      `確認取消課程「${courses[courseId].title}」嗎？`,
-      [
-        { type: 'message', label: '✅ 是', text: '✅ 是' },
-        { type: 'message', label: '❌ 否', text: '❌ 否' },
-      ]);
-  }
-
-  // --- 老師查看待確認購點清單 (@待確認清單) ---
-  if (msg === '@待確認清單') {
-      const pendingOrders = Object.values(orders).filter(order => order.status === 'pending_confirmation');
-
-      if (pendingOrders.length === 0) {
-          return reply(replyToken, '目前沒有待確認的購點訂單。', teacherPointMenu); // 回覆時使用點數管理選單
-      }
-
-      let replyMessages = [];
-      let quickReplyItems = [];
-
-      pendingOrders.forEach(order => {
-          const orderDate = formatDateTime(order.timestamp).split(' ')[0]; // 只取日期部分
-          replyMessages.push(
-              `訂單ID: ${order.orderId}\n` +
-              `📅 購買日期：${orderDate}\n` +
-              `👤 學員名稱：${order.userName}\n` +
-              `💎 購買點數：${order.points} 點\n` +
-              `💰 應付金額：${order.amount} 元\n` +
-              `💳 匯款後五碼：${order.last5Digits}\n` +
-              `--------------------`
-          );
-          quickReplyItems.push({
-              type: 'action',
-              action: {
-                  type: 'postback', // 使用 postback 傳回 ID 和動作
-                  label: `✅ 購點確認 ${order.orderId.substring(0,6)}`, // 限制label長度
-                  data: `confirm_order_${order.orderId}`,
-                  displayText: `確認訂單 ${order.orderId}` // 顯示給用戶的文字
-              }
-          });
-          quickReplyItems.push({
-            type: 'action',
-            action: {
-                type: 'postback',
-                label: `❌ 取消訂單 ${order.orderId.substring(0,6)}`, // 限制label長度
-                data: `cancel_order_${order.orderId}`,
-                displayText: `取消訂單 ${order.orderId}`
-            }
-        });
-      });
-
-      // 將多個訂單訊息合併為一個長字串，或者使用多個訊息物件（取決於LINE API限制和可讀性）
-      let finalMessage = '📋 待確認購點訂單列表：\n\n' + replyMessages.join('\n');
-
-      return reply(replyToken, finalMessage.trim(), quickReplyItems);
-  }
-
-  // --- 老師手動調整點數功能 (@手動調整點數) ---
-  if (msg === '@手動調整點數') {
-      pendingManualAdjust[userId] = true; // 進入手動調整流程
-      return reply(replyToken, '請輸入要調整的學員ID/姓名和點數數量 (正數為加點，負數為扣點)，例如：小明 +5 或 Uxxxxxx -3');
-  }
-
-  // --- ✨ 查詢學員功能（改為：若無查詢字串則列出所有學員）---
-  if (msg.startsWith('@查學員')) {
-    const parts = msg.split(' ');
-    const query = parts[1]; // 可以是 userId 或部分名稱
-
-    let foundUsers = [];
-    // 如果沒有提供查詢字串 (只有 `@查學員`)，則列出所有學生（非老師角色）
-    if (!query) {
-      for (const id in db) {
-        if (db[id].role === 'student') { // 只列出角色為 'student' 的用戶
-          foundUsers.push({ id, ...db[id] });
-        }
-      }
-      // 依姓名排序
-      foundUsers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-      if (foundUsers.length === 0) {
-        return reply(replyToken, '目前沒有任何已註冊的學員。', teacherMenu);
-      }
-
-      let replyMsg = `📋 所有學員列表 📋\n\n`;
-      foundUsers.forEach(user => {
-        replyMsg += `姓名：${user.name || '匿名使用者'}\n`;
-        replyMsg += `ID：${user.id.substring(0, 8)}...\n`; // 截斷 ID 顯示，保護隱私
-        replyMsg += `點數：${user.points}\n`;
-        replyMsg += `\n`; // 每位學員間隔空行
-      });
-      return reply(replyToken, replyMsg.trim(), teacherMenu);
-
-    } else { // 如果有提供查詢字串 (例如 `@查學員 Uxxxx` 或 `@查學員 小明`)，則進行搜尋
-      for (const id in db) {
-        const user = db[id];
-        // 搜尋匹配完整 ID 或名稱中的部分關鍵字
-        if (id === query || (user.name && user.name.toLowerCase().includes(query.toLowerCase()))) {
-          foundUsers.push({ id, ...user });
-        }
-      }
-
-      if (foundUsers.length === 0) {
-        return reply(replyToken, `找不到符合「${query}」的學員。`, teacherMenu);
-      }
-
-      let replyMsg = `找到以下學員：\n\n`;
-      foundUsers.forEach(user => {
-        replyMsg += `姓名：${user.name || '匿名使用者'}\n`;
-        replyMsg += `ID：${user.id}\n`; // 搜尋結果顯示完整 ID
-        replyMsg += `點數：${user.points}\n`;
-        replyMsg += `身份：${user.role === 'teacher' ? '老師' : '學員'}\n`;
-        if (user.history && user.history.length > 0) {
-          replyMsg += `近期操作：\n`;
-          // 顯示最近的 3 筆操作記錄
-          user.history.slice(-3).forEach(h => {
-            replyMsg += `  - ${h.action} (${formatDateTime(h.time)})\n`;
-          });
-        }
-        replyMsg += '\n'; // 每位學員間隔空行
-      });
-      return reply(replyToken, replyMsg.trim(), teacherMenu);
-    }
-  }
-
-  // --- ✨ 統計報表功能 (簡單版) ---
-  if (msg === '@統計報表') {
-    let totalPoints = 0;
-    let totalStudents = 0;
-    let totalTeachers = 0;
-    let activeStudents = 0;
-    let coursesCount = Object.keys(courses).length;
-    let enrolledStudentsCount = 0; // 預約人數
-    let waitingStudentsCount = 0; // 候補人數
-
-    // 遍歷所有用戶統計數據
-    for (const userId in db) {
-      const user = db[userId];
-      if (user.role === 'student') {
-        totalStudents++;
-        totalPoints += user.points;
-        if (user.points > 0) {
-          activeStudents++; // 點數大於 0 視為活躍學員
-        }
-      } else if (user.role === 'teacher') {
-        totalTeachers++;
-      }
-    }
-
-    // 遍歷所有課程統計預約和候補人數
-    for (const courseId in courses) {
-      const course = courses[courseId];
-      enrolledStudentsCount += course.students.length;
-      waitingStudentsCount += course.waiting.length;
-    }
-
-
-    let report = `📊 系統統計報表 📊\n\n`;
-    report += `👤 總學員數：${totalStudents}\n`;
-    report += `👨‍🏫 總老師數：${totalTeachers}\n`;
-    report += `💎 學員總點數：${totalPoints}\n`;
-    report += `✨ 活躍學員數（有點數）：${activeStudents}\n`;
-    report += `📚 課程總數：${coursesCount}\n`;
-    report += `👥 預約總人次：${enrolledStudentsCount}\n`;
-    report += `🕒 候補總人次：${waitingStudentsCount}\n\n`;
-
-    return reply(replyToken, report, teacherMenu);
-  }
-
-  // --- 預設回覆，提示老師使用選單 ---
-  return reply(replyToken, '指令無效，請使用選單或輸入正確指令。', teacherMenu);
-}
-
 // ====================== LINE Webhook 與伺服器啟動 ===========================
 
 // 設定 Webhook 路由，接收來自 LINE 的訊息
@@ -1443,7 +1188,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 🚀 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.4 (修改選單名稱並增加返回選項)`);
+  console.log(`Bot 版本: V3.16.4 (修改選單名稱並增加返回選項，修正 LINE client 初始化錯誤)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
