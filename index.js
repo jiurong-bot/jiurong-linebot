@@ -1,4 +1,4 @@
-// index.js - V3.16.6 (程式碼優化與詳細功能備註 - 課程列表顯示優化)
+// index.js - V3.16.7 (選單一致性優化)
 
 // =====================================
 //                 模組載入
@@ -89,6 +89,7 @@ const COMMANDS = {
     CONFIRM_ADD_COURSE: '確認新增課程',
     CANCEL_ADD_COURSE: '取消新增課程',
     RETURN_POINTS_MENU: '返回點數功能', // 購點流程中的返回
+    CONFIRM_BUY_POINTS: '✅ 確認購買', // 明確定義購點確認按鈕文字
   }
 };
 
@@ -206,6 +207,7 @@ function reply(replyToken, content, menu = null) {
   let messages = Array.isArray(content) ? content : [{ type: 'text', text: content }];
 
   // 只對第一個文字訊息添加 quickReply
+  // 如果是 Flex Message，我們會在 Flex Message 之後獨立發送一個文字訊息帶 quickReply
   if (menu && messages.length > 0 && messages[0].type === 'text') {
     messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
   }
@@ -305,35 +307,35 @@ function formatDateTime(isoString) {
 const studentMenu = [
   { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
   { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
-  { type: 'message', label: '點數查詢', text: COMMANDS.STUDENT.POINTS },
+  { type: 'message', label: '點數功能', text: COMMANDS.STUDENT.POINTS },
   { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE },
 ];
 
 const studentPointSubMenu = [
   { type: 'message', label: '剩餘點數', text: COMMANDS.STUDENT.CHECK_POINTS },
   { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS },
-  { type: 'message', label: '購買紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY },
+  { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY },
   { type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU },
 ];
 
 const teacherCourseSubMenu = [
-  { type: 'message', label: '課程名單', text: COMMANDS.TEACHER.COURSE_LIST },
+  { type: 'message', label: '課程列表', text: COMMANDS.TEACHER.COURSE_LIST },
   { type: 'message', label: '新增課程', text: COMMANDS.TEACHER.ADD_COURSE },
   { type: 'message', label: '取消課程', text: COMMANDS.TEACHER.CANCEL_COURSE },
   { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU },
 ];
 
 const teacherPointSubMenu = [
-  { type: 'message', label: '待確認清單', text: COMMANDS.TEACHER.PENDING_ORDERS },
-  { type: 'message', label: '手動調整', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS },
+  { type: 'message', label: '待確認訂單', text: COMMANDS.TEACHER.PENDING_ORDERS },
+  { type: 'message', label: '手動加減點', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS },
   { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU },
 ];
 
 const teacherMenu = [
   { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
   { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
-  { type: 'message', label: '查學員', text: COMMANDS.TEACHER.SEARCH_STUDENT },
-  { type: 'message', label: '報表', text: COMMANDS.TEACHER.REPORT },
+  { type: 'message', label: '查詢學員', text: COMMANDS.TEACHER.SEARCH_STUDENT },
+  { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
   { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE },
 ];
 
@@ -378,7 +380,8 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
   // --- 新增課程指令 ---
   if (text === COMMANDS.TEACHER.ADD_COURSE) {
     pendingCourseCreation[userId] = { step: 1, data: {} };
-    return reply(replyToken, '請輸入課程名稱：');
+    // 提供取消選項
+    return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
   }
 
   // --- 取消課程指令 ---
@@ -391,14 +394,22 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
       return reply(replyToken, '目前沒有可取消的課程。', teacherCourseSubMenu);
     }
 
-    return reply(replyToken, '請選擇要取消的課程：', upcomingCourses.map(([id, c]) => ({
+    // 構建快速回覆選單，包含「返回」選項
+    const quickReplyItems = upcomingCourses.map(([id, c]) => ({
       type: 'action',
       action: {
-        type: 'postback',
+        type: 'postback', // 注意：這裡還是用 postback，因為要傳遞 ID，但我們可以確保後面回覆帶 quickReply
         label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
-        data: `cancel_course_${id}`, // 將課程 ID 帶入 postback data
+        data: `cancel_course_${id}`,
       },
-    })));
+    }));
+    quickReplyItems.push({ type: 'message', label: '返回課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT });
+
+    return client.replyMessage(replyToken, {
+      type: 'text',
+      text: '請選擇要取消的課程：',
+      quickReply: { items: quickReplyItems.slice(0, 13) } // 確保不超過13個
+    });
   }
 
   // --- 課程名單 (老師查看) ---
@@ -409,17 +420,17 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
       .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
     if (upcomingCourses.length === 0) {
+      // 如果沒有課程，直接回覆並帶上選單
       return reply(replyToken, '目前沒有未來的課程。', teacherCourseSubMenu);
     }
 
-    // 使用 Flex Message 來顯示課程列表
-    const messages = [];
+    const messages = []; // 用於存放 Flex Messages
 
-    // 第一個訊息是標題，包含快速回覆選單
+    // 添加標題文字訊息
     messages.push({
       type: 'text',
       text: '📋 已建立課程列表：',
-      quickReply: { items: teacherCourseSubMenu.slice(0, 13).map(i => ({ type: 'action', action: i })) }
+      // 在這裡暫不添加 quickReply，因為後面會獨立發送
     });
 
     // 為每個課程建立一個 Flex Bubble
@@ -438,7 +449,7 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
                 text: `🗓 ${formatDateTime(c.time)}｜${c.title}`,
                 weight: 'bold',
                 size: 'md',
-                color: '#1DB446', // 可以根據喜好調整顏色
+                color: '#1DB446',
                 wrap: true
               },
               {
@@ -461,8 +472,11 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
       });
     });
 
-    // 回覆所有 Flex Message
-    return client.replyMessage(replyToken, messages);
+    // 先發送所有的課程 Flex Messages
+    await client.replyMessage(replyToken, messages);
+
+    // 再獨立發送一個文字訊息，帶上快速選單
+    return reply(replyToken, '請選擇下一步操作：', teacherCourseSubMenu);
   }
 
 
@@ -579,6 +593,7 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
           },
           footer: {
             type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+              // 這裡的按鈕是 Flex Message 的內部按鈕，不是 quickReply
               { type: 'button', action: { type: 'postback', label: '✅ 確認入帳', data: `confirm_order_${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` }, style: 'primary', color: '#34A853' },
               { type: 'button', action: { type: 'postback', label: '❌ 取消訂單', data: `cancel_order_${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` }, style: 'secondary', color: '#EA4335' },
             ],
@@ -586,13 +601,19 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
         },
       });
     });
-    return client.replyMessage(replyToken, messages);
+    // 先發送 Flex Messages
+    await client.replyMessage(replyToken, messages);
+    // 再獨立發送一個文字訊息，帶上快速選單
+    return reply(replyToken, '請選擇下一步操作：', teacherPointSubMenu);
   }
 
   // --- 手動調整點數 (@手動調整點數) ---
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
     pendingManualAdjust[userId] = { step: 1 };
-    return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回點數管理 取消。', teacherPointSubMenu);
+    // 提供取消選項
+    return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回點數管理 取消。', [
+      { type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
+    ]);
   }
 
   // --- 預設回覆 ---
@@ -641,9 +662,13 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
     );
 
     if (pendingOrder) {
+      // 提供取消購買和返回選單選項
       return reply(replyToken,
-        `您有一筆待完成的購點訂單 (ID: ${pendingOrder.orderId})，請先完成匯款並至「購買紀錄」輸入後五碼，或選擇「❌ 取消購買」。`,
-        [{ type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE }]
+        `您有一筆待完成的購點訂單 (ID: ${pendingOrder.orderId})，請先完成匯款並至「購點紀錄」輸入後五碼，或選擇「❌ 取消購買」。`,
+        [
+          { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE },
+          { type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
+        ]
       );
     }
 
@@ -680,8 +705,10 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
 
     if (pendingOrder) {
       pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.orderId } };
+      // 提供取消輸入和返回選單選項
       return reply(replyToken, `您的訂單 ${pendingOrder.orderId} 尚未確認匯款，請輸入您轉帳的銀行帳號後五碼以便核對：`, [
-        { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }
+        { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 },
+        { type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
       ]);
     }
 
@@ -700,6 +727,15 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
   if (pendingPurchase[userId] && pendingPurchase[userId].step === 'input_last5') {
     const orderId = pendingPurchase[userId].data.orderId;
     const last5Digits = text.trim();
+
+    if (text === COMMANDS.STUDENT.CANCEL_INPUT_LAST5) {
+      delete pendingPurchase[userId];
+      return reply(replyToken, '已取消輸入匯款帳號後五碼。', studentMenu);
+    }
+    if (text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
+      delete pendingPurchase[userId];
+      return reply(replyToken, '已返回點數相關功能。', studentPointSubMenu);
+    }
 
     if (!/^\d{5}$/.test(last5Digits)) {
       return reply(replyToken, '您輸入的匯款帳號後五碼格式不正確，請輸入五位數字。');
@@ -746,6 +782,7 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
       return reply(replyToken, '目前沒有可預約的課程。', studentMenu);
     }
 
+    // 構建快速回覆選單，包含「返回」選項
     const quickReplyItems = upcoming.map(([id, c]) => ({
       type: 'action',
       action: {
@@ -754,11 +791,13 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
         text: `我要預約 ${id}`,
       },
     }));
+    quickReplyItems.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
+
 
     return client.replyMessage(replyToken, {
       type: 'text',
       text: '以下是目前可以預約的課程，點擊即可預約並扣除 1 點。',
-      quickReply: { items: quickReplyItems },
+      quickReply: { items: quickReplyItems.slice(0, 13) }, // 確保不超過13個
     });
   }
 
@@ -846,14 +885,23 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
       return reply(replyToken, '你目前沒有可取消的預約課程。', studentMenu);
     }
 
-    return reply(replyToken, '請選擇要取消的預約課程：', enrolled.map(([id, c]) => ({
+    // 構建快速回覆選單，包含「返回」選項
+    const quickReplyItems = enrolled.map(([id, c]) => ({
       type: 'action',
       action: {
         type: 'message',
         label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
         text: `我要取消預約 ${id}`,
       },
-    })));
+    }));
+    quickReplyItems.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
+
+
+    return client.replyMessage(replyToken, {
+      type: 'text',
+      text: '請選擇要取消的預約課程：',
+      quickReply: { items: quickReplyItems.slice(0, 13) }, // 確保不超過13個
+    });
   }
 
   // --- 執行取消預約 (由快速選單觸發) ---
@@ -919,14 +967,23 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
       return reply(replyToken, '你目前沒有可取消的候補課程。', studentMenu);
     }
 
-    return reply(replyToken, '請選擇要取消候補的課程：', waitingCourses.map(([id, c]) => ({
+    // 構建快速回覆選單，包含「返回」選項
+    const quickReplyItems = waitingCourses.map(([id, c]) => ({
       type: 'action',
       action: {
         type: 'message',
         label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
         text: `我要取消候補 ${id}`,
       },
-    })));
+    }));
+    quickReplyItems.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
+
+
+    return client.replyMessage(replyToken, {
+      type: 'text',
+      text: '請選擇要取消候補的課程：',
+      quickReply: { items: quickReplyItems.slice(0, 13) }, // 確保不超過13個
+    });
   }
 
   // --- 執行取消候補 (由快速選單觸發) ---
@@ -985,10 +1042,11 @@ async function handleEvent(event) {
   if (event.type === 'postback') {
     const data = event.postback.data;
 
-    // 課程取消確認流程 (老師專用)
+    // 課程取消確認流程 (老師專用) - Postback觸發
     if (data.startsWith('cancel_course_')) {
       if (db[userId].role !== 'teacher') {
-        return reply(replyToken, '您沒有權限執行此操作。');
+        // 沒有權限，但仍然顯示老師選單
+        return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
       }
       const courseId = data.replace('cancel_course_', '');
       const course = coursesData.courses[courseId];
@@ -996,16 +1054,18 @@ async function handleEvent(event) {
         return reply(replyToken, '找不到該課程，或課程已過期。', teacherCourseSubMenu);
       }
       pendingCourseCancelConfirm[userId] = courseId;
+      // 使用 quickReply 確認
       return reply(replyToken, `確認要取消課程「${course.title}」嗎？\n一旦取消將退還所有學生點數。`, [
         { type: 'message', label: COMMANDS.STUDENT.CONFIRM_YES, text: COMMANDS.STUDENT.CONFIRM_YES },
         { type: 'message', label: COMMANDS.STUDENT.CONFIRM_NO, text: COMMANDS.STUDENT.CONFIRM_NO },
       ]);
     }
 
-    // 老師購點確認操作 (老師專用)
+    // 老師購點確認操作 (老師專用) - Postback觸發
     if (data.startsWith('confirm_order_') || data.startsWith('cancel_order_')) {
       if (db[userId].role !== 'teacher') {
-        return reply(replyToken, '您沒有權限執行此操作。');
+        // 沒有權限，但仍然顯示老師選單
+        return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
       }
       const orderId = data.split('_')[2];
       const action = data.split('_')[0];
@@ -1025,11 +1085,13 @@ async function handleEvent(event) {
         order.status = 'completed';
         writeJSON(DATA_FILE, db);
         writeJSON(ORDER_FILE, orders);
+        // 確認完成後，帶上選單
         await reply(replyToken, `✅ 已為學員 ${order.userName} 加點 ${order.points} 點，訂單 ${orderId} 已完成。`, teacherPointSubMenu);
         await push(order.userId, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。請查詢您的「剩餘點數」。`).catch(e => console.error(`❌ 通知學員 ${order.userId} 購點成功失敗:`, e.message));
       } else if (action === 'cancel') {
         order.status = 'cancelled';
         writeJSON(ORDER_FILE, orders);
+        // 取消完成後，帶上選單
         await reply(replyToken, `❌ 已取消訂單 ${orderId} 的購點確認。請手動與學員 ${order.userName} 聯繫。`, teacherPointSubMenu);
       }
       return;
@@ -1056,28 +1118,32 @@ async function handleEvent(event) {
       case 1: // 接收課程名稱
         stepData.data.title = text;
         stepData.step = 2;
-        return reply(replyToken, '請選擇課程日期（星期幾）：', Object.keys(weekdays).map(day => ({ type: 'message', label: day, text: day })));
+        // 提供取消選項
+        return reply(replyToken, '請選擇課程日期（星期幾）：', Object.keys(weekdays).map(day => ({ type: 'message', label: day, text: day })).concat([{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]));
       case 2: // 接收課程星期
         if (!weekdays.hasOwnProperty(text)) {
-          return reply(replyToken, '請輸入正確的星期（例如：星期一）');
+          return reply(replyToken, '請輸入正確的星期（例如：星期一）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
         }
         stepData.data.weekday = text;
         stepData.step = 3;
-        return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）');
+        // 提供取消選項
+        return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
       case 3: // 接收課程時間
         if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
-          return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
+          return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30', [{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
         }
         stepData.data.time = text;
         stepData.step = 4;
-        return reply(replyToken, '請輸入人員上限（正整數）');
+        // 提供取消選項
+        return reply(replyToken, '請輸入人員上限（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
       case 4: // 接收課程人數上限
         const capacity = parseInt(text);
         if (isNaN(capacity) || capacity <= 0) {
-          return reply(replyToken, '人數上限必須是正整數。');
+          return reply(replyToken, '人數上限必須是正整數。', [{ type: 'message', label: '取消新增課程', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
         }
         stepData.data.capacity = capacity;
         stepData.step = 5;
+        // 提供確認或取消選項
         return reply(replyToken, `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}`, [
           { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE },
           { type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE },
@@ -1119,7 +1185,11 @@ async function handleEvent(event) {
           delete pendingCourseCreation[userId];
           return reply(replyToken, '已取消新增課程。', teacherCourseSubMenu);
         } else {
-          return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_ADD_COURSE}」或「${COMMANDS.STUDENT.CANCEL_ADD_COURSE}」確認。`);
+          // 提供確認或取消選項
+          return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_ADD_COURSE}」或「${COMMANDS.STUDENT.CANCEL_ADD_COURSE}」確認。`, [
+            { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE },
+            { type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE },
+          ]);
         }
       default:
         delete pendingCourseCreation[userId];
@@ -1179,14 +1249,20 @@ async function handleEvent(event) {
 
     const parts = text.split(' ');
     if (parts.length !== 2) {
-      return reply(replyToken, '指令格式錯誤，請輸入：[學員ID/姓名] [數量] (正數加點，負數扣點)', teacherPointSubMenu);
+      // 格式錯誤時也提供取消選項
+      return reply(replyToken, '指令格式錯誤，請輸入：[學員ID/姓名] [數量] (正數加點，負數扣點)', [
+        { type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
+      ]);
     }
 
     const targetIdentifier = parts[0];
     const amount = parseInt(parts[1]);
 
     if (isNaN(amount) || amount === 0) {
-      return reply(replyToken, '點數數量必須是非零整數。', teacherPointSubMenu);
+      // 點數無效時也提供取消選項
+      return reply(replyToken, '點數數量必須是非零整數。', [
+        { type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
+      ]);
     }
 
     let foundUserId = null;
@@ -1208,6 +1284,7 @@ async function handleEvent(event) {
 
     if (!foundUserId) {
       delete pendingManualAdjust[userId];
+      // 找不到學員時也提供選單
       return reply(replyToken, `找不到學員：${targetIdentifier}。請確認學員 ID 或姓名是否正確。`, teacherPointSubMenu);
     }
 
@@ -1218,6 +1295,7 @@ async function handleEvent(event) {
 
     if (operation === '扣點' && currentPoints < absAmount) {
       delete pendingManualAdjust[userId];
+      // 點數不足時也提供選單
       return reply(replyToken, `學員 ${foundUserName} 點數不足，無法扣除 ${absAmount} 點 (目前 ${currentPoints} 點)。`, teacherPointSubMenu);
     }
 
@@ -1246,29 +1324,35 @@ async function handleEvent(event) {
             return reply(replyToken, '已返回點數相關功能。', studentPointSubMenu);
         }
         if (!selectedPlan) {
+          // 無效方案時也提供選項
           return reply(replyToken, '請從列表中選擇有效的點數方案。', studentPointSubMenu);
         }
         stepData.data = {
           points: selectedPlan.points, amount: selectedPlan.amount, userId: userId, userName: db[userId].name, timestamp: new Date().toISOString(), status: 'pending_payment'
         };
         stepData.step = 'confirm_purchase';
+        // 提供確認或取消選項
         return reply(replyToken, `您選擇了購買 ${selectedPlan.points} 點，共 ${selectedPlan.amount} 元。請確認。`, [
-          { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BUY_POINTS || '✅ 確認購買', text: COMMANDS.STUDENT.CONFIRM_BUY_POINTS || '✅ 確認購買' },
+          { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: COMMANDS.STUDENT.CONFIRM_BUY_POINTS },
           { type: 'message', label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
         ]);
       case 'confirm_purchase':
-        if (text === (COMMANDS.STUDENT.CONFIRM_BUY_POINTS || '✅ 確認購買')) {
+        if (text === COMMANDS.STUDENT.CONFIRM_BUY_POINTS) {
           const orderId = `O${Date.now()}`;
           stepData.data.orderId = orderId;
           orders[orderId] = stepData.data;
           writeJSON(ORDER_FILE, orders);
           delete pendingPurchase[userId];
-          return reply(replyToken, `✅ 已確認購買 ${stepData.data.points} 點，請先完成轉帳或匯款。\n\n` + `戶名：${BANK_INFO.accountName}\n` + `銀行：${BANK_INFO.bankName}\n` + `帳號：${BANK_INFO.accountNumber}\n\n` + `完成轉帳後，請再次進入「點數查詢」>「購買紀錄」並輸入您的匯款帳號後五碼以供核對。\n\n` + `您的訂單編號為：${orderId}`, studentMenu);
+          return reply(replyToken, `✅ 已確認購買 ${stepData.data.points} 點，請先完成轉帳或匯款。\n\n` + `戶名：${BANK_INFO.accountName}\n` + `銀行：${BANK_INFO.bankName}\n` + `帳號：${BANK_INFO.accountNumber}\n\n` + `完成轉帳後，請再次進入「點數查詢」>「購點紀錄」並輸入您的匯款帳號後五碼以供核對。\n\n` + `您的訂單編號為：${orderId}`, studentMenu);
         } else if (text === COMMANDS.STUDENT.CANCEL_PURCHASE) {
           delete pendingPurchase[userId];
           return reply(replyToken, '已取消購買點數。', studentMenu);
         } else {
-          return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_BUY_POINTS || '✅ 確認購買'}」或「${COMMANDS.STUDENT.CANCEL_PURCHASE}」。`, studentMenu);
+          // 提供確認或取消選項
+          return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_BUY_POINTS}」或「${COMMANDS.STUDENT.CANCEL_PURCHASE}」。`, [
+            { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: COMMANDS.STUDENT.CONFIRM_BUY_POINTS },
+            { type: 'message', label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
+          ]);
         }
     }
   }
@@ -1282,12 +1366,19 @@ async function handleEvent(event) {
       return reply(event.replyToken, '已切換為學員身份。', studentMenu);
     } else {
       pendingTeacherLogin[userId] = true;
-      return reply(event.replyToken, '請輸入老師密碼登入。');
+      // 登入密碼提供取消選項
+      return reply(event.replyToken, '請輸入老師密碼登入。', [{ type: 'message', label: '取消登入', text: COMMANDS.SWITCH_ROLE }]);
     }
   }
 
   // --- 🔐 老師登入密碼驗證 ---
   if (pendingTeacherLogin[userId]) {
+    // 如果輸入的是「取消登入」
+    if (text === COMMANDS.SWITCH_ROLE) {
+      delete pendingTeacherLogin[userId];
+      return reply(replyToken, '已取消老師登入。', studentMenu); // 返回學員主選單
+    }
+
     if (text === TEACHER_PASSWORD) {
       db[userId].role = 'teacher';
       writeJSON(DATA_FILE, db);
@@ -1295,6 +1386,7 @@ async function handleEvent(event) {
       return reply(replyToken, '老師登入成功。', teacherMenu);
     } else {
       delete pendingTeacherLogin[userId];
+      // 密碼錯誤也提供學員選單
       return reply(replyToken, '密碼錯誤，登入失敗。', studentMenu);
     }
   }
@@ -1327,7 +1419,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.6 (程式碼優化與詳細功能備註)`);
+  console.log(`Bot 版本: V3.16.7 (選單一致性優化)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
