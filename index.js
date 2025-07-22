@@ -1,4 +1,4 @@
-// index.js - V3.16.6 (程式碼優化與詳細功能備註)
+// index.js - V3.16.6 (程式碼優化與詳細功能備註 - 課程列表顯示優化)
 
 // =====================================
 //                 模組載入
@@ -412,31 +412,59 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
       return reply(replyToken, '目前沒有未來的課程。', teacherCourseSubMenu);
     }
 
-    let message = '近期課程名單：\n';
-    upcomingCourses.forEach(([id, c]) => {
-      message += `\n課程 ID: ${id}\n`;
-      message += `標題: ${c.title}\n`;
-      message += `時間: ${formatDateTime(c.time)}\n`;
-      message += `容量: ${c.students.length}/${c.capacity}\n`;
-      if (c.students.length > 0) {
-        message += `預約學生 (${c.students.length}人):\n`;
-        c.students.forEach((sId, index) => {
-          message += `  ${index + 1}. ${db[sId] ? db[sId].name : '未知使用者'} (ID: ${sId.substring(0, 4)}...)\n`;
-        });
-      } else {
-        message += `預約學生: 無\n`;
-      }
-      if (c.waiting.length > 0) {
-        message += `候補學生 (${c.waiting.length}人):\n`;
-        c.waiting.forEach((wId, index) => {
-          message += `  ${index + 1}. ${db[wId] ? db[wId].name : '未知使用者'} (ID: ${wId.substring(0, 4)}...)\n`;
-        });
-      } else {
-        message += `候補學生: 無\n`;
-      }
+    // 使用 Flex Message 來顯示課程列表
+    const messages = [];
+
+    // 第一個訊息是標題，包含快速回覆選單
+    messages.push({
+      type: 'text',
+      text: '📋 已建立課程列表：',
+      quickReply: { items: teacherCourseSubMenu.slice(0, 13).map(i => ({ type: 'action', action: i })) }
     });
-    return reply(replyToken, message.trim(), teacherCourseSubMenu);
+
+    // 為每個課程建立一個 Flex Bubble
+    upcomingCourses.forEach(([id, c]) => {
+      messages.push({
+        type: 'flex',
+        altText: `課程 ${c.title} - ${formatDateTime(c.time)}`,
+        contents: {
+          type: 'bubble',
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: `🗓 ${formatDateTime(c.time)}｜${c.title}`,
+                weight: 'bold',
+                size: 'md',
+                color: '#1DB446', // 可以根據喜好調整顏色
+                wrap: true
+              },
+              {
+                type: 'text',
+                text: `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}`,
+                size: 'sm',
+                color: '#555555',
+                margin: 'sm'
+              },
+              {
+                type: 'text',
+                text: `課程 ID: ${id}`,
+                size: 'xs',
+                color: '#AAAAAA',
+                margin: 'xs'
+              }
+            ]
+          }
+        }
+      });
+    });
+
+    // 回覆所有 Flex Message
+    return client.replyMessage(replyToken, messages);
   }
+
 
   // --- 查詢學員指令 (@查學員) ---
   if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
@@ -798,6 +826,7 @@ async function handleStudentCommands(event, userId, db, coursesData, orders) {
 
     if (waitingCourses.length > 0) {
       replyMessage += '⏳ 你候補中的課程：\n';
+      waitingMessage = '候補中的課程：\n';
       waitingCourses.forEach(([, c]) => {
         const waitingIndex = c.waiting.indexOf(userId) + 1;
         replyMessage += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位)\n`;
