@@ -740,363 +740,108 @@ async function handleEvent(event) {
   if (db[userId].role === 'teacher') {
     return handleTeacherCommands(event, userId, db, coursesData.courses, orders); // 傳入 coursesData.courses 和 orders
   } else {
-    return handleStudentCommands(event, db[userId], db, coursesData.courses, orders); // 傳入 coursesData.courses 和 orders
-  }
-}
-
-// ====================== 👩‍🎓 學員功能處理 ===========================
-async function handleStudentCommands(event, user, db, courses, orders) {
-  const msg = event.message.text.trim();
-  const userId = event.source.userId;
-  const replyToken = event.replyToken; // 確保在子函式中也從 event 獲取 replyToken
-
-  // --- 📅 預約課程功能 ---
-  if (msg === '@預約課程' || msg === '@預約') {
-    // 篩選未來的課程，並按時間排序
-    const upcoming = Object.entries(courses)
-      .filter(([, c]) => new Date(c.time) > new Date())
-      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    if (upcoming.length === 0) {
-      return reply(replyToken, '目前沒有可預約的課程。', studentMenu);
+    // --- 💎 點數查詢功能分流 (@點數) ---
+    if (msg === '@點數') {
+      const pointMenu = [
+        { type: 'message', label: '剩餘點數', text: '@剩餘點數' },
+        { type: 'message', label: '購買點數', text: '@購買點數' },
+        { type: 'message', label: '購買紀錄', text: '@購買紀錄' },
+      ];
+      return reply(replyToken, '請選擇點數相關功能：', pointMenu);
     }
 
-    // 構建課程列表的快速回覆項目
-    const quickReplyItems = upcoming.map(([id, c]) => {
-      // 構建按鈕的顯示文字，確保日期時間優先顯示，然後是課程名稱，並截斷到 20 字
-      const labelText = `${formatDateTime(c.time)} ${c.title}`;
-      return {
-        type: 'action',
-        action: {
-          type: 'message',
-          label: labelText.slice(0, 20), // 限制 label 長度 (LINE 最多 20 字)
-          text: `我要預約 ${id}`, // 實際發送的指令，包含課程 ID
-        },
-      };
-    });
-
-    // 在回覆中增加一個引導語
-    const introText = '以下是目前可以預約的課程，點擊即可預約並扣除 1 點。';
-
-    // 使用 client.replyMessage 發送包含文字和 QuickReply 的訊息
-    return client.replyMessage(replyToken, {
-      type: 'text',
-      text: introText,
-      quickReply: {
-        items: quickReplyItems,
-      },
-    });
-  }
-
-  // --- ✅ 執行預約課程 (接收來自選單的 `我要預約 [ID]` 指令) ---
-  if (msg.startsWith('我要預約 ')) {
-    const courseId = msg.replace('我要預約 ', '').trim();
-    const course = courses[courseId];
-
-    if (!course) {
-      return reply(replyToken, '找不到該課程，或課程已不存在。', studentMenu);
+    // --- 查詢剩餘點數 (@剩餘點數) ---
+    if (msg === '@剩餘點數') {
+      return reply(replyToken, `你目前有 ${user.points} 點。`, studentMenu);
     }
 
-    if (new Date(course.time) < new Date()) {
-      return reply(replyToken, '該課程已過期，無法預約。', studentMenu);
-    }
-
-    // 再次確保 students 和 waiting 陣列存在
-    if (!Array.isArray(course.students)) course.students = [];
-    if (!Array.isArray(course.waiting)) course.waiting = [];
-
-    if (course.students.includes(userId)) {
-      return reply(replyToken, '你已經預約此課程了。', studentMenu);
-    }
-
-    if (course.waiting.includes(userId)) {
-      return reply(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
-    }
-
-    if (user.points <= 0) {
-      return reply(replyToken, '你的點數不足，請先購買點數。', studentMenu);
-    }
-
-    if (course.students.length < course.capacity) {
-      // 課程有空位，直接預約
-      course.students.push(userId);
-      user.points--; // 扣除點數
-      user.history.push({ id: courseId, action: `預約成功：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
-      writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
-      writeJSON(DATA_FILE, db);
-      return reply(replyToken, `已成功預約課程：「${course.title}」。`, studentMenu);
-    } else {
-      // 課程額滿，加入候補名單
-      course.waiting.push(userId);
-      user.history.push({ id: courseId, action: `加入候補：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
-      writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
-      writeJSON(DATA_FILE, db); // 雖然候補不扣點，但也更新 db 確保 history 寫入
-      return reply(replyToken, `該課程「${course.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣點。`, studentMenu);
-    }
-  }
-
-  // --- 📖 我的課程功能 ---
-  if (msg === '@我的課程') {
-    const now = Date.now();
-    // 篩選學生已預約且尚未過期的課程
-    const enrolledCourses = Object.entries(courses)
-      .filter(([, c]) => c.students.includes(userId) && new Date(c.time).getTime() > now)
-      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    // 篩選學生候補中且尚未過期的課程
-    const waitingCourses = Object.entries(courses)
-      .filter(([, c]) => c.waiting.includes(userId) && new Date(c.time).getTime() > now)
-      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    let replyMessage = '';
-
-    if (enrolledCourses.length === 0 && waitingCourses.length === 0) {
-      return reply(replyToken, '你目前沒有預約或候補任何課程。', studentMenu);
-    }
-
-    if (enrolledCourses.length > 0) {
-      replyMessage += '✅ 你已預約的課程：\n';
-      enrolledCourses.forEach(([, c]) => {
-        replyMessage += `・${c.title} - ${formatDateTime(c.time)}\n`;
-      });
-      replyMessage += '\n'; // 預約課程和候補課程之間留一個空行
-    }
-
-    if (waitingCourses.length > 0) {
-      replyMessage += '⏳ 你候補中的課程：\n';
-      waitingCourses.forEach(([, c]) => {
-        const waitingIndex = c.waiting.indexOf(userId) + 1; // 候補順位 (從 1 開始)
-        replyMessage += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位)\n`;
-      });
-    }
-
-    return reply(replyToken, replyMessage.trim(), studentMenu);
-  }
-
-  // --- ❌ 取消已預約課程（含自動候補轉正） ---
-  if (msg === '@取消預約') {
-    // 只列出未來的、已預約的課程
-    const enrolled = Object.entries(courses).filter(([id, c]) =>
-      c.students.includes(userId) && new Date(c.time) > new Date()
-    ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    if (enrolled.length === 0) {
-      return reply(replyToken, '你目前沒有可取消的預約課程。', studentMenu);
-    }
-
-    return reply(replyToken, '請選擇要取消的預約課程：', enrolled.map(([id, c]) => ({
-      type: 'action',
-      action: {
-        type: 'message',
-        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
-        text: `我要取消預約 ${id}`, // 回傳指令包含課程 ID
-      },
-    })));
-  }
-
-  // --- 執行取消預約 (由快速選單觸發) ---
-  if (msg.startsWith('我要取消預約 ')) { // 修正為 '我要取消預約 ' 確保與選單文字一致
-    const id = msg.replace('我要取消預約 ', '').trim();
-    const course = courses[id];
-    if (!course || !course.students.includes(userId)) {
-      return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
-    }
-    // 檢查課程是否已過期
-    if (new Date(course.time) < new Date()) {
-      return reply(replyToken, '該課程已過期，無法取消。', studentMenu);
-    }
-
-    // 從課程中移除學生
-    course.students = course.students.filter(sid => sid !== userId);
-    user.points++; // 退還點數
-    user.history.push({ id, action: `取消預約退點：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
-
-    let replyMessage = `課程「${course.title}」已取消，已退還 1 點。`;
-
-    // 🔁 嘗試從候補名單補上 (如果有人取消預約，則嘗試將候補者轉正)
-    if (course.waiting.length > 0 && course.students.length < course.capacity) {
-      const nextWaitingUserId = course.waiting[0]; // 獲取第一個候補者，但不移除
-      if (db[nextWaitingUserId] && db[nextWaitingUserId].points > 0) {
-        course.waiting.shift(); // 移除第一個候補者
-        course.students.push(nextWaitingUserId); // 候補者轉正
-        db[nextWaitingUserId].points--; // 扣除候補者的點數
-        db[nextWaitingUserId].history.push({ id, action: `候補補上：${course.title}`, time: new Date().toISOString() }); // 記錄歷史
-
-        // 通知候補者已補上課程
-        push(nextWaitingUserId,
-          `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(course.time)}\n系統已自動扣除 1 點。請確認你的「我的課程」。`
-        ).catch(e => console.error(`❌ 通知候補者 ${nextWaitingUserId} 失敗:`, e.message));
-
-        replyMessage += '\n有候補學生已遞補成功。';
-      } else if (db[nextWaitingUserId]) {
-        // 如果候補者點數不足
-        const studentName = db[nextWaitingUserId].name || `未知學員(${nextWaitingUserId.substring(0, 4)}...)`;
-        replyMessage += `\n候補學生 ${studentName} 點數不足，未能遞補。已將其從候補名單移除。`; // 點數不足直接移除
-        course.waiting.shift(); // 從候補名單中移除
-        console.log(`⚠️ 候補學生 ${studentName} (ID: ${nextWaitingUserId}) 點數不足，未能遞補，已從候補名單移除。`);
-        // 可以考慮通知老師此情況
-        if (TEACHER_ID) {
-          push(TEACHER_ID,
-            `課程「${course.title}」（${formatDateTime(course.time)}）有學生取消，但候補學生 ${studentName} 點數不足，未能遞補。已自動從候補名單移除該學生。`
-          ).catch(e => console.error('❌ 通知老師失敗', e.message));
-        } else {
-          console.warn('⚠️ TEACHER_ID 未設定，無法通知老師點數不足的候補情況。');
-        }
-      } else {
-        // 如果候補用戶資料不存在 (不應發生)
-        course.waiting.shift(); // 移除無效的候補者
-        replyMessage += '\n候補名單中存在無效用戶，已移除。';
-      }
-    } else if (course.waiting.length > 0 && course.students.length >= course.capacity) {
-        replyMessage += '\n課程空出一位，但候補名單仍需等待。'; // 更正語句
-    }
-
-
-    writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
-    writeJSON(DATA_FILE, db);
-    return reply(replyToken, replyMessage, studentMenu);
-  }
-
-  // --- ❌ 取消候補 ---
-  if (msg === '@取消候補') {
-    // 篩選未來的、已在候補名單中的課程
-    const waitingCourses = Object.entries(courses).filter(([, c]) =>
-      c.waiting?.includes(userId) && new Date(c.time) > new Date()
-    ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    if (waitingCourses.length === 0) {
-      return reply(replyToken, '你目前沒有可取消的候補課程。', studentMenu);
-    }
-
-    // 提供選單讓使用者選擇取消哪個候補
-    return reply(replyToken, '請選擇要取消候補的課程：', waitingCourses.map(([id, c]) => ({
-      type: 'action',
-      action: {
-        type: 'message',
-        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
-        text: `我要取消候補 ${id}`,
-      },
-    })));
-  }
-
-  // --- 執行取消候補 (由快速選單觸發) ---
-  if (msg.startsWith('我要取消候補 ')) {
-    const id = msg.replace('我要取消候補 ', '').trim();
-    const course = courses[id];
-    if (!course || !course.waiting?.includes(userId)) {
-      return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
-    }
-    if (new Date(course.time) < new Date()) { // 檢查課程是否已過期
-      return reply(replyToken, '該課程已過期，無法取消候補。', studentMenu);
-    }
-    course.waiting = course.waiting.filter(x => x !== userId); // 從候補名單中移除
-    user.history.push({ id, action: `取消候補：${course.title}`, time: new Date().toISOString() });
-    writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
-    writeJSON(DATA_FILE, db); // 更新用戶歷史
-    return reply(replyToken, `已取消課程「${course.title}」的候補。`, studentMenu);
-  }
-
-  // --- 💎 點數查詢功能分流 (@點數) ---
-  if (msg === '@點數') {
-    const pointMenu = [
-      { type: 'message', label: '剩餘點數', text: '@剩餘點數' },
-      { type: 'message', label: '購買點數', text: '@購買點數' },
-      { type: 'message', label: '購買紀錄', text: '@購買紀錄' },
-    ];
-    return reply(replyToken, '請選擇點數相關功能：', pointMenu);
-  }
-
-  // --- 查詢剩餘點數 (@剩餘點數) ---
-  if (msg === '@剩餘點數') {
-    return reply(replyToken, `你目前有 ${user.points} 點。`, studentMenu);
-  }
-
-  // --- 購買點數流程 (@購買點數) ---
-  if (msg === '@購買點數') {
-    // 檢查是否有進行中的購買流程，防止重複開啟
-    const pendingOrder = Object.values(orders).find(order =>
+    // --- 購買點數流程 (@購買點數) ---
+    if (msg === '@購買點數') {
+      // 檢查是否有進行中的購買流程，防止重複開啟
+      const pendingOrder = Object.values(orders).find(order =>
         order.userId === userId && order.status === 'pending_payment'
-    );
+      );
 
-    if (pendingOrder) {
+      if (pendingOrder) {
         return reply(replyToken,
-            `您有一筆待完成的購點訂單 (ID: ${pendingOrder.orderId})，請先完成匯款並至「購買紀錄」輸入後五碼，或選擇「❌ 取消購買」。`,
-            [
-                { type: 'message', label: '❌ 取消購買', text: '❌ 取消購買' } // 提供取消選項
-            ]
+          `您有一筆待完成的購點訂單 (ID: ${pendingOrder.orderId})，請先完成匯款並至「購買紀錄」輸入後五碼，或選擇「❌ 取消購買」。`,
+          [
+            { type: 'message', label: '❌ 取消購買', text: '❌ 取消購買' } // 提供取消選項
+          ]
         );
-    }
+      }
 
 
-    // 進入選擇方案步驟
-    pendingPurchase[userId] = { step: 'select_plan', data: {} };
-    const planOptions = PURCHASE_PLANS.map(plan => ({
+      // 進入選擇方案步驟
+      pendingPurchase[userId] = { step: 'select_plan', data: {} };
+      const planOptions = PURCHASE_PLANS.map(plan => ({
         type: 'message',
         label: plan.label,
         text: plan.label // 讓用戶直接點選方案名稱
-    }));
-    return reply(replyToken, '請選擇要購買的點數方案：', planOptions);
-  }
+      }));
+      return reply(replyToken, '請選擇要購買的點數方案：', planOptions);
+    }
 
-  // --- 取消購買點數 (學員主動發送) ---
-  if (msg === '❌ 取消購買') {
-    // 檢查是否有待完成的購點流程
-    const pendingOrder = Object.values(orders).find(order =>
+    // --- 取消購買點數 (學員主動發送) ---
+    if (msg === '❌ 取消購買') {
+      // 檢查是否有待完成的購點流程
+      const pendingOrder = Object.values(orders).find(order =>
         order.userId === userId && order.status === 'pending_payment'
-    );
-    if (pendingOrder) {
+      );
+      if (pendingOrder) {
         // 從 orders 中移除這筆待支付的訂單
         delete orders[pendingOrder.orderId];
         writeJSON(ORDER_FILE, orders);
         delete pendingPurchase[userId]; // 清除狀態
         return reply(replyToken, '已取消您的購點訂單。', studentMenu);
-    }
-    // 如果沒有待處理的購點流程，則只清除 pendingPurchase 狀態 (以防萬一)
-    if (pendingPurchase[userId]) {
+      }
+      // 如果沒有待處理的購點流程，則只清除 pendingPurchase 狀態 (以防萬一)
+      if (pendingPurchase[userId]) {
         delete pendingPurchase[userId];
+      }
+      return reply(replyToken, '沒有待取消的購點訂單。', studentMenu);
     }
-    return reply(replyToken, '沒有待取消的購點訂單。', studentMenu);
-  }
 
-  // --- 購買紀錄功能 (@購買紀錄) ---
-  if (msg === '@購買紀錄') {
-    // 檢查是否有尚未輸入後五碼的購點訂單
-    const pendingOrder = Object.values(orders).find(order =>
+    // --- 購買紀錄功能 (@購買紀錄) ---
+    if (msg === '@購買紀錄') {
+      // 檢查是否有尚未輸入後五碼的購點訂單
+      const pendingOrder = Object.values(orders).find(order =>
         order.userId === userId && order.status === 'pending_payment'
-    );
+      );
 
-    if (pendingOrder) {
-        // 如果有待輸入後五碼的訂單
-        pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.orderId } }; // 進入輸入後五碼狀態
-        return reply(replyToken, `您有一筆待完成的購點訂單 (ID: ${pendingOrder.orderId})，請輸入您轉帳的匯款帳號後五碼，我們將盡快為您確認。`, studentMenu);
+      if (pendingOrder) {
+        pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.orderId } };
+        return reply(replyToken, `您的訂單 ${pendingOrder.orderId} 尚未確認匯款，請輸入您轉帳的銀行帳號後五碼以便核對：`, [
+          { type: 'message', label: '取消輸入', text: '❌ 取消輸入後五碼' }
+        ]);
+      }
+
+      // 如果沒有待輸入後五碼的訂單，則顯示歷史記錄
+      if (!user.history || user.history.length === 0) {
+        return reply(replyToken, '你目前沒有點數相關記錄。', studentMenu);
+      }
+
+      let historyMessage = '以下是你的點數記錄：\n';
+      // 顯示最近的 5 筆記錄
+      user.history.slice(-5).reverse().forEach(record => { // reverse() 讓最新記錄顯示在最上面
+        historyMessage += `・${record.action} (${formatDateTime(record.time)})\n`;
+      });
+      return reply(replyToken, historyMessage.trim(), studentMenu);
     }
 
-    // 如果沒有待輸入後五碼的訂單，則顯示歷史記錄
-    if (!user.history || user.history.length === 0) {
-      return reply(replyToken, '你目前沒有點數相關記錄。', studentMenu);
-    }
-
-    let historyMessage = '以下是你的點數記錄：\n';
-    // 顯示最近的 5 筆記錄
-    user.history.slice(-5).reverse().forEach(record => { // reverse() 讓最新記錄顯示在最上面
-      historyMessage += `・${record.action} (${formatDateTime(record.time)})\n`;
-    });
-    return reply(replyToken, historyMessage.trim(), studentMenu);
-  }
-
-  // --- 處理學員輸入匯款後五碼 (在 @購買紀錄 流程中) ---
-  if (pendingPurchase[userId] && pendingPurchase[userId].step === 'input_last5') {
+    // --- 處理學員輸入匯款後五碼 (在 @購買紀錄 流程中) ---
+    if (pendingPurchase[userId] && pendingPurchase[userId].step === 'input_last5') {
       const orderId = pendingPurchase[userId].data.orderId;
       const last5Digits = text.trim();
 
       if (!/^\d{5}$/.test(last5Digits)) {
-          return reply(replyToken, '請輸入正確的 5 位數字匯款帳號後五碼。');
+        return reply(replyToken, '您輸入的匯款帳號後五碼格式不正確，請輸入五位數字。');
       }
 
       const order = orders[orderId];
       if (!order || order.status !== 'pending_payment') {
-          delete pendingPurchase[userId]; // 訂單狀態不對，清除狀態
-          return reply(replyToken, '此訂單狀態不正確或已處理，請重新開始購點流程。', studentMenu);
+        delete pendingPurchase[userId]; // 訂單狀態不對，清除狀態
+        return reply(replyToken, '此訂單狀態不正確或已處理，請重新開始購點流程。', studentMenu);
       }
 
       order.last5Digits = last5Digits;
@@ -1106,20 +851,277 @@ async function handleStudentCommands(event, user, db, courses, orders) {
       delete pendingPurchase[userId]; // 清除學員的狀態
 
       // 通知學員已收到後五碼
-      await reply(replyToken, `已收到您的匯款後五碼：${last5Digits}。我們將盡快為您核對並加點。`, studentMenu);
+      await reply(replyToken, `已收到您的匯款帳號後五碼：${last5Digits}，感謝您的配合！我們將盡快為您核對並加點。`, studentMenu);
 
       // 通知老師有新的購點訂單待確認
       if (TEACHER_ID) {
-          await push(TEACHER_ID, `🔔 有新的購點訂單待確認！請輸入 @購點確認 進入管理介面。`)
-              .catch(e => console.error('❌ 通知老師新購點訂單失敗:', e.message));
+        await push(TEACHER_ID, `🔔 有新的購點訂單待確認！請輸入 @購點確認 進入管理介面。`)
+          .catch(e => console.error('❌ 通知老師新購點訂單失敗:', e.message));
       } else {
-          console.warn('⚠️ TEACHER_ID 未設定，無法通知老師新的購點訂單。');
+        console.warn('⚠️ TEACHER_ID 未設定，無法通知老師新的購點訂單。');
       }
       return; // 處理完畢
-  }
+    }
 
-  // --- 預設回覆，提示用戶使用選單 ---
-  return reply(replyToken, '指令無效，請使用下方選單或輸入正確指令。', studentMenu);
+    // --- 處理取消輸入後五碼的訊息 ---
+    if (msg === '❌ 取消輸入後五碼') {
+      if (pendingPurchase[userId]?.step === 'input_last5') {
+        delete pendingPurchase[userId];
+        return reply(replyToken, '已取消輸入匯款帳號後五碼。', studentMenu);
+      } else {
+        return reply(replyToken, '目前沒有需要取消的輸入流程。', studentMenu);
+      }
+    }
+
+    // --- 預約課程功能 ---
+    if (msg === '@預約課程' || msg === '@預約') {
+      // 篩選未來的課程，並按時間排序
+      const upcoming = Object.entries(coursesData.courses)
+        .filter(([, c]) => new Date(c.time) > new Date())
+        .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+      if (upcoming.length === 0) {
+        return reply(replyToken, '目前沒有可預約的課程。', studentMenu);
+      }
+
+      // 構建課程列表的快速回覆項目
+      const quickReplyItems = upcoming.map(([id, c]) => {
+        // 構建按鈕的顯示文字，確保日期時間優先顯示，然後是課程名稱，並截斷到 20 字
+        const labelText = `${formatDateTime(c.time)} ${c.title}`;
+        return {
+          type: 'action',
+          action: {
+            type: 'message',
+            label: labelText.slice(0, 20), // 限制 label 長度 (LINE 最多 20 字)
+            text: `我要預約 ${id}`, // 實際發送的指令，包含課程 ID
+          },
+        };
+      });
+
+      // 在回覆中增加一個引導語
+      const introText = '以下是目前可以預約的課程，點擊即可預約並扣除 1 點。';
+
+      // 使用 client.replyMessage 發送包含文字和 QuickReply 的訊息
+      return client.replyMessage(replyToken, {
+        type: 'text',
+        text: introText,
+        quickReply: {
+          items: quickReplyItems,
+        },
+      });
+    }
+
+    // --- ✅ 執行預約課程 (接收來自選單的 `我要預約 [ID]` 指令) ---
+    if (msg.startsWith('我要預約 ')) {
+      const courseId = msg.replace('我要預約 ', '').trim();
+      const course = coursesData.courses[courseId];
+
+      if (!course) {
+        return reply(replyToken, '找不到該課程，或課程已不存在。', studentMenu);
+      }
+
+      if (new Date(course.time) < new Date()) {
+        return reply(replyToken, '該課程已過期，無法預約。', studentMenu);
+      }
+
+      // 再次確保 students 和 waiting 陣列存在
+      if (!Array.isArray(course.students)) course.students = [];
+      if (!Array.isArray(course.waiting)) course.waiting = [];
+
+      if (course.students.includes(userId)) {
+        return reply(replyToken, '你已經預約此課程了。', studentMenu);
+      }
+
+      if (course.waiting.includes(userId)) {
+        return reply(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
+      }
+
+      if (user.points <= 0) {
+        return reply(replyToken, '你的點數不足，請先購買點數。', studentMenu);
+      }
+
+      if (course.students.length < course.capacity) {
+        // 課程有空位，直接預約
+        course.students.push(userId);
+        db[userId].points--; // 扣除點數
+        db[userId].history.push({ id: courseId, action: `預約成功：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
+        writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+        writeJSON(DATA_FILE, db);
+        return reply(replyToken, `已成功預約課程：「${course.title}」。`, studentMenu);
+      } else {
+        // 課程額滿，加入候補名單
+        course.waiting.push(userId);
+        db[userId].history.push({ id: courseId, action: `加入候補：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
+        writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+        writeJSON(DATA_FILE, db); // 雖然候補不扣點，但也更新 db 確保 history 寫入
+        return reply(replyToken, `該課程「${course.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣點。`, studentMenu);
+      }
+    }
+
+    // --- 📖 我的課程功能 ---
+    if (msg === '@我的課程') {
+      const now = Date.now();
+      // 篩選學生已預約且尚未過期的課程
+      const enrolledCourses = Object.entries(coursesData.courses)
+        .filter(([, c]) => c.students.includes(userId) && new Date(c.time).getTime() > now)
+        .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+      // 篩選學生候補中且尚未過期的課程
+      const waitingCourses = Object.entries(coursesData.courses)
+        .filter(([, c]) => c.waiting.includes(userId) && new Date(c.time).getTime() > now)
+        .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+      let replyMessage = '';
+
+      if (enrolledCourses.length === 0 && waitingCourses.length === 0) {
+        return reply(replyToken, '你目前沒有預約或候補任何課程。', studentMenu);
+      }
+
+      if (enrolledCourses.length > 0) {
+        replyMessage += '✅ 你已預約的課程：\n';
+        enrolledCourses.forEach(([, c]) => {
+          replyMessage += `・${c.title} - ${formatDateTime(c.time)}\n`;
+        });
+        replyMessage += '\n'; // 預約課程和候補課程之間留一個空行
+      }
+
+      if (waitingCourses.length > 0) {
+        replyMessage += '⏳ 你候補中的課程：\n';
+        waitingCourses.forEach(([, c]) => {
+          const waitingIndex = c.waiting.indexOf(userId) + 1; // 候補順位 (從 1 開始)
+          replyMessage += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位)\n`;
+        });
+      }
+
+      return reply(replyToken, replyMessage.trim(), studentMenu);
+    }
+
+    // --- ❌ 取消已預約課程（含自動候補轉正） ---
+    if (msg === '@取消預約') {
+      // 只列出未來的、已預約的課程
+      const enrolled = Object.entries(coursesData.courses).filter(([id, c]) =>
+        c.students.includes(userId) && new Date(c.time) > new Date()
+      ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+      if (enrolled.length === 0) {
+        return reply(replyToken, '你目前沒有可取消的預約課程。', studentMenu);
+      }
+
+      return reply(replyToken, '請選擇要取消的預約課程：', enrolled.map(([id, c]) => ({
+        type: 'action',
+        action: {
+          type: 'message',
+          label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
+          text: `我要取消預約 ${id}`, // 回傳指令包含課程 ID
+        },
+      })));
+    }
+
+    // --- 執行取消預約 (由快速選單觸發) ---
+    if (msg.startsWith('我要取消預約 ')) { // 修正為 '我要取消預約 ' 確保與選單文字一致
+      const id = msg.replace('我要取消預約 ', '').trim();
+      const course = coursesData.courses[id];
+      if (!course || !course.students.includes(userId)) {
+        return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
+      }
+      // 檢查課程是否已過期
+      if (new Date(course.time) < new Date()) {
+        return reply(replyToken, '該課程已過期，無法取消。', studentMenu);
+      }
+
+      // 從課程中移除學生
+      course.students = course.students.filter(sid => sid !== userId);
+      db[userId].points++; // 退還點數
+      db[userId].history.push({ id, action: `取消預約退點：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
+
+      let replyMessage = `課程「${course.title}」已取消，已退還 1 點。`;
+
+      // 🔁 嘗試從候補名單補上 (如果有人取消預約，則嘗試將候補者轉正)
+      if (course.waiting.length > 0 && course.students.length < course.capacity) {
+        const nextWaitingUserId = course.waiting[0]; // 獲取第一個候補者，但不移除
+        if (db[nextWaitingUserId] && db[nextWaitingUserId].points > 0) {
+          course.waiting.shift(); // 移除第一個候補者
+          course.students.push(nextWaitingUserId); // 候補者轉正
+          db[nextWaitingUserId].points--; // 扣除候補者的點數
+          db[nextWaitingUserId].history.push({ id, action: `候補補上：${course.title}`, time: new Date().toISOString() }); // 記錄歷史
+
+          // 通知候補者已補上課程
+          push(nextWaitingUserId,
+            `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(course.time)}\n系統已自動扣除 1 點。請確認你的「我的課程」。`
+          ).catch(e => console.error(`❌ 通知候補者 ${nextWaitingUserId} 失敗:`, e.message));
+
+          replyMessage += '\n有候補學生已遞補成功。';
+        } else if (db[nextWaitingUserId]) {
+          // 如果候補者點數不足
+          const studentName = db[nextWaitingUserId].name || `未知學員(${nextWaitingUserId.substring(0, 4)}...)`;
+          replyMessage += `\n候補學生 ${studentName} 點數不足，未能遞補。已將其從候補名單移除。`; // 點數不足直接移除
+          course.waiting.shift(); // 從候補名單中移除
+          console.log(`⚠️ 候補學生 ${studentName} (ID: ${nextWaitingUserId}) 點數不足，未能遞補，已從候補名單移除。`);
+          // 可以考慮通知老師此情況
+          if (TEACHER_ID) {
+            push(TEACHER_ID,
+              `課程「${course.title}」（${formatDateTime(course.time)}）有學生取消，但候補學生 ${studentName} 點數不足，未能遞補。已自動從候補名單移除該學生。`
+            ).catch(e => console.error('❌ 通知老師失敗', e.message));
+          } else {
+            console.warn('⚠️ TEACHER_ID 未設定，無法通知老師點數不足的候補情況。');
+          }
+        } else {
+          // 如果候補用戶資料不存在 (不應發生)
+          course.waiting.shift(); // 移除無效的候補者
+          replyMessage += '\n候補名單中存在無效用戶，已移除。';
+        }
+      } else if (course.waiting.length > 0 && course.students.length >= course.capacity) {
+          replyMessage += '\n課程空出一位，但候補名單仍需等待。'; // 更正語句
+      }
+
+
+      writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+      writeJSON(DATA_FILE, db);
+      return reply(replyToken, replyMessage, studentMenu);
+    }
+
+    // --- ❌ 取消候補 ---
+    if (msg === '@取消候補') {
+      // 篩選未來的、已在候補名單中的課程
+      const waitingCourses = Object.entries(coursesData.courses).filter(([, c]) =>
+        c.waiting?.includes(userId) && new Date(c.time) > new Date()
+      ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+      if (waitingCourses.length === 0) {
+        return reply(replyToken, '你目前沒有可取消的候補課程。', studentMenu);
+      }
+
+      // 提供選單讓使用者選擇取消哪個候補
+      return reply(replyToken, '請選擇要取消候補的課程：', waitingCourses.map(([id, c]) => ({
+        type: 'action',
+        action: {
+          type: 'message',
+          label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
+          text: `我要取消候補 ${id}`,
+        },
+      })));
+    }
+
+    // --- 執行取消候補 (由快速選單觸發) ---
+    if (msg.startsWith('我要取消候補 ')) {
+      const id = msg.replace('我要取消候補 ', '').trim();
+      const course = coursesData.courses[id];
+      if (!course || !course.waiting?.includes(userId)) {
+        return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
+      }
+      if (new Date(course.time) < new Date()) { // 檢查課程是否已過期
+        return reply(replyToken, '該課程已過期，無法取消候補。', studentMenu);
+      }
+      course.waiting = course.waiting.filter(x => x !== userId); // 從候補名單中移除
+      db[userId].history.push({ id, action: `取消候補：${course.title}`, time: new Date().toISOString() });
+      writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+      writeJSON(DATA_FILE, db); // 更新用戶歷史
+      return reply(replyToken, `已取消課程「${course.title}」的候補。`, studentMenu);
+    }
+
+    // --- 預設回覆，提示用戶使用選單 ---
+    return reply(replyToken, '指令無效，請使用下方選單或輸入正確指令。', studentMenu);
+  }
 }
 
 // ====================== 👨‍🏫 老師功能處理 ===========================
@@ -1419,3 +1421,393 @@ app.listen(PORT, () => {
     console.warn('⚠️ SELF_URL 未設定或使用預設值，Keep-alive 功能可能無法防止服務休眠。請在 .env 檔案中設定您的部署網址。');
   }
 });
+
+// ====================== 👩‍🎓 學員功能處理 ===========================
+async function handleStudentCommands(event, user, db, courses, orders) {
+  const msg = event.message.text.trim();
+  const userId = event.source.userId;
+  const replyToken = event.replyToken; // 確保在子函式中也從 event 獲取 replyToken
+
+  // --- 📅 預約課程功能 ---
+  if (msg === '@預約課程' || msg === '@預約') {
+    // 篩選未來的課程，並按時間排序
+    const upcoming = Object.entries(courses)
+      .filter(([, c]) => new Date(c.time) > new Date())
+      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+    if (upcoming.length === 0) {
+      return reply(replyToken, '目前沒有可預約的課程。', studentMenu);
+    }
+
+    // 構建課程列表的快速回覆項目
+    const quickReplyItems = upcoming.map(([id, c]) => {
+      // 構建按鈕的顯示文字，確保日期時間優先顯示，然後是課程名稱，並截斷到 20 字
+      const labelText = `${formatDateTime(c.time)} ${c.title}`;
+      return {
+        type: 'action',
+        action: {
+          type: 'message',
+          label: labelText.slice(0, 20), // 限制 label 長度 (LINE 最多 20 字)
+          text: `我要預約 ${id}`, // 實際發送的指令，包含課程 ID
+        },
+      };
+    });
+
+    // 在回覆中增加一個引導語
+    const introText = '以下是目前可以預約的課程，點擊即可預約並扣除 1 點。';
+
+    // 使用 client.replyMessage 發送包含文字和 QuickReply 的訊息
+    return client.replyMessage(replyToken, {
+      type: 'text',
+      text: introText,
+      quickReply: {
+        items: quickReplyItems,
+      },
+    });
+  }
+
+  // --- ✅ 執行預約課程 (接收來自選單的 `我要預約 [ID]` 指令) ---
+  if (msg.startsWith('我要預約 ')) {
+    const courseId = msg.replace('我要預約 ', '').trim();
+    const course = courses[courseId];
+
+    if (!course) {
+      return reply(replyToken, '找不到該課程，或課程已不存在。', studentMenu);
+    }
+
+    if (new Date(course.time) < new Date()) {
+      return reply(replyToken, '該課程已過期，無法預約。', studentMenu);
+    }
+
+    // 再次確保 students 和 waiting 陣列存在
+    if (!Array.isArray(course.students)) course.students = [];
+    if (!Array.isArray(course.waiting)) course.waiting = [];
+
+    if (course.students.includes(userId)) {
+      return reply(replyToken, '你已經預約此課程了。', studentMenu);
+    }
+
+    if (course.waiting.includes(userId)) {
+      return reply(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
+    }
+
+    if (user.points <= 0) {
+      return reply(replyToken, '你的點數不足，請先購買點數。', studentMenu);
+    }
+
+    if (course.students.length < course.capacity) {
+      // 課程有空位，直接預約
+      course.students.push(userId);
+      db[userId].points--; // 扣除點數
+      db[userId].history.push({ id: courseId, action: `預約成功：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
+      writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
+      writeJSON(DATA_FILE, db);
+      return reply(replyToken, `已成功預約課程：「${course.title}」。`, studentMenu);
+    } else {
+      // 課程額滿，加入候補名單
+      course.waiting.push(userId);
+      db[userId].history.push({ id: courseId, action: `加入候補：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
+      writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
+      writeJSON(DATA_FILE, db); // 雖然候補不扣點，但也更新 db 確保 history 寫入
+      return reply(replyToken, `該課程「${course.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣點。`, studentMenu);
+    }
+  }
+
+  // --- 📖 我的課程功能 ---
+  if (msg === '@我的課程') {
+    const now = Date.now();
+    // 篩選學生已預約且尚未過期的課程
+    const enrolledCourses = Object.entries(courses)
+      .filter(([, c]) => c.students.includes(userId) && new Date(c.time).getTime() > now)
+      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+    // 篩選學生候補中且尚未過期的課程
+    const waitingCourses = Object.entries(courses)
+      .filter(([, c]) => c.waiting.includes(userId) && new Date(c.time).getTime() > now)
+      .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+    let replyMessage = '';
+
+    if (enrolledCourses.length === 0 && waitingCourses.length === 0) {
+      return reply(replyToken, '你目前沒有預約或候補任何課程。', studentMenu);
+    }
+
+    if (enrolledCourses.length > 0) {
+      replyMessage += '✅ 你已預約的課程：\n';
+      enrolledCourses.forEach(([, c]) => {
+        replyMessage += `・${c.title} - ${formatDateTime(c.time)}\n`;
+      });
+      replyMessage += '\n'; // 預約課程和候補課程之間留一個空行
+    }
+
+    if (waitingCourses.length > 0) {
+      replyMessage += '⏳ 你候補中的課程：\n';
+      waitingCourses.forEach(([, c]) => {
+        const waitingIndex = c.waiting.indexOf(userId) + 1; // 候補順位 (從 1 開始)
+        replyMessage += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位)\n`;
+      });
+    }
+
+    return reply(replyToken, replyMessage.trim(), studentMenu);
+  }
+
+  // --- ❌ 取消已預約課程（含自動候補轉正） ---
+  if (msg === '@取消預約') {
+    // 只列出未來的、已預約的課程
+    const enrolled = Object.entries(courses).filter(([id, c]) =>
+      c.students.includes(userId) && new Date(c.time) > new Date()
+    ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+    if (enrolled.length === 0) {
+      return reply(replyToken, '你目前沒有可取消的預約課程。', studentMenu);
+    }
+
+    return reply(replyToken, '請選擇要取消的預約課程：', enrolled.map(([id, c]) => ({
+      type: 'action',
+      action: {
+        type: 'message',
+        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
+        text: `我要取消預約 ${id}`, // 回傳指令包含課程 ID
+      },
+    })));
+  }
+
+  // --- 執行取消預約 (由快速選單觸發) ---
+  if (msg.startsWith('我要取消預約 ')) { // 修正為 '我要取消預約 ' 確保與選單文字一致
+    const id = msg.replace('我要取消預約 ', '').trim();
+    const course = courses[id];
+    if (!course || !course.students.includes(userId)) {
+      return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
+    }
+    // 檢查課程是否已過期
+    if (new Date(course.time) < new Date()) {
+      return reply(replyToken, '該課程已過期，無法取消。', studentMenu);
+    }
+
+    // 從課程中移除學生
+    course.students = course.students.filter(sid => sid !== userId);
+    db[userId].points++; // 退還點數
+    db[userId].history.push({ id, action: `取消預約退點：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
+
+    let replyMessage = `課程「${course.title}」已取消，已退還 1 點。`;
+
+    // 🔁 嘗試從候補名單補上 (如果有人取消預約，則嘗試將候補者轉正)
+    if (course.waiting.length > 0 && course.students.length < course.capacity) {
+      const nextWaitingUserId = course.waiting[0]; // 獲取第一個候補者，但不移除
+      if (db[nextWaitingUserId] && db[nextWaitingUserId].points > 0) {
+        course.waiting.shift(); // 移除第一個候補者
+        course.students.push(nextWaitingUserId); // 候補者轉正
+        db[nextWaitingUserId].points--; // 扣除候補者的點數
+        db[nextWaitingUserId].history.push({ id, action: `候補補上：${course.title}`, time: new Date().toISOString() }); // 記錄歷史
+
+        // 通知候補者已補上課程
+        push(nextWaitingUserId,
+          `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(course.time)}\n系統已自動扣除 1 點。請確認你的「我的課程」。`
+        ).catch(e => console.error(`❌ 通知候補者 ${nextWaitingUserId} 失敗:`, e.message));
+
+        replyMessage += '\n有候補學生已遞補成功。';
+      } else if (db[nextWaitingUserId]) {
+        // 如果候補者點數不足
+        const studentName = db[nextWaitingUserId].name || `未知學員(${nextWaitingUserId.substring(0, 4)}...)`;
+        replyMessage += `\n候補學生 ${studentName} 點數不足，未能遞補。已將其從候補名單移除。`; // 點數不足直接移除
+        course.waiting.shift(); // 從候補名單中移除
+        console.log(`⚠️ 候補學生 ${studentName} (ID: ${nextWaitingUserId}) 點數不足，未能遞補，已從候補名單移除。`);
+        // 可以考慮通知老師此情況
+        if (TEACHER_ID) {
+          push(TEACHER_ID,
+            `課程「${course.title}」（${formatDateTime(course.time)}）有學生取消，但候補學生 ${studentName} 點數不足，未能遞補。已自動從候補名單移除該學生。`
+          ).catch(e => console.error('❌ 通知老師失敗', e.message));
+        } else {
+          console.warn('⚠️ TEACHER_ID 未設定，無法通知老師點數不足的候補情況。');
+        }
+      } else {
+        // 如果候補用戶資料不存在 (不應發生)
+        course.waiting.shift(); // 移除無效的候補者
+        replyMessage += '\n候補名單中存在無效用戶，已移除。';
+      }
+    } else if (course.waiting.length > 0 && course.students.length >= course.capacity) {
+        replyMessage += '\n課程空出一位，但候補名單仍需等待。'; // 更正語句
+    }
+
+
+    writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
+    writeJSON(DATA_FILE, db);
+    return reply(replyToken, replyMessage, studentMenu);
+  }
+
+  // --- ❌ 取消候補 ---
+  if (msg === '@取消候補') {
+    // 篩選未來的、已在候補名單中的課程
+    const waitingCourses = Object.entries(courses)
+      .filter(([, c]) =>
+        c.waiting?.includes(userId) && new Date(c.time) > new Date()
+      ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+    if (waitingCourses.length === 0) {
+      return reply(replyToken, '你目前沒有可取消的候補課程。', studentMenu);
+    }
+
+    // 提供選單讓使用者選擇取消哪個候補
+    return reply(replyToken, '請選擇要取消候補的課程：', waitingCourses.map(([id, c]) => ({
+      type: 'action',
+      action: {
+        type: 'message',
+        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
+        text: `我要取消候補 ${id}`,
+      },
+    })));
+  }
+
+  // --- 執行取消候補 (由快速選單觸發) ---
+  if (msg.startsWith('我要取消候補 ')) {
+    const id = msg.replace('我要取消候補 ', '').trim();
+    const course = courses[id];
+    if (!course || !course.waiting?.includes(userId)) {
+      return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
+    }
+    if (new Date(course.time) < new Date()) { // 檢查課程是否已過期
+      return reply(replyToken, '該課程已過期，無法取消候補。', studentMenu);
+    }
+    course.waiting = course.waiting.filter(x => x !== userId); // 從候補名單中移除
+    db[userId].history.push({ id, action: `取消候補：${course.title}`, time: new Date().toISOString() });
+    writeJSON(COURSE_FILE, { courses, courseIdCounter: readJSON(COURSE_FILE).courseIdCounter }); // 確保回寫 courseIdCounter
+    writeJSON(DATA_FILE, db); // 更新用戶歷史
+    return reply(replyToken, `已取消課程「${course.title}」的候補。`, studentMenu);
+  }
+
+  // --- 💎 點數查詢功能分流 (@點數) ---
+  if (msg === '@點數') {
+    const pointMenu = [
+      { type: 'message', label: '剩餘點數', text: '@剩餘點數' },
+      { type: 'message', label: '購買點數', text: '@購買點數' },
+      { type: 'message', label: '購買紀錄', text: '@購買紀錄' },
+    ];
+    return reply(replyToken, '請選擇點數相關功能：', pointMenu);
+  }
+
+  // --- 查詢剩餘點數 (@剩餘點數) ---
+  if (msg === '@剩餘點數') {
+    return reply(replyToken, `你目前有 ${user.points} 點。`, studentMenu);
+  }
+
+  // --- 購買點數流程 (@購買點數) ---
+  if (msg === '@購買點數') {
+    // 檢查是否有進行中的購買流程，防止重複開啟
+    const pendingOrder = Object.values(orders).find(order =>
+      order.userId === userId && order.status === 'pending_payment'
+    );
+
+    if (pendingOrder) {
+      return reply(replyToken,
+        `您有一筆待完成的購點訂單 (ID: ${pendingOrder.orderId})，請先完成匯款並至「購買紀錄」輸入後五碼，或選擇「❌ 取消購買」。`,
+        [
+          { type: 'message', label: '❌ 取消購買', text: '❌ 取消購買' } // 提供取消選項
+        ]
+      );
+    }
+
+
+    // 進入選擇方案步驟
+    pendingPurchase[userId] = { step: 'select_plan', data: {} };
+    const planOptions = PURCHASE_PLANS.map(plan => ({
+      type: 'message',
+      label: plan.label,
+      text: plan.label // 讓用戶直接點選方案名稱
+    }));
+    return reply(replyToken, '請選擇要購買的點數方案：', planOptions);
+  }
+
+  // --- 取消購買點數 (學員主動發送) ---
+  if (msg === '❌ 取消購買') {
+    // 檢查是否有待完成的購點流程
+    const pendingOrder = Object.values(orders).find(order =>
+      order.userId === userId && order.status === 'pending_payment'
+    );
+    if (pendingOrder) {
+      // 從 orders 中移除這筆待支付的訂單
+      delete orders[pendingOrder.orderId];
+      writeJSON(ORDER_FILE, orders);
+      delete pendingPurchase[userId]; // 清除狀態
+      return reply(replyToken, '已取消您的購點訂單。', studentMenu);
+    }
+    // 如果沒有待處理的購點流程，則只清除 pendingPurchase 狀態 (以防萬一)
+    if (pendingPurchase[userId]) {
+      delete pendingPurchase[userId];
+    }
+    return reply(replyToken, '沒有待取消的購點訂單。', studentMenu);
+  }
+
+  // --- 購買紀錄功能 (@購買紀錄) ---
+  if (msg === '@購買紀錄') {
+    // 檢查是否有尚未輸入後五碼的購點訂單
+    const pendingOrder = Object.values(orders).find(order =>
+      order.userId === userId && order.status === 'pending_payment'
+    );
+
+    if (pendingOrder) {
+      pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.orderId } };
+      return reply(replyToken, `您的訂單 ${pendingOrder.orderId} 尚未確認匯款，請輸入您轉帳的銀行帳號後五碼以便核對：`, [
+        { type: 'message', label: '取消輸入', text: '❌ 取消輸入後五碼' }
+      ]);
+    }
+
+    // 如果沒有待輸入後五碼的訂單，則顯示歷史記錄
+    if (!user.history || user.history.length === 0) {
+      return reply(replyToken, '你目前沒有點數相關記錄。', studentMenu);
+    }
+
+    let historyMessage = '以下是你的點數記錄：\n';
+    // 顯示最近的 5 筆記錄
+    user.history.slice(-5).reverse().forEach(record => { // reverse() 讓最新記錄顯示在最上面
+      historyMessage += `・${record.action} (${formatDateTime(record.time)})\n`;
+    });
+    return reply(replyToken, historyMessage.trim(), studentMenu);
+  }
+
+  // --- 處理學員輸入匯款後五碼 (在 @購買紀錄 流程中) ---
+  if (pendingPurchase[userId] && pendingPurchase[userId].step === 'input_last5') {
+    const orderId = pendingPurchase[userId].data.orderId;
+    const last5Digits = text.trim();
+
+    if (!/^\d{5}$/.test(last5Digits)) {
+      return reply(replyToken, '您輸入的匯款帳號後五碼格式不正確，請輸入五位數字。');
+    }
+
+    const order = orders[orderId];
+    if (!order || order.status !== 'pending_payment') {
+      delete pendingPurchase[userId]; // 訂單狀態不對，清除狀態
+      return reply(replyToken, '此訂單狀態不正確或已處理，請重新開始購點流程。', studentMenu);
+    }
+
+    order.last5Digits = last5Digits;
+    order.status = 'pending_confirmation'; // 狀態改為等待老師確認
+    writeJSON(ORDER_FILE, orders); // 更新訂單檔案
+
+    delete pendingPurchase[userId]; // 清除學員的狀態
+
+    // 通知學員已收到後五碼
+    await reply(replyToken, `已收到您的匯款帳號後五碼：${last5Digits}，感謝您的配合！我們將盡快為您核對並加點。`, studentMenu);
+
+    // 通知老師有新的購點訂單待確認
+    if (TEACHER_ID) {
+      await push(TEACHER_ID, `🔔 有新的購點訂單待確認！請輸入 @購點確認 進入管理介面。`)
+        .catch(e => console.error('❌ 通知老師新購點訂單失敗:', e.message));
+    } else {
+      console.warn('⚠️ TEACHER_ID 未設定，無法通知老師新的購點訂單。');
+    }
+    return; // 處理完畢
+  }
+
+  // --- 處理取消輸入後五碼的訊息 ---
+  if (msg === '❌ 取消輸入後五碼') {
+    if (pendingPurchase[userId]?.step === 'input_last5') {
+      delete pendingPurchase[userId];
+      return reply(replyToken, '已取消輸入匯款帳號後五碼。', studentMenu);
+    } else {
+      return reply(replyToken, '目前沒有需要取消的輸入流程。', studentMenu);
+    }
+  }
+
+  // --- 預設回覆，提示用戶使用選單 ---
+  return reply(replyToken, '指令無效，請使用下方選單或輸入正確指令。', studentMenu);
+}
