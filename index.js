@@ -1,4 +1,4 @@
-// index.js - V3.16.2 (修正新增課程時間錯誤) - 進版
+// index.js - V3.16.3 (新增老師課程功能子選單)
 
 // --- 模組載入 ---
 const express = require('express'); // Express 框架，用於建立網頁伺服器
@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000; // 伺服器監聽埠號，優先使用�
 // 資料檔案路徑
 const DATA_FILE = './data.json';     // 用戶資料檔案：儲存用戶點數、角色、歷史記錄等
 const COURSE_FILE = './courses.json'; // 課程資料檔案：儲存課程資訊、預約名單、候補名單
-const ORDER_FILE = './orders.json';   // 新增：購點訂單資料檔案
+const ORDER_FILE = './orders.json';   // 購點訂單資料檔案
 const BACKUP_DIR = './backup';       // 備份檔案存放目錄
 
 // 設定與密碼 (從環境變數讀取，未設定則使用預設值)
@@ -266,11 +266,17 @@ const studentMenu = [
   { type: 'message', label: '切換身份', text: '@切換身份' },
 ];
 
-const teacherMenu = [
+// 新增老師課程管理子選單
+const teacherCourseMenu = [
   { type: 'message', label: '課程名單', text: '@課程名單' },
   { type: 'message', label: '新增課程', text: '@新增課程' },
   { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '購點確認', text: '@購點確認' }, // 老師功能變更
+  { type: 'message', label: '返回主選單', text: '@返回老師主選單' },
+];
+
+const teacherMenu = [
+  { type: 'message', label: '課程功能', text: '@課程功能' }, // 新增這個選項作為入口
+  { type: 'message', label: '購點確認', text: '@購點確認' },
   { type: 'message', label: '查學員', text: '@查學員' },
   { type: 'message', label: '報表', text: '@統計報表' },
   { type: 'message', label: '切換身份', text: '@切換身份' },
@@ -328,10 +334,10 @@ async function handleEvent(event) {
 
       const course = coursesData.courses[courseId];
       if (!course) {
-        return reply(replyToken, '找不到該課程，可能已被取消或過期。', teacherMenu);
+        return reply(replyToken, '找不到該課程，可能已被取消或過期。', teacherCourseMenu); // 這裡改為 teacherCourseMenu
       }
       if (new Date(course.time) < new Date()) {
-          return reply(replyToken, '該課程已過期，無法取消。', teacherMenu);
+          return reply(replyToken, '該課程已過期，無法取消。', teacherCourseMenu); // 這裡改為 teacherCourseMenu
       }
 
       pendingCourseCancelConfirm[userId] = courseId;
@@ -460,9 +466,8 @@ async function handleEvent(event) {
           // --- 修正後的時區處理邏輯：確保課程時間正確儲存為 UTC ---
           const now = new Date(); // 當前 UTC 時間
           // 獲取當前台北時間的偏移量 (例如，台灣是 +8)
-          // 這裡不能直接用 new Date().getTimezoneOffset() 因為它是基於伺服器當地時區
-          // 而應該基於目標時區 'Asia/Taipei'
-          const taipeiOffset = -new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei", hour12: false, hour: 'numeric', minute: 'numeric', second: 'numeric' }).indexOf(':') === -1 ? 0 : 480; // 台灣是 UTC+8，偏移量是 -480 分鐘 (480*60*1000 ms)
+          const taipeiOffsetHours = 8; // 台灣是 UTC+8
+          const taipeiOffsetMs = taipeiOffsetHours * 60 * 60 * 1000;
 
           // 創建一個基於 UTC 的日期，並調整到台北的日期和時間
           const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 今天的 UTC 日期
@@ -471,10 +476,9 @@ async function handleEvent(event) {
           let dayDiff = (targetWeekdayIndex - todayWeekdayUTC + 7) % 7; // 計算相對今天 UTC 的天數差
 
           // 判斷如果目標是"今天"，但台北時間已過，則順延一週
-          // 這裡需要用台北時間判斷，所以需要考慮偏移
-          const currentTaipeiTime = new Date(now.getTime() + taipeiOffset * 60 * 1000); // 將當前 UTC 時間加上台北時區偏移，得到台北時間
-          const currentHourTaipei = currentTaipeiTime.getUTCHours(); // 獲取偏移後的 UTC 小時，即台北時間的小時
-          const currentMinuteTaipei = currentTaipeiTime.getUTCMinutes(); // 獲取偏移後的 UTC 分鐘，即台北時間的分鐘
+          const currentTaipeiTime = new Date(now.getTime() + taipeiOffsetMs); // 將當前 UTC 時間加上台北時區偏移，得到台北時間
+          const currentHourTaipei = currentTaipeiTime.getUTCHours();
+          const currentMinuteTaipei = currentTaipeiTime.getUTCMinutes();
 
           if (dayDiff === 0) {
               if (currentHourTaipei > targetHour || (currentHourTaipei === targetHour && currentMinuteTaipei >= targetMin)) {
@@ -484,7 +488,7 @@ async function handleEvent(event) {
 
           // 構建一個表示目標時間在台北時區的 Date 物件
           const courseDateTaipei = new Date(today.getTime() + dayDiff * ONE_DAY_IN_MS); // 先調整到目標日期 (仍然是 UTC 零點)
-          courseDateTaipei.setUTCHours(targetHour - (taipeiOffset / 60), targetMin, 0, 0); // 將目標台北時間轉換為 UTC 時間再設定
+          courseDateTaipei.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0); // 將目標台北時間轉換為 UTC 時間再設定
 
           const isoTime = courseDateTaipei.toISOString(); // 儲存為 UTC 的 ISO 字串
           // --- 時區處理修正結束 ---
@@ -508,19 +512,19 @@ async function handleEvent(event) {
           return reply(
             event.replyToken,
             `課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoTime)}\n人數上限：${stepData.data.capacity}\n課程 ID: ${newId}`,
-            teacherMenu
+            teacherCourseMenu // <--- 這裡改為 teacherCourseMenu
           );
 
         } else if (text === '取消新增課程') {
           delete pendingCourseCreation[userId];
-          return reply(replyToken, '已取消新增課程。', teacherMenu);
+          return reply(replyToken, '已取消新增課程。', teacherCourseMenu); // <--- 這裡改為 teacherCourseMenu
         } else {
           return reply(replyToken, '請點選「✅ 是」或「❌ 否」確認。');
         }
 
       default: // 未知的步驟，重置流程
         delete pendingCourseCreation[userId];
-        return reply(replyToken, '流程異常，已重置。', teacherMenu);
+        return reply(replyToken, '流程異常，已重置。', teacherMenu); // 這裡預設回老師主選單
     }
   }
 
@@ -535,7 +539,7 @@ async function handleEvent(event) {
     if (text === '✅ 是') {
       if (!course) {
         delete pendingCourseCancelConfirm[userId];
-        return reply(replyToken, '找不到該課程，取消失敗或已被刪除。', teacherMenu);
+        return reply(replyToken, '找不到該課程，取消失敗或已被刪除。', teacherCourseMenu); // <--- 這裡改為 teacherCourseMenu
       }
 
       const dbData = readJSON(DATA_FILE); // 重新讀取用戶資料以進行點數退還
@@ -573,12 +577,12 @@ async function handleEvent(event) {
       writeJSON(COURSE_FILE, coursesDataConfirm);
       writeJSON(DATA_FILE, dbData); // 更新用戶資料
       delete pendingCourseCancelConfirm[userId]; // 清除暫存狀態
-      return reply(replyToken, `課程「${course.title}」已取消，所有學生點數已退還。`, teacherMenu);
+      return reply(replyToken, `課程「${course.title}」已取消，所有學生點數已退還。`, teacherCourseMenu); // <--- 這裡改為 teacherCourseMenu
     }
 
     if (text === '❌ 否') {
       delete pendingCourseCancelConfirm[userId]; // 清除暫存狀態
-      return reply(replyToken, '取消課程操作已中止。', teacherMenu);
+      return reply(replyToken, '取消課程操作已中止。', teacherCourseMenu); // <--- 這裡改為 teacherCourseMenu
     }
 
     // 提示用戶選擇
@@ -743,7 +747,7 @@ async function handleEvent(event) {
     // 定義 user 變數，用於學員功能
     const user = db[userId];
     // --- 💎 點數查詢功能分流 (@點數) ---
-    if (text === '@點數') { // 修正：將 msg 改為 text
+    if (text === '@點數') {
       const pointMenu = [
         { type: 'message', label: '剩餘點數', text: '@剩餘點數' },
         { type: 'message', label: '購買點數', text: '@購買點數' },
@@ -753,12 +757,12 @@ async function handleEvent(event) {
     }
 
     // --- 查詢剩餘點數 (@剩餘點數) ---
-    if (text === '@剩餘點數') { // 修正：將 msg 改為 text
+    if (text === '@剩餘點數') {
       return reply(replyToken, `你目前有 ${user.points} 點。`, studentMenu);
     }
 
     // --- 購買點數流程 (@購買點數) ---
-    if (text === '@購買點數') { // 修正：將 msg 改為 text
+    if (text === '@購買點數') {
       // 檢查是否有進行中的購買流程，防止重複開啟
       const pendingOrder = Object.values(orders).find(order =>
         order.userId === userId && order.status === 'pending_payment'
@@ -785,7 +789,7 @@ async function handleEvent(event) {
     }
 
     // --- 取消購買點數 (學員主動發送) ---
-    if (text === '❌ 取消購買') { // 修正：將 msg 改為 text
+    if (text === '❌ 取消購買') {
       // 檢查是否有待完成的購點流程
       const pendingOrder = Object.values(orders).find(order =>
         order.userId === userId && order.status === 'pending_payment'
@@ -805,7 +809,7 @@ async function handleEvent(event) {
     }
 
     // --- 購買紀錄功能 (@購買紀錄) ---
-    if (text === '@購買紀錄') { // 修正：將 msg 改為 text
+    if (text === '@購買紀錄') {
       // 檢查是否有尚未輸入後五碼的購點訂單
       const pendingOrder = Object.values(orders).find(order =>
         order.userId === userId && order.status === 'pending_payment'
@@ -866,7 +870,7 @@ async function handleEvent(event) {
     }
 
     // --- 處理取消輸入後五碼的訊息 ---
-    if (text === '❌ 取消輸入後五碼') { // 修正：將 msg 改為 text
+    if (text === '❌ 取消輸入後五碼') {
       if (pendingPurchase[userId]?.step === 'input_last5') {
         delete pendingPurchase[userId];
         return reply(replyToken, '已取消輸入匯款帳號後五碼。', studentMenu);
@@ -876,9 +880,9 @@ async function handleEvent(event) {
     }
 
     // --- 預約課程功能 ---
-    if (text === '@預約課程' || text === '@預約') { // 修正：將 msg 改為 text
+    if (text === '@預約課程' || text === '@預約') {
       // 篩選未來的課程，並按時間排序
-      const upcoming = Object.entries(coursesData.courses) // 確保從 coursesData.courses 取得課程
+      const upcoming = Object.entries(coursesData.courses)
         .filter(([, c]) => new Date(c.time) > new Date())
         .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
@@ -914,9 +918,9 @@ async function handleEvent(event) {
     }
 
     // --- ✅ 執行預約課程 (接收來自選單的 `我要預約 [ID]` 指令) ---
-    if (text.startsWith('我要預約 ')) { // 修正：將 msg 改為 text
+    if (text.startsWith('我要預約 ')) {
       const courseId = text.replace('我要預約 ', '').trim();
-      const course = coursesData.courses[courseId]; // 確保從 coursesData.courses 取得課程
+      const course = coursesData.courses[courseId];
 
       if (!course) {
         return reply(replyToken, '找不到該課程，或課程已不存在。', studentMenu);
@@ -947,29 +951,29 @@ async function handleEvent(event) {
         course.students.push(userId);
         db[userId].points--; // 扣除點數
         db[userId].history.push({ id: courseId, action: `預約成功：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
-        writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+        writeJSON(COURSE_FILE, coursesData);
         writeJSON(DATA_FILE, db);
         return reply(replyToken, `已成功預約課程：「${course.title}」。`, studentMenu);
       } else {
         // 課程額滿，加入候補名單
         course.waiting.push(userId);
         db[userId].history.push({ id: courseId, action: `加入候補：${course.title}`, time: new Date().toISOString() }); // 記錄操作歷史
-        writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+        writeJSON(COURSE_FILE, coursesData);
         writeJSON(DATA_FILE, db); // 雖然候補不扣點，但也更新 db 確保 history 寫入
         return reply(replyToken, `該課程「${course.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣點。`, studentMenu);
       }
     }
 
     // --- 📖 我的課程功能 ---
-    if (text === '@我的課程') { // 修正：將 msg 改為 text
+    if (text === '@我的課程') {
       const now = Date.now();
       // 篩選學生已預約且尚未過期的課程
-      const enrolledCourses = Object.entries(coursesData.courses) // 確保從 coursesData.courses 取得課程
+      const enrolledCourses = Object.entries(coursesData.courses)
         .filter(([, c]) => c.students.includes(userId) && new Date(c.time).getTime() > now)
         .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
       // 篩選學生候補中且尚未過期的課程
-      const waitingCourses = Object.entries(coursesData.courses) // 確保從 coursesData.courses 取得課程
+      const waitingCourses = Object.entries(coursesData.courses)
         .filter(([, c]) => c.waiting.includes(userId) && new Date(c.time).getTime() > now)
         .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
@@ -999,9 +1003,9 @@ async function handleEvent(event) {
     }
 
     // --- ❌ 取消已預約課程（含自動候補轉正） ---
-    if (text === '@取消預約') { // 修正：將 msg 改為 text
+    if (text === '@取消預約') {
       // 只列出未來的、已預約的課程
-      const enrolled = Object.entries(coursesData.courses).filter(([id, c]) => // 確保從 coursesData.courses 取得課程
+      const enrolled = Object.entries(coursesData.courses).filter(([id, c]) =>
         c.students.includes(userId) && new Date(c.time) > new Date()
       ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
@@ -1020,9 +1024,9 @@ async function handleEvent(event) {
     }
 
     // --- 執行取消預約 (由快速選單觸發) ---
-    if (text.startsWith('我要取消預約 ')) { // 修正：將 msg 改為 text
+    if (text.startsWith('我要取消預約 ')) {
       const id = text.replace('我要取消預約 ', '').trim();
-      const course = coursesData.courses[id]; // 確保從 coursesData.courses 取得課程
+      const course = coursesData.courses[id];
       if (!course || !course.students.includes(userId)) {
         return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
       }
@@ -1073,19 +1077,19 @@ async function handleEvent(event) {
           replyMessage += '\n候補名單中存在無效用戶，已移除。';
         }
       } else if (course.waiting.length > 0 && course.students.length >= course.capacity) {
-          replyMessage += '\n課程空出一位，但候補名單仍需等待。'; // 更正語句
+          replyMessage += '\n課程空出一位，但候補名單仍需等待。';
       }
 
 
-      writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+      writeJSON(COURSE_FILE, coursesData);
       writeJSON(DATA_FILE, db);
       return reply(replyToken, replyMessage, studentMenu);
     }
 
     // --- ❌ 取消候補 ---
-    if (text === '@取消候補') { // 修正：將 msg 改為 text
+    if (text === '@取消候補') {
       // 篩選未來的、已在候補名單中的課程
-      const waitingCourses = Object.entries(coursesData.courses) // 確保從 coursesData.courses 取得課程
+      const waitingCourses = Object.entries(coursesData.courses)
         .filter(([, c]) =>
           c.waiting?.includes(userId) && new Date(c.time) > new Date()
         ).sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
@@ -1106,9 +1110,9 @@ async function handleEvent(event) {
     }
 
     // --- 執行取消候補 (由快速選單觸發) ---
-    if (text.startsWith('我要取消候補 ')) { // 修正：將 msg 改為 text
+    if (text.startsWith('我要取消候補 ')) {
       const id = text.replace('我要取消候補 ', '').trim();
-      const course = coursesData.courses[id]; // 確保從 coursesData.courses 取得課程
+      const course = coursesData.courses[id];
       if (!course || !course.waiting?.includes(userId)) {
         return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
       }
@@ -1117,7 +1121,7 @@ async function handleEvent(event) {
       }
       course.waiting = course.waiting.filter(x => x !== userId); // 從候補名單中移除
       db[userId].history.push({ id, action: `取消候補：${course.title}`, time: new Date().toISOString() });
-      writeJSON(COURSE_FILE, coursesData); // 確保回寫 courseIdCounter
+      writeJSON(COURSE_FILE, coursesData);
       writeJSON(DATA_FILE, db); // 更新用戶歷史
       return reply(replyToken, `已取消課程「${course.title}」的候補。`, studentMenu);
     }
@@ -1132,10 +1136,20 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
   const msg = event.message.text.trim();
   const replyToken = event.replyToken;
 
+  // --- 處理返回老師主選單的指令 ---
+  if (msg === '@返回老師主選單') {
+    return reply(replyToken, '已返回老師主選單。', teacherMenu);
+  }
+
+  // --- 進入課程功能子選單 ---
+  if (msg === '@課程功能') {
+    return reply(replyToken, '請選擇課程管理功能：', teacherCourseMenu);
+  }
+
   // --- 📋 查詢課程名單 ---
   if (msg === '@課程名單') {
     if (Object.keys(courses).length === 0) {
-      return reply(replyToken, '目前沒有任何課程。', teacherMenu);
+      return reply(replyToken, '目前沒有任何課程。', teacherCourseMenu); // 回覆時使用新的選單
     }
 
     let list = '📋 已建立課程列表：\n\n';
@@ -1150,7 +1164,7 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
       list += `課程 ID: ${courseId}\n\n`; // 顯示課程 ID 方便取消或管理
     });
 
-    return reply(replyToken, list.trim(), teacherMenu);
+    return reply(replyToken, list.trim(), teacherCourseMenu); // 回覆時使用新的選單
   }
 
   // --- ➕ 新增課程 ---
@@ -1170,7 +1184,7 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
       }));
 
     if (upcomingCourses.length === 0) {
-      return reply(replyToken, '目前沒有可取消的課程。', teacherMenu);
+      return reply(replyToken, '目前沒有可取消的課程。', teacherCourseMenu); // 回覆時使用新的選單
     }
 
     // 使用 Quick Reply 顯示課程列表供選擇
@@ -1195,13 +1209,13 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
     const parts = msg.split(' ');
     const courseId = parts[1];
     if (!courseId) {
-      return reply(replyToken, '請輸入要取消的課程 ID，例如：@取消課程 C001', teacherMenu); // 修正範例 ID
+      return reply(replyToken, '請輸入要取消的課程 ID，例如：@取消課程 C001', teacherCourseMenu); // 修正範例 ID，並使用新的選單
     }
     if (!courses[courseId]) {
-      return reply(replyToken, '找不到該課程 ID，請確認是否已被刪除或已過期。', teacherMenu);
+      return reply(replyToken, '找不到該課程 ID，請確認是否已被刪除或已過期。', teacherCourseMenu); // 使用新的選單
     }
     if (new Date(courses[courseId].time) < new Date()) {
-      return reply(replyToken, '該課程已過期，無法取消。', teacherMenu);
+      return reply(replyToken, '該課程已過期，無法取消。', teacherCourseMenu); // 使用新的選單
     }
 
     pendingCourseCancelConfirm[userId] = courseId; // 進入取消課程確認流程
@@ -1265,11 +1279,9 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
       });
 
       // 將多個訂單訊息合併為一個長字串，或者使用多個訊息物件（取決於LINE API限制和可讀性）
-      // 由於 Quick Reply 只能加在單一文字訊息上，且訊息長度有限，這裡會發送一個訊息，並將所有訂單資訊拼接起來
-      // 如果訂單過多，可能需要考慮 Flex Message 或分頁
       let finalMessage = '📋 待確認購點訂單列表：\n\n' + replyMessages.join('\n');
 
-      return reply(replyToken, finalMessage.trim(), quickReplyItems); // 將 quickReplyItems 作為第三個參數傳入
+      return reply(replyToken, finalMessage.trim(), quickReplyItems);
   }
 
   // --- 老師手動調整點數功能 (@手動調整點數) ---
@@ -1406,7 +1418,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 🚀 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.2 (修正新增課程時間錯誤)`);
+  console.log(`Bot 版本: V3.16.3 (新增老師課程功能子選單)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
