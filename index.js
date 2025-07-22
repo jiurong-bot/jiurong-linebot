@@ -1,4 +1,4 @@
-// index.js - V3.16.8 (課程列表指令同步)
+// index.js - V3.16.8 (課程列表指令同步) - 移除 Flex Message
 
 // =====================================
 //                 模組載入
@@ -65,7 +65,7 @@ const COMMANDS = {
     POINT_MANAGEMENT: '@點數管理',
     ADD_COURSE: '@新增課程',
     CANCEL_COURSE: '@取消課程',
-    COURSE_LIST: '@課程列表', // *** 修改點 1: 指令名稱從名單改為列表 ***
+    COURSE_LIST: '@課程列表',
     SEARCH_STUDENT: '@查學員',
     REPORT: '@統計報表',
     PENDING_ORDERS: '@待確認清單',
@@ -413,70 +413,26 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
   }
 
   // --- 課程列表 (老師查看) ---
-  if (text === COMMANDS.TEACHER.COURSE_LIST) { // *** 修改點 2: 使用新的指令名稱 ***
+  if (text === COMMANDS.TEACHER.COURSE_LIST) {
     const now = Date.now();
     const upcomingCourses = Object.entries(courses)
       .filter(([, c]) => new Date(c.time).getTime() > now)
       .sort(([, cA], [, cB]) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
     if (upcomingCourses.length === 0) {
-      // 如果沒有課程，直接回覆並帶上選單
       return reply(replyToken, '目前沒有未來的課程。', teacherCourseSubMenu);
     }
 
-    const messages = []; // 用於存放 Flex Messages
+    let replyMessage = '📋 已建立課程列表：\n\n'; // 初始化回覆訊息
 
-    // 添加標題文字訊息
-    messages.push({
-      type: 'text',
-      text: '📋 已建立課程列表：', // 輸出文字不變，符合您提供的範例
-      // 在這裡暫不添加 quickReply，因為後面會獨立發送
-    });
-
-    // 為每個課程建立一個 Flex Bubble
     upcomingCourses.forEach(([id, c]) => {
-      messages.push({
-        type: 'flex',
-        altText: `課程 ${c.title} - ${formatDateTime(c.time)}`,
-        contents: {
-          type: 'bubble',
-          body: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [
-              {
-                type: 'text',
-                text: `🗓 ${formatDateTime(c.time)}｜${c.title}`,
-                weight: 'bold',
-                size: 'md',
-                color: '#1DB446',
-                wrap: true
-              },
-              {
-                type: 'text',
-                text: `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}`,
-                size: 'sm',
-                color: '#555555',
-                margin: 'sm'
-              },
-              {
-                type: 'text',
-                text: `課程 ID: ${id}`,
-                size: 'xs',
-                color: '#AAAAAA',
-                margin: 'xs'
-              }
-            ]
-          }
-        }
-      });
+      replyMessage += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
+      replyMessage += `👥 上限 ${c.capacity}｜✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n`;
+      replyMessage += `課程 ID: ${id}\n\n`;
     });
 
-    // 先發送所有的課程 Flex Messages
-    await client.replyMessage(replyToken, messages);
-
-    // 再獨立發送一個文字訊息，帶上快速選單
-    return reply(replyToken, '請選擇下一步操作：', teacherCourseSubMenu);
+    // 移除 Flex Message，直接使用純文字回覆
+    return reply(replyToken, replyMessage.trim(), teacherCourseSubMenu);
   }
 
 
@@ -566,46 +522,33 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
       return reply(replyToken, '目前沒有待確認的購點訂單。', teacherPointSubMenu);
     }
 
-    let messages = [{ type: 'text', text: '以下是待確認的購點訂單：' }];
+    let replyMessage = '以下是待確認的購點訂單：\n\n';
+
     pendingConfirmationOrders.forEach(order => {
-      messages.push({
-        type: 'flex',
-        altText: `訂單 ${order.orderId} - ${order.userName} 購買 ${order.points} 點`,
-        contents: {
-          type: 'bubble',
-          body: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [
-              { type: 'text', text: `購點訂單 #${order.orderId}`, weight: 'bold', size: 'md' },
-              { type: 'separator', margin: 'md' },
-              {
-                type: 'box', layout: 'vertical', spacing: 'sm', margin: 'md', contents: [
-                  { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: '學員名稱:', flex: 3, size: 'sm', color: '#555555' }, { type: 'text', text: order.userName, flex: 7, size: 'sm', wrap: true }] },
-                  { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: '學員ID:', flex: 3, size: 'sm', color: '#555555' }, { type: 'text', text: order.userId.substring(0, 8) + '...', flex: 7, size: 'sm' }] },
-                  { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: '購買點數:', flex: 3, size: 'sm', color: '#555555' }, { type: 'text', text: `${order.points} 點`, flex: 7, size: 'sm' }] },
-                  { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: '應付金額:', flex: 3, size: 'sm', color: '#555555' }, { type: 'text', text: `$${order.amount}`, flex: 7, size: 'sm' }] },
-                  { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: '匯款後五碼:', flex: 3, size: 'sm', color: '#555555' }, { type: 'text', text: order.last5Digits || 'N/A', flex: 7, size: 'sm', weight: 'bold', color: '#EE3333' }] },
-                  { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: '提交時間:', flex: 3, size: 'sm', color: '#555555' }, { type: 'text', text: formatDateTime(order.timestamp), flex: 7, size: 'sm' }] },
-                ],
-              },
-            ],
-          },
-          footer: {
-            type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-              // 這裡的按鈕是 Flex Message 的內部按鈕，不是 quickReply
-              { type: 'button', action: { type: 'postback', label: '✅ 確認入帳', data: `confirm_order_${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` }, style: 'primary', color: '#34A853' },
-              { type: 'button', action: { type: 'postback', label: '❌ 取消訂單', data: `cancel_order_${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` }, style: 'secondary', color: '#EA4335' },
-            ],
-          },
-        },
-      });
+      replyMessage += `--- 訂單 #${order.orderId} ---\n`;
+      replyMessage += `學員名稱: ${order.userName}\n`;
+      replyMessage += `學員ID: ${order.userId.substring(0, 8)}...\n`;
+      replyMessage += `購買點數: ${order.points} 點\n`;
+      replyMessage += `應付金額: $${order.amount}\n`;
+      replyMessage += `匯款後五碼: ${order.last5Digits || 'N/A'}\n`;
+      replyMessage += `提交時間: ${formatDateTime(order.timestamp)}\n`;
+      replyMessage += `💡 請點擊對應的快速回覆按鈕進行操作。\n\n`;
     });
-    // 先發送 Flex Messages
-    await client.replyMessage(replyToken, messages);
-    // 再獨立發送一個文字訊息，帶上快速選單
-    return reply(replyToken, '請選擇下一步操作：', teacherPointSubMenu);
+
+    // 為每個訂單創建 postback 按鈕，用於確認和取消
+    const quickReplyItems = pendingConfirmationOrders.flatMap(order => [
+      { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`, data: `confirm_order_${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
+      { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`, data: `cancel_order_${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
+    ]);
+    quickReplyItems.push({ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT });
+
+    return client.replyMessage(replyToken, {
+      type: 'text',
+      text: replyMessage.trim(),
+      quickReply: { items: quickReplyItems.slice(0, 13) } // 確保不超過13個
+    });
   }
+
 
   // --- 手動調整點數 (@手動調整點數) ---
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
