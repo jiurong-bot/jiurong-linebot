@@ -1,4 +1,4 @@
-// index.js - V3.16.3 (新增老師課程功能子選單)
+// index.js - V3.16.4 (修改選單名稱並增加返回選項)
 
 // --- 模組載入 ---
 const express = require('express'); // Express 框架，用於建立網頁伺服器
@@ -73,13 +73,6 @@ if (!fs.existsSync(BACKUP_DIR)) {
   console.log(`ℹ️ 建立備份目錄: ${BACKUP_DIR}`);
   fs.mkdirSync(BACKUP_DIR);
 }
-
-// --- LINE Bot SDK 設定 ---
-const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.CHANNEL_SECRET,
-};
-const client = new line.Client(config); // 建立 LINE Bot 客戶端實例，用於與 LINE 平台通訊
 
 // --- 🛠️ 工具函式 ---
 /**
@@ -266,17 +259,24 @@ const studentMenu = [
   { type: 'message', label: '切換身份', text: '@切換身份' },
 ];
 
-// 新增老師課程管理子選單
+// 老師課程管理子選單
 const teacherCourseMenu = [
   { type: 'message', label: '課程名單', text: '@課程名單' },
   { type: 'message', label: '新增課程', text: '@新增課程' },
   { type: 'message', label: '取消課程', text: '@取消課程' },
-  { type: 'message', label: '返回主選單', text: '@返回老師主選單' },
+  { type: 'message', label: '返回主選單', text: '@返回老師主選單' }, // 新增返回選項
+];
+
+// 老師點數管理子選單
+const teacherPointMenu = [
+  { type: 'message', label: '待確認清單', text: '@待確認清單' },
+  { type: 'message', label: '手動調整', text: '@手動調整點數' },
+  { type: 'message', label: '返回主選單', text: '@返回老師主選單' }, // 新增返回選項
 ];
 
 const teacherMenu = [
-  { type: 'message', label: '課程功能', text: '@課程功能' }, // 新增這個選項作為入口
-  { type: 'message', label: '購點確認', text: '@購點確認' },
+  { type: 'message', label: '課程管理', text: '@課程管理' }, // 修改為課程管理
+  { type: 'message', label: '點數管理', text: '@點數管理' }, // 修改為點數管理
   { type: 'message', label: '查學員', text: '@查學員' },
   { type: 'message', label: '報表', text: '@統計報表' },
   { type: 'message', label: '切換身份', text: '@切換身份' },
@@ -334,10 +334,10 @@ async function handleEvent(event) {
 
       const course = coursesData.courses[courseId];
       if (!course) {
-        return reply(replyToken, '找不到該課程，可能已被取消或過期。', teacherCourseMenu); // 這裡改為 teacherCourseMenu
+        return reply(replyToken, '找不到該課程，可能已被取消或過期。', teacherCourseMenu); // 回覆時使用課程管理選單
       }
       if (new Date(course.time) < new Date()) {
-          return reply(replyToken, '該課程已過期，無法取消。', teacherCourseMenu); // 這裡改為 teacherCourseMenu
+          return reply(replyToken, '該課程已過期，無法取消。', teacherCourseMenu); // 回覆時使用課程管理選單
       }
 
       pendingCourseCancelConfirm[userId] = courseId;
@@ -362,12 +362,12 @@ async function handleEvent(event) {
 
         const order = orders[orderId];
         if (!order || order.status !== 'pending_confirmation') {
-            return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', teacherMenu);
+            return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', teacherPointMenu); // 回覆時使用點數管理選單
         }
 
         const studentUser = db[order.userId];
         if (!studentUser) {
-            return reply(replyToken, `找不到購點學員 (ID: ${order.userId}) 的資料。`, teacherMenu);
+            return reply(replyToken, `找不到購點學員 (ID: ${order.userId}) 的資料。`, teacherPointMenu); // 回覆時使用點數管理選單
         }
 
         if (action === 'confirm') {
@@ -382,14 +382,14 @@ async function handleEvent(event) {
             writeJSON(ORDER_FILE, orders);
 
             // 通知老師和學員
-            await reply(replyToken, `✅ 已為學員 ${order.userName} 加點 ${order.points} 點，訂單 ${orderId} 已完成。`, teacherMenu);
+            await reply(replyToken, `✅ 已為學員 ${order.userName} 加點 ${order.points} 點，訂單 ${orderId} 已完成。`, teacherPointMenu); // 回覆時使用點數管理選單
             await push(order.userId, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。請查詢您的「剩餘點數」。`)
                 .catch(e => console.error(`❌ 通知學員 ${order.userId} 購點成功失敗:`, e.message));
 
         } else if (action === 'cancel') {
             order.status = 'cancelled'; // 標記為取消
             writeJSON(ORDER_FILE, orders);
-            await reply(replyToken, `❌ 已取消訂單 ${orderId} 的購點確認。請手動與學員 ${order.userName} 聯繫。`, teacherMenu);
+            await reply(replyToken, `❌ 已取消訂單 ${orderId} 的購點確認。請手動與學員 ${order.userName} 聯繫。`, teacherPointMenu); // 回覆時使用點數管理選單
             // 不主動通知學員，由老師負責聯繫
         }
         return; // 處理完畢
@@ -417,10 +417,15 @@ async function handleEvent(event) {
           { type: 'message', label: '星期五', text: '星期五' },
           { type: 'message', label: '星期六', text: '星期六' },
           { type: 'message', label: '星期日', text: '星期日' },
+          { type: 'message', label: '返回上一步', text: '@返回課程管理' }, // 返回課程管理選單
         ]);
 
       case 2: // 接收課程星期
         const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        if (text === '@返回課程管理') {
+            delete pendingCourseCreation[userId];
+            return reply(replyToken, '已返回課程管理功能。', teacherCourseMenu);
+        }
         if (!weekdays.includes(text)) {
           return reply(replyToken, '請輸入正確的星期（例如：星期一）');
         }
@@ -429,6 +434,10 @@ async function handleEvent(event) {
         return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）');
 
       case 3: // 接收課程時間
+        if (text === '@返回課程管理') {
+            delete pendingCourseCreation[userId];
+            return reply(replyToken, '已返回課程管理功能。', teacherCourseMenu);
+        }
         if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) { // 正則表達式驗證 24 小時制時間格式
           return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
         }
@@ -437,6 +446,10 @@ async function handleEvent(event) {
         return reply(replyToken, '請輸入人員上限（正整數）');
 
       case 4: // 接收課程人數上限
+        if (text === '@返回課程管理') {
+            delete pendingCourseCreation[userId];
+            return reply(replyToken, '已返回課程管理功能。', teacherCourseMenu);
+        }
         const capacity = parseInt(text);
         if (isNaN(capacity) || capacity <= 0) {
           return reply(replyToken, '人數上限必須是正整數。');
@@ -598,15 +611,19 @@ async function handleEvent(event) {
 
     // 預期輸入格式： 學員ID/姓名 數量
     const parts = text.split(' ');
+    if (text === '@返回點數管理') { // 增加返回點數管理選項
+        delete pendingManualAdjust[userId];
+        return reply(replyToken, '已返回點數管理功能。', teacherPointMenu);
+    }
     if (parts.length !== 2) {
-        return reply(replyToken, '指令格式錯誤，請輸入：[學員ID/姓名] [數量] (正數加點，負數扣點)', teacherMenu);
+        return reply(replyToken, '指令格式錯誤，請輸入：[學員ID/姓名] [數量] (正數加點，負數扣點)', teacherPointMenu); // 回覆使用點數管理選單
     }
 
     const targetIdentifier = parts[0]; // 可以是 userId 或部分名稱
     const amount = parseInt(parts[1]);
 
     if (isNaN(amount) || amount === 0) {
-        return reply(replyToken, '點數數量必須是非零整數。', teacherMenu);
+        return reply(replyToken, '點數數量必須是非零整數。', teacherPointMenu); // 回覆使用點數管理選單
     }
 
     let foundUserId = null;
@@ -632,7 +649,7 @@ async function handleEvent(event) {
 
     if (!foundUserId) {
         delete pendingManualAdjust[userId]; // 清除狀態
-        return reply(replyToken, `找不到學員：${targetIdentifier}。請確認學員 ID 或姓名是否正確。`, teacherMenu);
+        return reply(replyToken, `找不到學員：${targetIdentifier}。請確認學員 ID 或姓名是否正確。`, teacherPointMenu); // 回覆使用點數管理選單
     }
 
     const operation = amount > 0 ? '加點' : '扣點';
@@ -642,7 +659,7 @@ async function handleEvent(event) {
 
     if (operation === '扣點' && currentPoints < absAmount) {
         delete pendingManualAdjust[userId]; // 清除狀態
-        return reply(replyToken, `學員 ${foundUserName} 點數不足，無法扣除 ${absAmount} 點 (目前 ${currentPoints} 點)。`, teacherMenu);
+        return reply(replyToken, `學員 ${foundUserName} 點數不足，無法扣除 ${absAmount} 點 (目前 ${currentPoints} 點)。`, teacherPointMenu); // 回覆使用點數管理選單
     }
 
     db[foundUserId].points = newPoints;
@@ -659,7 +676,7 @@ async function handleEvent(event) {
     ).catch(e => console.error(`❌ 通知學員 ${foundUserId} 點數變動失敗:`, e.message));
 
     delete pendingManualAdjust[userId]; // 清除狀態
-    return reply(replyToken, `✅ 已成功為學員 ${foundUserName} ${operation} ${absAmount} 點，目前點數：${newPoints} 點。`, teacherMenu);
+    return reply(replyToken, `✅ 已成功為學員 ${foundUserName} ${operation} ${absAmount} 點，目前點數：${newPoints} 點。`, teacherPointMenu); // 回覆使用點數管理選單
   }
 
   // --- 學生購點流程處理 ---
@@ -669,6 +686,10 @@ async function handleEvent(event) {
       switch (stepData.step) {
           case 'select_plan': // 學員選擇購買方案
               const selectedPlan = PURCHASE_PLANS.find(p => p.label === text);
+              if (text === '返回點數功能') { // 學生購點流程也增加返回選項
+                  delete pendingPurchase[userId];
+                  return reply(replyToken, '已返回點數相關功能。', studentMenu);
+              }
               if (!selectedPlan) {
                   return reply(replyToken, '請從列表中選擇有效的點數方案。', studentMenu);
               }
@@ -752,8 +773,14 @@ async function handleEvent(event) {
         { type: 'message', label: '剩餘點數', text: '@剩餘點數' },
         { type: 'message', label: '購買點數', text: '@購買點數' },
         { type: 'message', label: '購買紀錄', text: '@購買紀錄' },
+        { type: 'message', label: '返回主選單', text: '@返回學員主選單' }, // 學生點數子選單也增加返回選項
       ];
       return reply(replyToken, '請選擇點數相關功能：', pointMenu);
+    }
+
+    // --- 學生返回學員主選單 ---
+    if (text === '@返回學員主選單') {
+        return reply(replyToken, '已返回學員主選單。', studentMenu);
     }
 
     // --- 查詢剩餘點數 (@剩餘點數) ---
@@ -785,6 +812,8 @@ async function handleEvent(event) {
         label: plan.label,
         text: plan.label // 讓用戶直接點選方案名稱
       }));
+      // 添加返回上一步選項
+      planOptions.push({ type: 'message', label: '返回點數功能', text: '返回點數功能' });
       return reply(replyToken, '請選擇要購買的點數方案：', planOptions);
     }
 
@@ -861,7 +890,7 @@ async function handleEvent(event) {
 
       // 通知老師有新的購點訂單待確認
       if (TEACHER_ID) {
-        await push(TEACHER_ID, `🔔 有新的購點訂單待確認！請輸入 @購點確認 進入管理介面。`)
+        await push(TEACHER_ID, `🔔 有新的購點訂單待確認！請輸入 @待確認清單 進入管理介面。`) // 這裡改為 @待確認清單
           .catch(e => console.error('❌ 通知老師新購點訂單失敗:', e.message));
       } else {
         console.warn('⚠️ TEACHER_ID 未設定，無法通知老師新的購點訂單。');
@@ -1141,9 +1170,14 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
 
-  // --- 進入課程功能子選單 ---
-  if (msg === '@課程功能') {
+  // --- 進入課程管理子選單 ---
+  if (msg === '@課程管理') { // 修改指令
     return reply(replyToken, '請選擇課程管理功能：', teacherCourseMenu);
+  }
+
+  // --- 進入點數管理子選單 ---
+  if (msg === '@點數管理') { // 修改指令
+      return reply(replyToken, '請選擇點數管理功能：', teacherPointMenu);
   }
 
   // --- 📋 查詢課程名單 ---
@@ -1170,7 +1204,7 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
   // --- ➕ 新增課程 ---
   if (msg === '@新增課程') {
     pendingCourseCreation[userId] = { step: 1, data: {} }; // 初始化新增課程流程狀態
-    return reply(replyToken, '請輸入課程名稱。');
+    return reply(replyToken, '請輸入課程名稱。'); // 這裡不需要選單，因為進入了多步驟流程
   }
 
   // --- ❌ 取消課程 (提供選單模式) ---
@@ -1227,21 +1261,12 @@ async function handleTeacherCommands(event, userId, db, courses, orders) {
       ]);
   }
 
-  // --- 老師購點確認主介面 (@購點確認) ---
-  if (msg === '@購點確認') {
-      const teacherPointMenu = [
-          { type: 'message', label: '待確認清單', text: '@待確認清單' },
-          { type: 'message', label: '手動調整', text: '@手動調整點數' },
-      ];
-      return reply(replyToken, '請選擇購點確認功能：', teacherPointMenu);
-  }
-
   // --- 老師查看待確認購點清單 (@待確認清單) ---
   if (msg === '@待確認清單') {
       const pendingOrders = Object.values(orders).filter(order => order.status === 'pending_confirmation');
 
       if (pendingOrders.length === 0) {
-          return reply(replyToken, '目前沒有待確認的購點訂單。', teacherMenu);
+          return reply(replyToken, '目前沒有待確認的購點訂單。', teacherPointMenu); // 回覆時使用點數管理選單
       }
 
       let replyMessages = [];
@@ -1418,7 +1443,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 🚀 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.3 (新增老師課程功能子選單)`);
+  console.log(`Bot 版本: V3.16.4 (修改選單名稱並增加返回選項)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
