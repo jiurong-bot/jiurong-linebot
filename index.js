@@ -1,4 +1,4 @@
-// index.js - V3.16.7 (選單一致性優化)
+// index.js - V3.16.8 (課程列表指令同步)
 
 // =====================================
 //                 模組載入
@@ -65,7 +65,7 @@ const COMMANDS = {
     POINT_MANAGEMENT: '@點數管理',
     ADD_COURSE: '@新增課程',
     CANCEL_COURSE: '@取消課程',
-    COURSE_LIST: '@課程名單',
+    COURSE_LIST: '@課程列表', // *** 修改點 1: 指令名稱從名單改為列表 ***
     SEARCH_STUDENT: '@查學員',
     REPORT: '@統計報表',
     PENDING_ORDERS: '@待確認清單',
@@ -412,8 +412,8 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
     });
   }
 
-  // --- 課程名單 (老師查看) ---
-  if (text === COMMANDS.TEACHER.COURSE_LIST) {
+  // --- 課程列表 (老師查看) ---
+  if (text === COMMANDS.TEACHER.COURSE_LIST) { // *** 修改點 2: 使用新的指令名稱 ***
     const now = Date.now();
     const upcomingCourses = Object.entries(courses)
       .filter(([, c]) => new Date(c.time).getTime() > now)
@@ -429,7 +429,7 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
     // 添加標題文字訊息
     messages.push({
       type: 'text',
-      text: '📋 已建立課程列表：',
+      text: '📋 已建立課程列表：', // 輸出文字不變，符合您提供的範例
       // 在這裡暫不添加 quickReply，因為後面會獨立發送
     });
 
@@ -1419,7 +1419,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.7 (選單一致性優化)`);
+  console.log(`Bot 版本: V3.16.8 (課程列表指令同步)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
