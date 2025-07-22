@@ -1,4 +1,4 @@
-// index.js - V3.16.11 (修正函式定義錯誤與課程列表格式)
+// index.js - V3.16.12 (老師課程列表恢復顯示課程ID)
 
 // =====================================
 //                 模組載入
@@ -432,10 +432,11 @@ async function handleTeacherCommands(event, userId, db, coursesData, orders) {
 
     let replyMessage = '📋 已建立課程列表：\n\n'; // 初始化回覆訊息
 
-    upcomingCourses.forEach(([, c]) => { // 注意：這裡的 `[id, c]` 改為 `[, c]`，因為不再需要 `id`
+    upcomingCourses.forEach(([id, c]) => { // 這裡重新使用 [id, c] 來獲取課程 ID
+      replyMessage += `🆔 ${id}\n`; // 重新加入課程 ID
       replyMessage += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
       replyMessage += `💰 扣點：${c.pointsCost} 點｜👥 上限 ${c.capacity}\n`;
-      replyMessage += `✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n\n`; // 移除課程 ID，並確保有兩個換行符以分隔課程
+      replyMessage += `✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n\n`; // 確保有兩個換行符以分隔課程
     });
 
     // 移除 Flex Message，直接使用純文字回覆
@@ -1391,7 +1392,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 啟動伺服器與 Keep-alive 機制
 app.listen(PORT, () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V3.16.11 (修正函式定義錯誤與課程列表格式)`);
+  console.log(`Bot 版本: V3.16.12 (老師課程列表恢復顯示課程ID)`);
 
   // 應用程式啟動時執行一次資料備份
   backupData();
