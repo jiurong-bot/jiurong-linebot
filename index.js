@@ -207,6 +207,11 @@ async function reply(replyToken, content, menu = null) {
   if (menu && messages.length > 0 && messages[0].type === 'text') {
     messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
   }
+  // 處理 Flex Message 的 Quick Reply
+  if (menu && messages.length > 0 && messages[0].type === 'flex') {
+    messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
+  }
+
   return client.replyMessage(replyToken, messages);
 }
 
@@ -361,11 +366,15 @@ async function handleTeacherCommands(event, userId) {
     // 提供返回老師主選單的選項
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
 
-    // 在 Flex Message 後面追加 Quick Reply 選單
-    return reply(replyToken, [
-        { type: 'text', text: introText },
-        flexMessage
-    ], menuOptions); 
+    // 將 introText 作為 Flex Message 的替代文字或直接在 Flex Message 前發送。
+    // 如果希望 Flex Message 本身有 Quick Reply，則需要將 Quick Reply 附加到 Flex Message 上。
+    // 修改為：
+    return reply(replyToken, {
+        type: 'flex',
+        altText: introText, // 將引導文字放在 altText
+        contents: { type: 'carousel', contents: [...courseBubbles, addCourseBubble] },
+        quickReply: { items: menuOptions.map(i => ({ type: 'action', action: i })) } // 直接附加 Quick Reply 到 Flex Message
+    });
   }
 
   // 移除了單獨的 COMMANDS.TEACHER.ADD_COURSE 處理區塊，功能已整合到 CANCEL_COURSE Flex Message
