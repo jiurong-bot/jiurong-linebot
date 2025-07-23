@@ -8,6 +8,7 @@ const { Client } = require('pg'); // 引入 pg 模組的 Client
 const line = require('@line/bot-sdk');
 require('dotenv').config(); // 載入 .env 檔案中的環境變數 (Render 會自動注入)
 const crypto = require('crypto'); // 用於手動驗證 LINE 簽名，增強健壯性
+const fetch = require('node-fetch'); // <--- 修正：明確引入 node-fetch，以確保 fetch 函式可用
 
 // =====================================
 //               應用程式常數
@@ -328,7 +329,7 @@ async function cleanCoursesDB() {
  * @param {string|Object|Array<Object>} content - 要回覆的文字訊息、Flex Message 物件或多個訊息物件。
  * @param {Array<Object>} [menu=null] - 快速回覆選單項目。
  * @returns {Promise<any>} LINE Bot SDK 的回覆訊息 Promise。
- */
+*/
 async function reply(replyToken, content, menu = null) {
   let messages;
   if (Array.isArray(content)) {
@@ -1759,7 +1760,6 @@ app.post('/webhook', (req, res) => {
   } else {
     console.warn('⚠️ LINE Webhook 請求缺少簽名或 Channel Secret 未設定，跳過簽名驗證。');
     // 如果沒有簽名，可能是非 LINE 請求，或者您的設定有問題
-    // 這裡可以選擇返回 400 或 401，或者繼續處理（如果確定是非生產環境）
     // 在生產環境中，強烈建議返回錯誤
     // return res.status(400).send('Bad Request: Missing LINE signature or Channel Secret.');
   }
@@ -1769,11 +1769,14 @@ app.post('/webhook', (req, res) => {
     .then(() => res.status(200).send('OK'))
     .catch((err) => {
       console.error('❌ Webhook 處理失敗:', err.message);
+      console.error('完整錯誤物件:', err); // <--- 修正：打印完整錯誤，以便更詳細的調試
+
       // 對於 400 錯誤，雖然我們盡力在內部處理了，但如果 LINE SDK 仍然返回，則需要發送 400
       // 否則發送 500 表示伺服器內部錯誤
       // 捕獲錯誤並根據錯誤類型返回不同狀態碼
       let statusCode = 500;
-      if (err instanceof line.errors.HTTPError && err.statusCode) { // LINE SDK 錯誤
+      // <--- 修正：更健壯地檢查 line.errors 和 HTTPError
+      if (line && line.errors && err instanceof line.errors.HTTPError && err.statusCode) {
           statusCode = err.statusCode;
       } else if (err.name === 'SyntaxError') { // 例如 JSON 解析錯誤
           statusCode = 400;
@@ -1803,18 +1806,14 @@ app.listen(PORT, async () => {
     console.log(`⚡ 啟用 Keep-alive 功能，將每 ${PING_INTERVAL_MS / 1000 / 60} 分鐘 Ping 自身。`);
     // 首次 Ping
     try {
-        // 使用 Node.js 內建的 fetch API (確保 Node.js 版本 >= 18)
-        // 這裡不需要引入 node-fetch，因為環境已經聲明支持
-        // 如果您的 Render 環境 Node.js 版本低於 18，請安裝並引入 node-fetch
-        await fetch(SELF_URL);
+        await fetch(SELF_URL); // <-- 這裡會使用頂部引入的 fetch
         console.log(`Keep-alive initial ping to ${SELF_URL} successful.`);
     } catch (err) {
         console.error('❌ Keep-alive initial ping 失敗:', err.message);
     }
     // 定時 Ping
     setInterval(() => {
-        // 使用 Node.js 內建的 fetch API
-        fetch(SELF_URL)
+        fetch(SELF_URL) // <-- 這裡會使用頂部引入的 fetch
             .then(res => {
                 if (!res.ok) { // 如果響應不是 2xx 狀態碼
                     console.error(`❌ Keep-alive ping to ${SELF_URL} responded with status: ${res.status}`);
@@ -1828,4 +1827,3 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定或使用預設值，Keep-alive 功能可能無法防止服務休眠。請在 .env 檔案中設定您的部署網址。');
   }
 });
-
