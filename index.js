@@ -1,4 +1,4 @@
-// index.js - V4.3.0 (整合新增課程與取消課程 Flex Message 輪播介面)
+// index.js - V4.3.1 (課程管理 Flex Message 底部增加返回主選單)
 
 // =====================================
 //                 模組載入
@@ -361,10 +361,11 @@ async function handleTeacherCommands(event, userId) {
     // 提供返回老師主選單的選項
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
 
+    // 在 Flex Message 後面追加 Quick Reply 選單
     return reply(replyToken, [
         { type: 'text', text: introText },
         flexMessage
-    ], menuOptions); // 這裡不再使用 teacherCourseSubMenu
+    ], menuOptions); 
   }
 
   // 移除了單獨的 COMMANDS.TEACHER.ADD_COURSE 處理區塊，功能已整合到 CANCEL_COURSE Flex Message
@@ -1277,7 +1278,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.3.0`);
+  console.log(`Bot 版本: V4.3.1`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
