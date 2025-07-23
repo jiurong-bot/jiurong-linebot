@@ -7,8 +7,9 @@ const express = require('express');
 const { Client } = require('pg'); // 引入 pg 模組的 Client
 const line = require('@line/bot-sdk');
 require('dotenv').config(); // 載入 .env 檔案中的環境變數 (Render 會自動注入)
-const { URL } = require('url'); // 引入 URL 模組用於 Keep-alive
-const fetch = require('node-fetch'); // 確保 node-fetch 已安裝
+// const { URL } = require('url'); // 引入 URL 模組用於 Keep-alive (Fetch API 不需要 URL 模組)
+// 由於 Node.js v18+ 已內建 global.fetch，不再需要 node-fetch
+// const fetch = require('node-fetch'); // 確保 node-fetch 已安裝 (此行將被移除或註解)
 
 // =====================================
 //               應用程式常數
@@ -438,7 +439,7 @@ const pendingPurchase = {};
 const pendingManualAdjust = {};
 const sentReminders = {}; // 用於追蹤已發送的提醒，避免重複發送
 
-// 處理取消課程的確認步驟狀態，改為全域變數
+// 處理取消課程的確認步驟狀態，改為全域變數，並確保其初始化
 global.confirmingCancelCourse = {};
 
 
@@ -494,7 +495,10 @@ async function handleTeacherCommands(event, userId) {
     const quickReplyItems = displayCourses.map(c => {
         const labelText = `${formatDateTime(c.time)} ${c.title}`;
         const label = labelText.slice(0, 20); // 確保 label 不超過 20 字元
-        const displayText = `取消課程：${labelText}`.slice(0, 20); // 確保 displayText 不超過 20 字元
+        // 確保 displayText 也是安全長度，並且用於 Postback 動作的 displayText 
+        // 實際上是給 LINE 平台顯示在用戶聊天記錄中的文本，限制為 200 字元。
+        // 但由於這裡用作 quickReply，最好也限制在合理長度。
+        const displayText = `取消課程：${labelText}`.slice(0, 20); 
 
         // 偵錯：列印即將生成的按鈕資訊
         console.log(`DEBUG: Generating quickReply item for course ${c.id}:`);
@@ -1149,8 +1153,11 @@ async function handleEvent(event) {
           console.log(`Received non-text message from user: ${userId} (Type: ${event.message.type})`);
           // 如果不是文字訊息，且不是貼圖、圖片等常見類型，可以考慮返回
           if (event.message.type !== 'sticker' && event.message.type !== 'image' && event.message.type !== 'video' && event.message.type !== 'audio') {
+              console.log(`DEBUG: 對於類型為 ${event.message.type} 的非文字訊息，直接返回。`);
               // 對於無法處理的非文字訊息，直接返回，避免 400 錯誤
-              return;
+              // 但這裡如果沒有 replyMessage 會導致 LINE 再次發送，
+              // 比較好的做法是回覆一個預設訊息，例如 "抱歉，目前只支援文字訊息。"
+              return reply(replyToken, '抱歉，目前只支援文字訊息或透過選單操作。');
           }
       }
   } else if (event.type === 'postback') {
@@ -1158,6 +1165,7 @@ async function handleEvent(event) {
   } else {
       console.log(`Received other event: ${JSON.stringify(event)} from user: ${userId}`);
       // 忽略除 message 和 postback 之外的所有事件，避免 400 錯誤
+      // 對於這些事件，也不回覆，讓 LINE 認為沒有被處理
       return;
   }
 
@@ -1212,8 +1220,7 @@ async function handleEvent(event) {
         return reply(replyToken, '找不到該課程，或課程已過期。', teacherCourseSubMenu);
       }
       // 暫存待確認的課程 ID
-      global.confirmingCancelCourse = global.confirmingCancelCourse || {}; // 確保物件存在
-      global.confirmingCancelCourse[userId] = courseId;
+      global.confirmingCancelCourse[userId] = courseId; // 這裡不需要 global.confirmingCancelCourse = global.confirmingCancelCourse || {};，因為已在頂部初始化
 
       return reply(replyToken, `確認要取消課程「${course.title}」（${formatDateTime(course.time)}）嗎？\n一旦取消，已預約學生的點數將會退還，候補學生將收到取消通知。`, [
         { type: 'message', label: '✅ 是，確認取消', text: `確認取消課程 ${courseId}` }, // 將確認動作綁定到一個新指令
@@ -1266,9 +1273,17 @@ async function handleEvent(event) {
   }
 
   // 如果不是文字訊息，或者訊息類型不能處理，直接返回，不進行後續處理
+  // 這一部分在上面針對 event.type !== 'message' || event.message.type !== 'text' 已經處理了
+  // 在 `handleEvent` 開頭已經做了相關判斷和回覆，這裡可以移除重複判斷
+  // if (event.type !== 'message' || event.message.type !== 'text') {
+  //     console.log(`DEBUG: Ignoring non-text message or non-message event.`);
+  //     return;
+  // }
+
+  // 確保是文字訊息，因為非文字訊息已經在上方被處理或忽略
   if (event.type !== 'message' || event.message.type !== 'text') {
-      console.log(`DEBUG: Ignoring non-text message or non-message event.`);
-      return;
+    console.log(`DEBUG: Skipping non-text message event after initial check.`);
+    return;
   }
 
   const text = event.message.text.trim();
@@ -1277,7 +1292,7 @@ async function handleEvent(event) {
 
   // 1. 處理老師取消課程的確認指令 (這是之前問題點，需要優先處理)
   // 檢查是否處於取消課程的確認狀態，且發送了確認訊息
-  if (global.confirmingCancelCourse && global.confirmingCancelCourse[userId] && text.startsWith('確認取消課程 ')) {
+  if (global.confirmingCancelCourse[userId] && text.startsWith('確認取消課程 ')) {
       console.log(`DEBUG: 處理老師取消課程確認指令: "${text}"`);
       const currentUser = await getUser(userId);
       if (currentUser.role !== 'teacher') {
@@ -1342,7 +1357,7 @@ async function handleEvent(event) {
 
   // 2. 處理老師取消確認的「❌ 否，返回」指令 或 新增課程的取消 (這也需要優先處理，因為它也是一個文字指令，並且清除狀態)
   // 如果處於取消課程確認狀態，且收到返回課程管理的指令
-  if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT && global.confirmingCancelCourse && global.confirmingCancelCourse[userId]) {
+  if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT && global.confirmingCancelCourse[userId]) {
       console.log(`DEBUG: 處理取消課程確認流程中的返回指令。`);
       delete global.confirmingCancelCourse[userId]; // 清除流程狀態
       return reply(replyToken, '已中止取消課程操作，並返回課程管理。', teacherCourseSubMenu);
@@ -1703,7 +1718,13 @@ app.post('/webhook', line.middleware(config), (req, res) => {
       console.error('❌ Webhook 處理失敗:', err.message);
       // 對於 400 錯誤，雖然我們盡力在內部處理了，但如果 LINE SDK 仍然返回，則需要發送 400
       // 否則發送 500 表示伺服器內部錯誤
-      const statusCode = err.statusCode || 500; // 嘗試從錯誤物件獲取狀態碼
+      // 捕獲錯誤並根據錯誤類型返回不同狀態碼
+      let statusCode = 500;
+      if (err.statusCode) { // LINE SDK 錯誤可能會包含 statusCode
+          statusCode = err.statusCode;
+      } else if (err.name === 'SyntaxError') { // 例如 JSON 解析錯誤
+          statusCode = 400; 
+      }
       res.status(statusCode).end();
     });
 });
@@ -1726,17 +1747,27 @@ app.listen(PORT, async () => {
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
     console.log(`⚡ 啟用 Keep-alive 功能，將每 ${PING_INTERVAL_MS / 1000 / 60} 分鐘 Ping 自身。`);
     // 首次 Ping
-    fetch(SELF_URL)
-        .then(res => console.log(`Keep-alive initial response from ${SELF_URL}: ${res.status}`))
-        .catch((err) => console.error('❌ Keep-alive initial ping 失敗:', err.message));
+    try {
+        // 直接使用全域的 fetch
+        await fetch(SELF_URL); 
+        console.log(`Keep-alive initial ping to ${SELF_URL} successful.`);
+    } catch (err) {
+        console.error('❌ Keep-alive initial ping 失敗:', err.message);
+    }
     // 定時 Ping
     setInterval(() => {
+        // 直接使用全域的 fetch
         fetch(SELF_URL)
-            .then(res => console.log(`Keep-alive response from ${SELF_URL}: ${res.status}`))
+            .then(res => {
+                if (!res.ok) { // 如果響應不是 2xx 狀態碼
+                    console.error(`❌ Keep-alive ping to ${SELF_URL} responded with status: ${res.status}`);
+                } else {
+                    console.log(`Keep-alive response from ${SELF_URL}: ${res.status}`);
+                }
+            })
             .catch((err) => console.error('❌ Keep-alive ping 失敗:', err.message));
     }, PING_INTERVAL_MS);
   } else {
     console.warn('⚠️ SELF_URL 未設定或使用預設值，Keep-alive 功能可能無法防止服務休眠。請在 .env 檔案中設定您的部署網址。');
   }
 });
-
