@@ -1,4 +1,4 @@
-// index.js - V4.2.1 (修正因前次回覆不完整導致的語法錯誤，並整合 Flex Message 取消課程流程優化)
+// index.js - V4.2.2 (修正因前次回覆不完整導致的語法錯誤，並整合 Flex Message 取消課程流程優化，並簡化課程管理介面)
 
 // =====================================
 //                 模組載入
@@ -63,11 +63,11 @@ const COMMANDS = {
   SWITCH_ROLE: '@切換身份',
   TEACHER: {
     MAIN_MENU: '@返回老師主選單',
-    COURSE_MANAGEMENT: '@課程管理',
+    COURSE_MANAGEMENT: '@課程管理', // 直接導向課程列表
     POINT_MANAGEMENT: '@點數管理',
-    ADD_COURSE: '@新增課程',
-    CANCEL_COURSE: '@取消課程',
-    COURSE_LIST: '@課程列表',
+    ADD_COURSE: '@新增課程', // 透過加號卡片觸發
+    // CANCEL_COURSE: '@取消課程', // 此指令已移除，功能整合至課程列表卡片中
+    COURSE_LIST: '@課程列表', // 其實不會直接用到，是 COURSE_MANAGEMENT 處理後的結果
     SEARCH_STUDENT: '@查學員',
     REPORT: '@統計報表',
     PENDING_ORDERS: '@待確認清單',
@@ -252,7 +252,7 @@ function formatDateTime(isoString) {
 // =====================================
 const studentMenu = [ { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE }, { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES }, { type: 'message', label: '點數功能', text: COMMANDS.STUDENT.POINTS }, { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE }, ];
 const studentPointSubMenu = [ { type: 'message', label: '剩餘點數', text: COMMANDS.STUDENT.CHECK_POINTS }, { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS }, { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY }, { type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }, ];
-const teacherCourseSubMenu = [ { type: 'message', label: '課程列表', text: COMMANDS.TEACHER.COURSE_LIST }, { type: 'message', label: '新增課程', text: COMMANDS.TEACHER.ADD_COURSE }, { type: 'message', label: '取消課程', text: COMMANDS.TEACHER.CANCEL_COURSE }, { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }, ];
+// const teacherCourseSubMenu = [ { type: 'message', label: '課程列表', text: COMMANDS.TEACHER.COURSE_LIST }, { type: 'message', label: '新增課程', text: COMMANDS.TEACHER.ADD_COURSE }, { type: 'message', label: '取消課程', text: COMMANDS.TEACHER.CANCEL_COURSE }, { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }, ]; // 已不再直接使用
 const teacherPointSubMenu = [ { type: 'message', label: '待確認訂單', text: COMMANDS.TEACHER.PENDING_ORDERS }, { type: 'message', label: '手動加減點', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS }, { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }, ];
 const teacherMenu = [ { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }, { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }, { type: 'message', label: '查詢學員', text: COMMANDS.TEACHER.SEARCH_STUDENT }, { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT }, { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE }, ];
 
@@ -268,6 +268,122 @@ const sentReminders = {};
 // =====================================
 //          👨‍🏫 老師指令處理函式
 // =====================================
+
+/**
+ * 輔助函式：發送課程列表的 Flex Message
+ * @param {string} replyToken - Line 回覆的 token
+ * @param {string} userId - 用戶 ID
+ * @param {Object} courses - 所有課程的物件
+ * @returns {Promise<any>}
+ */
+async function sendTeacherCourseListFlexMessage(replyToken, userId, courses) {
+    const now = Date.now();
+    const upcomingCourses = Object.values(courses)
+      .filter(c => new Date(c.time).getTime() > now)
+      .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+    const courseBubbles = upcomingCourses.slice(0, 9).map(course => { // 最多顯示9個課程，留一個給新增按鈕
+        return {
+            type: 'bubble',
+            header: {
+                type: 'box', layout: 'vertical',
+                contents: [
+                    { type: 'text', text: '📝 課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }
+                ],
+                backgroundColor: '#2B7EAF', paddingAll: 'lg'
+            },
+            body: {
+                type: 'box', layout: 'vertical', spacing: 'md',
+                contents: [
+                    { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
+                    { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                        contents: [
+                            { type: 'box', layout: 'baseline', spacing: 'sm',
+                                contents: [
+                                    { type: 'text', text: '🗓️ 時間', color: '#aaaaaa', size: 'sm', flex: 2 },
+                                    { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                                ],
+                            },
+                            { type: 'box', layout: 'baseline', spacing: 'sm',
+                                contents: [
+                                    { type: 'text', text: '👥 名額', color: '#aaaaaa', size: 'sm', flex: 2 },
+                                    { type: 'text', text: `${course.students.length}/${course.capacity}`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                                ],
+                            },
+                            { type: 'box', layout: 'baseline', spacing: 'sm',
+                                contents: [
+                                    { type: 'text', text: '⏳ 候補', color: '#aaaaaa', size: 'sm', flex: 2 },
+                                    { type: 'text', text: `${course.waiting.length} 人`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+            footer: {
+                type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
+                contents: [
+                    {
+                        type: 'button', style: 'primary', color: '#de5246', height: 'sm',
+                        action: {
+                            type: 'message', // 直接發送訊息觸發後續處理
+                            label: '刪除此課程',
+                            text: `刪除課程 ${course.id}` // 老師點擊後會發送這個指令
+                        },
+                    },
+                ],
+            },
+        };
+    });
+
+    // 新增 "+" 符號卡片 (新增課程)
+    const addCourseBubble = {
+        type: 'bubble',
+        body: {
+            type: 'box', layout: 'vertical', height: '220px', // 調整高度以符合其他卡片
+            contents: [
+                {
+                    type: 'box', layout: 'vertical', contents: [],
+                    width: '100%', height: '100%',
+                    justifyContent: 'center', alignItems: 'center',
+                    action: {
+                        type: 'message',
+                        label: '新增課程',
+                        text: COMMANDS.TEACHER.ADD_COURSE // 點擊後發送新增課程指令
+                    }
+                },
+                { type: 'text', text: '➕', size: 'xxxl', color: '#00B900', align: 'center', margin: 'none' },
+                { type: 'text', text: '新增課程', size: 'lg', color: '#666666', align: 'center', margin: 'md' }
+            ],
+            background: { type: 'linearGradient', angle: '0deg', startColor: '#F0F2F5', endColor: '#E0E2E5' },
+            cornerRadius: 'md',
+            borderWidth: '2px', borderColor: '#DDDDDD'
+        }
+    };
+    courseBubbles.push(addCourseBubble);
+
+    if (upcomingCourses.length === 0) {
+        // 如果沒有課程，則只有一個新增課程卡片，並給予文字提示
+        return reply(replyToken, [
+            { type: 'text', text: '目前沒有任何未來課程。點擊下方的加號卡片可以新增課程！' },
+            {
+                type: 'flex',
+                altText: '新增課程',
+                contents: { type: 'carousel', contents: [addCourseBubble] }
+            }
+        ], teacherMenu);
+    }
+
+    return reply(replyToken, [
+        { type: 'text', text: '以下是目前課程列表，您可以滑動查看，點擊課程可刪除，點擊「+」新增課程。' },
+        {
+            type: 'flex',
+            altText: '課程列表',
+            contents: { type: 'carousel', contents: courseBubbles }
+        }
+    ]);
+}
+
 async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
@@ -277,33 +393,12 @@ async function handleTeacherCommands(event, userId) {
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
-  // ✨ MODIFIED: Flex Message Integration - 課程管理主控台
+  // ✨ MODIFIED: 課程管理直接導向課程列表 Flex Message
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT) {
-    const flexMessage = {
-        type: 'flex',
-        altText: '課程管理中心',
-        contents: {
-            type: 'bubble',
-            body: {
-                type: 'box', layout: 'vertical',
-                contents: [
-                    { type: 'text', text: '🏢 課程管理中心', weight: 'bold', size: 'lg', color: '#2B7EAF', align: 'center' },
-                    { type: 'separator', margin: 'md' },
-                    { type: 'box', layout: 'vertical', margin: 'xxl', spacing: 'sm',
-                        contents: [
-                            { type: 'button', action: { type: 'message', label: '📅 課程列表', text: COMMANDS.TEACHER.COURSE_LIST }, style: 'primary', color: '#00B900' },
-                            { type: 'button', action: { type: 'message', label: '➕ 新增課程', text: COMMANDS.TEACHER.ADD_COURSE }, style: 'primary', color: '#FF8C00' },
-                            { type: 'button', action: { type: 'message', label: '❌ 取消課程', text: COMMANDS.TEACHER.CANCEL_COURSE }, style: 'primary', color: '#de5246' }
-                        ]
-                    },
-                    { type: 'button', action: { type: 'message', label: '返回老師主選單', text: COMMANDS.TEACHER.MAIN_MENU }, style: 'secondary', margin: 'md' }
-                ]
-            }
-        }
-    };
-    return reply(replyToken, flexMessage);
+    return sendTeacherCourseListFlexMessage(replyToken, userId, courses);
   }
-  // ✨ MODIFIED: Flex Message Integration - 點數管理主控台
+
+  // ✨ MODIFIED: 點數管理主控台 (保持不變)
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
     const flexMessage = {
         type: 'flex',
@@ -329,105 +424,41 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, flexMessage);
   }
 
+  // 新增課程指令 (透過加號卡片觸發)
   if (text === COMMANDS.TEACHER.ADD_COURSE) {
     pendingCourseCreation[userId] = { step: 1, data: {} };
     return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
   }
 
-  // --- 取消課程指令 (使用 Flex Message 的新設計) ---
-  if (text === COMMANDS.TEACHER.CANCEL_COURSE) {
-    const now = Date.now();
-    const upcomingCourses = Object.values(courses)
-      .filter(c => new Date(c.time).getTime() > now)
-      .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    if (upcomingCourses.length === 0) {
-      return reply(replyToken, '目前沒有可取消的未來課程。', teacherCourseSubMenu);
+  // ✨ MODIFIED: 刪除課程指令的處理 (由課程卡片按鈕觸發)
+  if (text.startsWith('刪除課程 ')) {
+    const courseIdToDelete = text.replace('刪除課程 ', '').trim();
+    const course = courses[courseIdToDelete];
+    if (!course) {
+        return reply(replyToken, '找不到該課程，可能已被取消。', teacherMenu); // 返回主選單
     }
-
-    const courseBubbles = upcomingCourses.slice(0, 10).map(course => {
-      return {
-        type: 'bubble',
-        header: {
-          type: 'box', layout: 'vertical',
-          contents: [{ type: 'text', text: '取消課程選項', color: '#ffffff', weight: 'bold', size: 'md' }],
-          backgroundColor: '#ff6B6B', paddingAll: 'lg'
-        },
-        body: {
-          type: 'box', layout: 'vertical', spacing: 'md',
-          contents: [
-            { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
-            {
-              type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
-              contents: [
-                {
-                  type: 'box', layout: 'baseline', spacing: 'sm',
-                  contents: [
-                    { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
-                    { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
-                  ],
-                },
-                {
-                  type: 'box', layout: 'baseline', spacing: 'sm',
-                  contents: [
-                    { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 },
-                    { type: 'text', text: `報名 ${course.students.length}/${course.capacity} (候補 ${course.waiting.length})`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-        footer: {
-          type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
-          contents: [
-            {
-              type: 'button', style: 'primary', color: '#de5246', height: 'sm',
-              action: {
-                type: 'postback',
-                label: '取消此課程',
-                data: `action=cancel_course_confirm&courseId=${course.id}`,
-                displayText: `準備取消課程：${course.title}`
-              },
-            },
-          ],
-        },
-      };
+    // 提供二次確認
+    return reply(replyToken, {
+        type: 'text',
+        text: `⚠️ 最終確認 ⚠️\n\n您確定要刪除課程「${course.title}」嗎？\n\n此操作將會刪除課程、自動退點並通知所有相關學生，且無法復原！`,
+        quickReply: {
+            items: [
+                { type: 'action', action: { type: 'postback', label: '✅ 是，確認刪除', data: `action=delete_course_execute&courseId=${courseIdToDelete}`, displayText: `正在刪除課程：${course.title}` } },
+                { type: 'action', action: { type: 'postback', label: '❌ 否，返回', data: 'action=delete_course_abort', displayText: '取消操作' } }
+            ]
+        }
     });
-
-    const flexMessage = {
-      type: 'flex',
-      altText: '請選擇要取消的課程',
-      contents: { type: 'carousel', contents: courseBubbles },
-    };
-
-    return reply(replyToken, [
-        { type: 'text', text: '請滑動下方卡片，選擇您要取消的課程：' },
-        flexMessage
-    ]);
   }
 
+  // COMMANDS.TEACHER.COURSE_LIST 其實不再被用戶直接觸發，其內容已整合到 COURSE_MANAGEMENT
+  // 因此這部分可以移除或保留作為內部輔助，但不再需要直接的 quickReply 導向
   if (text === COMMANDS.TEACHER.COURSE_LIST) {
-    const now = Date.now();
-    const upcomingCourses = Object.values(courses)
-      .filter(c => new Date(c.time).getTime() > now)
-      .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    if (upcomingCourses.length === 0) {
-      return reply(replyToken, '目前沒有未來的課程。', teacherCourseSubMenu);
-    }
-
-    let replyMessage = '📋 已建立課程列表：\n\n';
-    upcomingCourses.forEach(c => {
-      replyMessage += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
-      replyMessage += `💰 扣點：${c.pointsCost} 點｜👥 上限 ${c.capacity}\n`;
-      replyMessage += `✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n\n`;
-    });
-
-    return reply(replyToken, replyMessage.trim(), teacherCourseSubMenu);
+      // 由於 COURSE_MANAGEMENT 已經直接顯示列表，這裡的功能會顯得冗餘
+      // 但如果保留，可以作為一個後備或內部調用點
+      return sendTeacherCourseListFlexMessage(replyToken, userId, courses);
   }
 
-  // ✨ MODIFIED: Flex Message Integration - 查詢學員
+  // ✨ MODIFIED: Flex Message Integration - 查詢學員 (保持不變)
   if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
     const query = text.replace(COMMANDS.TEACHER.SEARCH_STUDENT + ' ', '').trim();
     if (!query) {
@@ -439,7 +470,8 @@ async function handleTeacherCommands(event, userId) {
         foundUser = userById;
     }
     if (!foundUser) {
-        const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
+        // 使用 LOWER 函數進行大小寫不敏感匹配，並安全地處理 LIKE 通配符
+        const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase().replace(/%/g, '\\%').replace(/_/g, '\\_')}%`]);
         if (res.rows.length > 0) {
             // Prefer exact match if any
             foundUser = res.rows.find(u => u.name.toLowerCase() === query.toLowerCase()) || res.rows[0];
@@ -612,7 +644,7 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, '已返回點數相關功能。', studentPointSubMenu);
   }
 
-  // ✨ MODIFIED: Flex Message Integration - 點數總覽卡片
+  // ✨ MODIFIED: Flex Message Integration - 點數總覽卡片 (保持不變)
   if (text === COMMANDS.STUDENT.CHECK_POINTS) {
     const flexMessage = {
         type: 'flex',
@@ -638,7 +670,7 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, flexMessage);
   }
 
-  // ✨ MODIFIED: Flex Message Integration - 購點方案輪播卡片
+  // ✨ MODIFIED: Flex Message Integration - 購點方案輪播卡片 (保持不變)
   if (text === COMMANDS.STUDENT.BUY_POINTS) {
     const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation')`, [userId]);
     const pendingOrder = ordersRes.rows[0];
@@ -708,7 +740,7 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, '目前沒有待取消的購點訂單。', studentMenu);
   }
 
-  // ✨ MODIFIED: Flex Message Integration - 近期交易紀錄
+  // ✨ MODIFIED: Flex Message Integration - 近期交易紀錄 (保持不變)
   if (text === COMMANDS.STUDENT.PURCHASE_HISTORY) {
     const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND status = 'pending_payment'`, [userId]);
     const pendingOrder = ordersRes.rows[0];
@@ -807,7 +839,7 @@ async function handleStudentCommands(event, userId) {
     }
   }
 
-  // ✨ MODIFIED: Flex Message Integration - 預約課程輪播卡片
+  // ✨ MODIFIED: Flex Message Integration - 預約課程輪播卡片 (保持不變)
   if (text === COMMANDS.STUDENT.BOOK_COURSE) {
     const now = Date.now();
     const upcoming = Object.values(courses)
@@ -946,7 +978,7 @@ async function handleStudentCommands(event, userId) {
     }
   }
 
-  // ✨ MODIFIED: Flex Message Integration - 我的課程輪播卡片
+  // ✨ MODIFIED: Flex Message Integration - 我的課程輪播卡片 (保持不變)
   if (text === COMMANDS.STUDENT.MY_COURSES) {
     const now = Date.now();
     const enrolledCourses = Object.values(courses)
@@ -1051,6 +1083,9 @@ async function handleStudentCommands(event, userId) {
     ]);
   }
 
+  // COMMANDS.STUDENT.CANCEL_BOOKING 和 CANCEL_WAITING 
+  // 這兩個功能雖然可以保留，但為了簡化，我的課程列表中已提供直接取消按鈕
+  // 您可以選擇保留它們作為替代入口，或將其從快速選單中移除。
   if (text === COMMANDS.STUDENT.CANCEL_BOOKING) {
     const now = Date.now();
     const enrolled = Object.values(courses).filter(c =>
@@ -1243,62 +1278,44 @@ async function handleEvent(event) {
             return reply(replyToken, '您沒有權限執行此操作。');
         }
 
-        // --- 新的取消課程流程 ---
-        if (postbackAction === 'cancel_course_confirm') {
+        // --- 新的刪除課程確認流程 (Postback 處理) ---
+        if (postbackAction === 'delete_course_execute') { // 執行刪除
             const courseId = params.get('courseId');
             const courses = await getAllCourses();
             const course = courses[courseId];
             if (!course) {
-                return reply(replyToken, '找不到該課程，可能已被取消。', teacherCourseSubMenu);
-            }
-            return reply(replyToken, {
-                type: 'text',
-                text: `⚠️ 最終確認 ⚠️\n\n您確定要取消課程「${course.title}」嗎？\n\n此操作將會刪除課程、自動退點並通知所有相關學生，且無法復原！`,
-                quickReply: {
-                    items: [
-                        { type: 'action', action: { type: 'postback', label: '✅ 是，確認取消', data: `action=cancel_course_execute&courseId=${courseId}`, displayText: `正在取消課程...` } },
-                        { type: 'action', action: { type: 'postback', label: '❌ 否，返回', data: 'action=cancel_course_abort', displayText: '取消操作' } }
-                    ]
-                }
-            });
-        }
-
-        if (postbackAction === 'cancel_course_execute') {
-            const courseId = params.get('courseId');
-            const courses = await getAllCourses();
-            const course = courses[courseId];
-            if (!course) {
-                return reply(replyToken, '找不到該課程，取消失敗。', teacherCourseSubMenu);
+                return reply(replyToken, '找不到該課程，刪除失敗。', teacherMenu); // 返回老師主選單
             }
             for (const stuId of course.students) {
                 const studentUser = await getUser(stuId);
                 if (studentUser) {
                     studentUser.points += course.pointsCost;
                     if (!Array.isArray(studentUser.history)) studentUser.history = [];
-                    studentUser.history.push({ id: courseId, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
+                    studentUser.history.push({ id: courseId, action: `課程刪除退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
                     await saveUser(studentUser);
-                    push(stuId, `【課程取消通知】\n您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消，系統已自動退還 ${course.pointsCost} 點。`).catch(e => console.error(`❌ 通知學生 ${stuId} 課程取消失敗:`, e.message));
+                    push(stuId, `【課程刪除通知】\n您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師刪除，系統已自動退還 ${course.pointsCost} 點。`).catch(e => console.error(`❌ 向學員 ${stuId} 發送刪除通知失敗:`, e.message));
                 }
             }
             for (const waitId of course.waiting) {
                 const waitingUser = await getUser(waitId);
                 if (waitingUser) {
                     if (!Array.isArray(waitingUser.history)) waitingUser.history = [];
-                    waitingUser.history.push({ id: courseId, action: `候補課程取消：${course.title}`, time: new Date().toISOString() });
+                    waitingUser.history.push({ id: courseId, action: `候補課程刪除：${course.title}`, time: new Date().toISOString() });
                     await saveUser(waitingUser);
-                    push(waitId, `【候補取消通知】\n您候補的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消。`).catch(e => console.error(`❌ 通知候補者 ${waitId} 課程取消失敗:`, e.message));
+                    push(waitId, `【候補刪除通知】\n您候補的課程「${course.title}」（${formatDateTime(course.time)}）已被老師刪除。`).catch(e => console.error(`❌ 向候補者 ${waitId} 發送刪除通知失敗:`, e.message));
                 }
             }
             await deleteCourse(courseId);
-            console.log(`✅ 課程 ${courseId} (${course.title}) 已成功取消。`);
-            return reply(replyToken, `✅ 課程「${course.title}」已成功取消，並已通知所有相關學員。`, teacherCourseSubMenu);
+            console.log(`✅ 課程 ${courseId} (${course.title}) 已成功刪除。`);
+            // 刪除後返回更新後的課程列表
+            return sendTeacherCourseListFlexMessage(replyToken, userId, await getAllCourses());
         }
         
-        if (postbackAction === 'cancel_course_abort') {
-            return reply(replyToken, '操作已取消，返回課程管理選單。', teacherCourseSubMenu);
+        if (postbackAction === 'delete_course_abort') { // 取消刪除
+            return reply(replyToken, '刪除操作已取消。', teacherMenu); // 返回老師主選單
         }
         
-        // --- 原有的購點確認流程 (保留) ---
+        // --- 原有的購點確認流程 (保留，Postback 數據格式不同，與刪除課程互不影響) ---
         if (data.startsWith('confirm_order_') || data.startsWith('cancel_order_')) {
             const orderId = data.split('_')[2];
             const action = data.split('_')[0];
@@ -1323,7 +1340,7 @@ async function handleEvent(event) {
             } else if (action === 'cancel') {
                 order.status = 'cancelled';
                 await saveOrder(order);
-                await reply(replyToken, `❌ 已取消訂單 ${order.orderId} 的購點確認。請手動與學員 ${order.userName} 聯繫。`, teacherPointSubMenu);
+                await reply(replyToken, `❌ 已取消訂單 ${order.order_id} 的購點確認。請手動與學員 ${order.userName} 聯繫。`, teacherPointSubMenu);
             }
         }
         return;
@@ -1333,13 +1350,10 @@ async function handleEvent(event) {
         return;
     }
     const text = event.message.text.trim();
-
-    // --- 移除舊的取消課程確認邏輯 ---
-    // (原先在此處的 if (global.confirmingCancelCourse...) 區塊已刪除)
     
     if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE && pendingCourseCreation[userId]) {
         delete pendingCourseCreation[userId];
-        return reply(replyToken, '已取消新增課程流程並返回選單。', teacherCourseSubMenu);
+        return reply(replyToken, '已取消新增課程流程並返回選單。', teacherMenu); // 返回老師主選單
     }
 
     // 多步驟流程處理... (新增課程, 手動調點, 學生購點)
@@ -1396,6 +1410,7 @@ async function handleEvent(event) {
                     let dayDiff = (targetWeekdayIndex - courseDate.getUTCDay() + 7) % 7;
                     const currentHourTaipei = now.getHours();
                     const currentMinuteTaipei = now.getMinutes();
+                    // 如果是當天但時間已過，則設定為下週
                     if (dayDiff === 0 && (currentHourTaipei > targetHour || (currentHourTaipei === targetHour && currentMinuteTaipei >= targetMin))) {
                         dayDiff = 7;
                     }
@@ -1406,10 +1421,10 @@ async function handleEvent(event) {
                     const newCourse = { id: newId, title: stepData.data.title, time: isoTime, capacity: stepData.data.capacity, pointsCost: stepData.data.pointsCost, students: [], waiting: [] };
                     await saveCourse(newCourse);
                     delete pendingCourseCreation[userId];
-                    return reply(replyToken, `課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoTime)}`, teacherCourseSubMenu);
+                    return reply(replyToken, `課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoTime)}`, teacherMenu); // 返回老師主選單
                 } else if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE) {
                     delete pendingCourseCreation[userId];
-                    return reply(replyToken, '已取消新增課程。', teacherCourseSubMenu);
+                    return reply(replyToken, '已取消新增課程。', teacherMenu); // 返回老師主選單
                 } else {
                     return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_ADD_COURSE}」或「${COMMANDS.STUDENT.CANCEL_ADD_COURSE}」。`);
                 }
@@ -1432,7 +1447,9 @@ async function handleEvent(event) {
         }
         let foundUser = await getUser(targetIdentifier);
         if (!foundUser) {
-            const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
+            // 安全處理 LIKE 通配符，防止非預期行為
+            const searchName = `%${targetIdentifier.toLowerCase().replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+            const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [searchName]);
             if (res.rows.length > 0) {
                 // Prefer exact match if any
                 foundUser = res.rows.find(u => u.name.toLowerCase() === targetIdentifier.toLowerCase()) || res.rows[0];
@@ -1446,7 +1463,7 @@ async function handleEvent(event) {
         const absAmount = Math.abs(amount);
         if (operation === '扣點' && foundUser.points < absAmount) {
             delete pendingManualAdjust[userId];
-            return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherPointSubMenu);
+            return reply(replyToken, `學員 ${foundUser.name} 點數不足 (現有 ${foundUser.points} 點，欲扣 ${absAmount} 點)。`, teacherPointSubMenu);
         }
         foundUser.points += amount;
         if (!Array.isArray(foundUser.history)) foundUser.history = [];
@@ -1553,7 +1570,7 @@ async function checkAndSendReminders() {
                     try {
                         await push(studentId, `🔔 提醒：您預約的課程「${course.title}」將於 1 小時內開始！\n時間：${formatDateTime(course.time)}`);
                     } catch (e) {
-                        console.error(`   ❌ 向學員 ${studentId} 發送提醒失敗:`, e.message);
+                        console.error(`   ❌ 向學員 ${studentId} 發送提醒失敗:`, e); // 輸出完整錯誤物件
                     }
                 }
             }
@@ -1604,7 +1621,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.2.1`);
+  console.log(`Bot 版本: V4.2.2`); // 版本更新
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
@@ -1620,3 +1637,4 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。');
   }
 });
+
