@@ -1,4 +1,4 @@
-// index.js - V4.1.0 (整合所有修正與優化)
+// index.js - V4.1.0 (整合所有修正與優化 - 已針對取消課程 400 錯誤加強偵錯與防護)
 
 // =====================================
 //                 模組載入
@@ -8,6 +8,7 @@ const { Client } = require('pg'); // 引入 pg 模組的 Client
 const line = require('@line/bot-sdk');
 require('dotenv').config(); // 載入 .env 檔案中的環境變數 (Render 會自動注入)
 const { URL } = require('url'); // 引入 URL 模組用於 Keep-alive
+const fetch = require('node-fetch'); // 確保 node-fetch 已安裝
 
 // =====================================
 //               應用程式常數
@@ -483,25 +484,48 @@ async function handleTeacherCommands(event, userId) {
       .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime()); // 按時間排序
 
     if (upcomingCourses.length === 0) {
+      console.log('DEBUG: 取消課程 - 沒有可取消的未來課程。'); // 新增除錯日誌
       return reply(replyToken, '目前沒有可取消的未來課程。', teacherCourseSubMenu);
     }
 
-    const quickReplyItems = upcomingCourses.map(c => ({
-      type: 'action',
-      action: {
-        type: 'postback', // 使用 postback 傳遞 courseId，不顯示在聊天內容
-        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20), // 限制標籤長度
-        data: `cancel_course_confirm_${c.id}`, // 傳遞課程 ID
-        displayText: `取消課程：${c.title} (${formatDateTime(c.time)})` // 顯示在聊天框的文字
-      },
-    }));
+    // 限制顯示的課程數量，避免快速回覆按鈕過多
+    const displayCourses = upcomingCourses.slice(0, 10); // 只顯示最近的 10 門課程
+
+    const quickReplyItems = displayCourses.map(c => {
+        const labelText = `${formatDateTime(c.time)} ${c.title}`;
+        const label = labelText.slice(0, 20); // 確保 label 不超過 20 字元
+        const displayText = `取消課程：${labelText}`.slice(0, 20); // 確保 displayText 不超過 20 字元
+
+        // 偵錯：列印即將生成的按鈕資訊
+        console.log(`DEBUG: Generating quickReply item for course ${c.id}:`);
+        console.log(`  Label: "${label}" (length: ${label.length})`);
+        console.log(`  Data: "cancel_course_confirm_${c.id}" (length: ${(`cancel_course_confirm_${c.id}`).length})`);
+        console.log(`  DisplayText: "${displayText}" (length: ${displayText.length})`);
+
+        return {
+            type: 'action',
+            action: {
+                type: 'postback',
+                label: label,
+                data: `cancel_course_confirm_${c.id}`,
+                displayText: displayText
+            },
+        };
+    });
     quickReplyItems.push({ type: 'message', label: '返回課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT });
 
-    return reply(replyToken, {
-      type: 'text',
-      text: '請選擇要取消的課程：',
-      quickReply: { items: quickReplyItems.slice(0, 13) } // 最多顯示 13 個快速回覆
-    });
+    try {
+        console.log(`DEBUG: 準備回覆帶有 ${quickReplyItems.length} 個快速回覆按鈕的訊息。`); // 新增除錯日誌
+        return reply(replyToken, {
+            type: 'text',
+            text: '請選擇要取消的課程：\n\n💡 若課程名稱過長會自動截斷。', // 提示用戶名稱可能截斷
+            quickReply: { items: quickReplyItems.slice(0, 13) } // 確保不超過 13 個
+        });
+    } catch (error) {
+        console.error('❌ 在生成取消課程快速回覆時發生錯誤:', error.message); // 捕捉錯誤
+        // 如果此處發生錯誤，說明 quickReply 結構或內容有問題
+        return reply(replyToken, '生成取消課程選項時發生錯誤，請稍後再試或聯繫管理員。', teacherCourseSubMenu);
+    }
   }
 
   // --- 課程列表 (老師查看) ---
@@ -1115,10 +1139,27 @@ async function handleEvent(event) {
   const replyToken = event.replyToken;
 
   console.log(`Received event type: ${event.type}`); // DEBUG: 印出收到的事件類型
-  if (event.type === 'message' && event.message.text) {
-      console.log(`Received text message: "${event.message.text}" from user: ${userId}`); // DEBUG: 印出收到的文字訊息
-  }
 
+  // 更多詳細的訊息日誌
+  if (event.type === 'message') {
+      console.log(`Received message type: ${event.message.type}`);
+      if (event.message.type === 'text') {
+          console.log(`Received text message: "${event.message.text}" from user: ${userId}`);
+      } else {
+          console.log(`Received non-text message from user: ${userId} (Type: ${event.message.type})`);
+          // 如果不是文字訊息，且不是貼圖、圖片等常見類型，可以考慮返回
+          if (event.message.type !== 'sticker' && event.message.type !== 'image' && event.message.type !== 'video' && event.message.type !== 'audio') {
+              // 對於無法處理的非文字訊息，直接返回，避免 400 錯誤
+              return;
+          }
+      }
+  } else if (event.type === 'postback') {
+      console.log(`Received postback data: ${event.postback.data} from user: ${userId}`);
+  } else {
+      console.log(`Received other event: ${JSON.stringify(event)} from user: ${userId}`);
+      // 忽略除 message 和 postback 之外的所有事件，避免 400 錯誤
+      return;
+  }
 
   // --- 用戶資料初始化與更新 ---
   // 嘗試從資料庫讀取用戶資料
@@ -1152,12 +1193,13 @@ async function handleEvent(event) {
   // --- Postback 事件處理 ---
   if (event.type === 'postback') {
     const data = event.postback.data;
-    console.log(`Received postback data: ${data}`); // DEBUG: 印出 postback data
+    console.log(`DEBUG: Handling postback data: ${data}`); // DEBUG: 印出 postback data
 
     // 課程取消確認流程 (老師專用) - Postback觸發
     if (data.startsWith('cancel_course_confirm_')) {
       const currentUser = await getUser(userId); // 獲取最新用戶角色
       if (currentUser.role !== 'teacher') {
+        console.log(`DEBUG: 用戶 ${userId} 嘗試執行老師權限的 postback 但非老師身份。`);
         return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
       }
       const courseId = data.replace('cancel_course_confirm_', '');
@@ -1166,6 +1208,7 @@ async function handleEvent(event) {
       const now = Date.now();
 
       if (!course || new Date(course.time).getTime() < now) {
+        console.log(`DEBUG: 取消課程 Postback: 找不到課程 ${courseId} 或已過期。`);
         return reply(replyToken, '找不到該課程，或課程已過期。', teacherCourseSubMenu);
       }
       // 暫存待確認的課程 ID
@@ -1182,6 +1225,7 @@ async function handleEvent(event) {
     if (data.startsWith('confirm_order_') || data.startsWith('cancel_order_')) {
       const currentUser = await getUser(userId); // 獲取最新用戶角色
       if (currentUser.role !== 'teacher') {
+        console.log(`DEBUG: 用戶 ${userId} 嘗試執行老師權限的 postback 但非老師身份。`);
         return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
       }
       const orderId = data.split('_')[2]; // 從 postback data 中解析訂單 ID
@@ -1190,10 +1234,12 @@ async function handleEvent(event) {
       const order = orders[orderId];
 
       if (!order || order.status !== 'pending_confirmation') {
+        console.log(`DEBUG: 訂單操作 Postback: 找不到訂單 ${orderId} 或狀態不正確。`);
         return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', teacherPointSubMenu);
       }
       const studentUser = await getUser(order.userId); // 獲取購點學員的資料
       if (!studentUser) {
+        console.log(`DEBUG: 訂單操作 Postback: 找不到購點學員 (ID: ${order.userId}) 的資料。`);
         return reply(replyToken, `找不到購點學員 (ID: ${order.userId}) 的資料。`, teacherPointSubMenu);
       }
 
@@ -1219,8 +1265,11 @@ async function handleEvent(event) {
     }
   }
 
-  // 如果不是文字訊息，直接返回，不進行後續處理
-  if (event.type !== 'message' || !event.message.text) return;
+  // 如果不是文字訊息，或者訊息類型不能處理，直接返回，不進行後續處理
+  if (event.type !== 'message' || event.message.type !== 'text') {
+      console.log(`DEBUG: Ignoring non-text message or non-message event.`);
+      return;
+  }
 
   const text = event.message.text.trim();
 
@@ -1229,13 +1278,16 @@ async function handleEvent(event) {
   // 1. 處理老師取消課程的確認指令 (這是之前問題點，需要優先處理)
   // 檢查是否處於取消課程的確認狀態，且發送了確認訊息
   if (global.confirmingCancelCourse && global.confirmingCancelCourse[userId] && text.startsWith('確認取消課程 ')) {
+      console.log(`DEBUG: 處理老師取消課程確認指令: "${text}"`);
       const currentUser = await getUser(userId);
       if (currentUser.role !== 'teacher') {
+          console.log(`DEBUG: 用戶 ${userId} 嘗試執行老師權限的取消確認但非老師身份。`);
           delete global.confirmingCancelCourse[userId]; // 清除無效狀態
           return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
       }
       const courseId = text.replace('確認取消課程 ', '').trim();
       if (global.confirmingCancelCourse[userId] !== courseId) {
+          console.log(`DEBUG: 取消課程確認: 課程 ID 不匹配，清除狀態。`);
           delete global.confirmingCancelCourse[userId]; // 清除無效狀態
           return reply(replyToken, '無效的取消確認，請重新操作。', teacherCourseSubMenu);
       }
@@ -1245,6 +1297,7 @@ async function handleEvent(event) {
       const now = Date.now();
 
       if (!course || new Date(course.time).getTime() < now) {
+          console.log(`DEBUG: 取消課程確認: 找不到課程 ${courseId} 或已過期。`);
           delete global.confirmingCancelCourse[userId];
           return reply(replyToken, '找不到該課程，取消失敗或已被刪除或已過期。', teacherCourseSubMenu);
       }
@@ -1283,17 +1336,20 @@ async function handleEvent(event) {
 
       await deleteCourse(courseId);
       delete global.confirmingCancelCourse[userId];
+      console.log(`DEBUG: 課程 ${courseId} 已成功取消。`);
       return reply(replyToken, `課程「${course.title}」已取消，所有相關學員已收到通知。`, teacherCourseSubMenu);
   }
 
   // 2. 處理老師取消確認的「❌ 否，返回」指令 或 新增課程的取消 (這也需要優先處理，因為它也是一個文字指令，並且清除狀態)
   // 如果處於取消課程確認狀態，且收到返回課程管理的指令
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT && global.confirmingCancelCourse && global.confirmingCancelCourse[userId]) {
+      console.log(`DEBUG: 處理取消課程確認流程中的返回指令。`);
       delete global.confirmingCancelCourse[userId]; // 清除流程狀態
       return reply(replyToken, '已中止取消課程操作，並返回課程管理。', teacherCourseSubMenu);
   }
   // 如果處於新增課程狀態，且收到取消新增課程的指令
   if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE && pendingCourseCreation[userId]) {
+      console.log(`DEBUG: 處理取消新增課程指令。`);
       delete pendingCourseCreation[userId];
       return reply(replyToken, '已取消新增課程流程並返回選單。', teacherCourseSubMenu);
   }
@@ -1301,6 +1357,7 @@ async function handleEvent(event) {
 
   // 3. 多步驟新增課程流程處理 (老師專用)
   if (pendingCourseCreation[userId]) {
+    console.log(`DEBUG: 處理新增課程流程，目前步驟: ${pendingCourseCreation[userId].step}`);
     const stepData = pendingCourseCreation[userId];
     const weekdays = { '星期日': 0, '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, '星期五': 5, '星期六': 6 };
 
@@ -1404,6 +1461,7 @@ async function handleEvent(event) {
           ]);
         }
       default: // 處理意外情況，重置流程
+        console.log(`DEBUG: 新增課程流程進入默認分支，重置狀態。`);
         delete pendingCourseCreation[userId];
         return reply(replyToken, '流程異常，已重置。', teacherMenu);
     }
@@ -1411,6 +1469,7 @@ async function handleEvent(event) {
 
   // --- 🔐 老師手動調整點數流程處理 (老師專用) ---
   if (pendingManualAdjust[userId]) {
+    console.log(`DEBUG: 處理手動調整點數流程。`);
     // 允許取消操作
     if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
         delete pendingManualAdjust[userId];
@@ -1487,6 +1546,7 @@ async function handleEvent(event) {
 
   // --- 學生購點流程處理 (學員專用) ---
   if (pendingPurchase[userId]) {
+    console.log(`DEBUG: 處理購點流程，目前步驟: ${pendingPurchase[userId].step}`);
     const stepData = pendingPurchase[userId];
 
     switch (stepData.step) {
@@ -1529,6 +1589,7 @@ async function handleEvent(event) {
           ]);
         }
       default: // 處理意外情況，重置流程
+        console.log(`DEBUG: 購點流程進入默認分支，重置狀態。`);
         delete pendingPurchase[userId];
         return reply(replyToken, '流程異常，已重置購點流程。', studentMenu);
     }
@@ -1537,6 +1598,7 @@ async function handleEvent(event) {
 
   // --- 🔁 身份切換指令處理 ---
   if (text === COMMANDS.SWITCH_ROLE) {
+    console.log(`DEBUG: 處理切換身份指令。`);
     const currentUser = await getUser(userId); // 獲取最新用戶角色
     if (currentUser.role === 'teacher') {
       currentUser.role = 'student'; // 切換為學生
@@ -1550,6 +1612,7 @@ async function handleEvent(event) {
 
   // --- 🔐 老師登入密碼驗證 ---
   if (pendingTeacherLogin[userId]) {
+    console.log(`DEBUG: 處理老師登入流程。`);
     // 允許取消登入
     if (text === COMMANDS.SWITCH_ROLE) {
       delete pendingTeacherLogin[userId];
@@ -1571,8 +1634,10 @@ async function handleEvent(event) {
   // --- 🔀 根據用戶身份導向不同的指令處理函式 ---
   const currentUser = await getUser(userId); // 再次獲取最新用戶角色
   if (currentUser.role === 'teacher') {
+    console.log(`DEBUG: 導向老師指令處理。`);
     return handleTeacherCommands(event, userId);
   } else {
+    console.log(`DEBUG: 導向學員指令處理。`);
     return handleStudentCommands(event, userId);
   }
 }
@@ -1598,8 +1663,9 @@ async function checkAndSendReminders() {
 
     // 如果課程在未來 1 小時內開始，且尚未發送提醒
     // 增加一個小小的緩衝時間，確保不會因為延遲導致重複發送或未發送
-    const oneHourMinusFiveMinutes = ONE_HOUR_IN_MS - (5 * 60 * 1000); // 例如，提前5分鐘檢查
-    if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && timeUntilCourse > oneHourMinusFiveMinutes && !sentReminders[id]) {
+    // 例如：在課程開始前 60 到 55 分鐘之間發送提醒
+    const minTimeForReminder = ONE_HOUR_IN_MS - (5 * 60 * 1000); // 55 分鐘
+    if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && timeUntilCourse >= minTimeForReminder && !sentReminders[id]) {
       console.log(`🔔 準備發送課程提醒：${course.title}`); // 移除 ID 顯示
       for (const studentId of course.students) {
         const student = dbUsersMap.get(studentId); // 從 Map 中獲取學生資料
@@ -1615,6 +1681,13 @@ async function checkAndSendReminders() {
       sentReminders[id] = true; // 標記為已發送提醒，避免重複發送
     }
   }
+  // 清理過期的提醒標記 (例如，課程結束一天後)
+  for (const id in sentReminders) {
+    const course = courses[id];
+    if (!course || (new Date(course.time).getTime() < (now - ONE_DAY_IN_MS))) {
+      delete sentReminders[id];
+    }
+  }
 }
 
 
@@ -1628,7 +1701,10 @@ app.post('/webhook', line.middleware(config), (req, res) => {
     .then(() => res.status(200).send('OK'))
     .catch((err) => {
       console.error('❌ Webhook 處理失敗:', err.message);
-      res.status(500).end();
+      // 對於 400 錯誤，雖然我們盡力在內部處理了，但如果 LINE SDK 仍然返回，則需要發送 400
+      // 否則發送 500 表示伺服器內部錯誤
+      const statusCode = err.statusCode || 500; // 嘗試從錯誤物件獲取狀態碼
+      res.status(statusCode).end();
     });
 });
 
@@ -1638,7 +1714,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 伺服器監聽啟動
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.1.0 (整合所有修正與優化)`);
+  console.log(`Bot 版本: V4.1.0 (整合所有修正與優化 - 修正取消課程 400 錯誤)`);
 
   // 設定定時清理任務
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS); // 每 24 小時清理一次
@@ -1663,3 +1739,4 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定或使用預設值，Keep-alive 功能可能無法防止服務休眠。請在 .env 檔案中設定您的部署網址。');
   }
 });
+
