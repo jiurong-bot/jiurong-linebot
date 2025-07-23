@@ -289,22 +289,18 @@ async function handleTeacherCommands(event, userId) {
           contents: [
             { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
             {
-              type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+              type: 'box', layout: 'baseline', spacing: 'sm',
               contents: [
-                {
-                  type: 'box', layout: 'baseline', spacing: 'sm',
-                  contents: [
-                    { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
-                    { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 5 },
-                  ],
-                },
-                {
-                  type: 'box', layout: 'baseline', spacing: 'sm',
-                  contents: [
-                    { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 },
-                    { type: 'text', text: `報名 ${course.students.length}/${course.capacity} (候補 ${course.waiting.length})`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
-                  ],
-                },
+                { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
+                // 已將 size: 5 修正為 size: 'sm'
+                { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
+              ],
+            },
+            {
+              type: 'box', layout: 'baseline', spacing: 'sm',
+              contents: [
+                { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 },
+                { type: 'text', text: `報名 ${course.students.length}/${course.capacity} (候補 ${course.waiting.length})`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
               ],
             },
           ],
@@ -344,8 +340,8 @@ async function handleTeacherCommands(event, userId) {
       action: {
         type: 'postback',
         label: '新增課程',
-        data: 'action=add_course_start',
-        displayText: '準備新增課程...'
+        data: 'action=add_course_start'
+        // 已移除 displayText: '準備新增課程...' 因為頂層 bubble 的 action 不支援此屬性
       },
       styles: {
         body: { separator: false, separatorColor: '#EEEEEE' }
@@ -840,7 +836,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要取消候補 ')) {
     const id = text.replace('我要取消候補 ', '').trim();
     const course = courses[id];
-    const now = Date.now();
+    const now = Date.Date();
 
     if (!course || !course.waiting?.includes(userId)) {
       return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
