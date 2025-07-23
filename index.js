@@ -1,4 +1,4 @@
-// index.js - V4.0.0 (導入 PostgreSQL 資料庫)
+// index.js - V4.1.0 (整合所有修正與優化)
 
 // =====================================
 //                 模組載入
@@ -7,6 +7,7 @@ const express = require('express');
 const { Client } = require('pg'); // 引入 pg 模組的 Client
 const line = require('@line/bot-sdk');
 require('dotenv').config(); // 載入 .env 檔案中的環境變數 (Render 會自動注入)
+const { URL } = require('url'); // 引入 URL 模組用於 Keep-alive
 
 // =====================================
 //               應用程式常數
@@ -155,7 +156,7 @@ async function initializeDatabase() {
     global.courseIdCounter = maxId + 1;
     console.log(`ℹ️ 課程 ID 計數器初始化為: ${global.courseIdCounter}`);
 
-    // *** 修改處：在所有資料表建立並初始化後，執行首次清理 ***
+    // *** 在所有資料表建立並初始化後，執行首次清理 ***
     await cleanCoursesDB();
     console.log('✅ 首次資料庫清理完成。');
     // *************************************************
@@ -177,7 +178,11 @@ initializeDatabase();
  */
 async function getUser(userId) {
   const res = await pgClient.query('SELECT * FROM users WHERE id = $1', [userId]);
-  return res.rows[0]; // 返回第一筆資料，如果沒有則為 undefined (轉為 null)
+  const userData = res.rows[0];
+  if (userData && typeof userData.history === 'string') {
+    userData.history = JSON.parse(userData.history); // 反序列化 history 欄位
+  }
+  return userData;
 }
 
 /**
@@ -186,15 +191,17 @@ async function getUser(userId) {
  */
 async function saveUser(user) {
   const existingUser = await getUser(user.id);
+  // 確保 history 欄位在儲存前是 JSON 字串
+  const historyJson = JSON.stringify(user.history || []);
   if (existingUser) {
     await pgClient.query(
       'UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5',
-      [user.name, user.points, user.role, JSON.stringify(user.history), user.id] // JSONB 需要字串化
+      [user.name, user.points, user.role, historyJson, user.id]
     );
   } else {
     await pgClient.query(
       'INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)',
-      [user.id, user.name, user.points, user.role, JSON.stringify(user.history)] // JSONB 需要字串化
+      [user.id, user.name, user.points, user.role, historyJson]
     );
   }
 }
@@ -421,7 +428,7 @@ const teacherMenu = [
 
 
 // =====================================
-//      📌 暫存狀態物件 (用於多步驟對話流程) (保持不變)
+//      📌 暫存狀態物件 (用於多步驟對話流程)
 // =====================================
 // 這些暫存狀態在服務重啟時會清空，但它們只用於單次對話流程，不是持久資料。
 const pendingTeacherLogin = {};
@@ -468,7 +475,7 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]); // 用學生端的取消指令
   }
 
-  // --- 取消課程指令 (此處進行主要修改) ---
+  // --- 取消課程指令 ---
   if (text === COMMANDS.TEACHER.CANCEL_COURSE) {
     const now = Date.now();
     const upcomingCourses = Object.values(courses)
@@ -929,6 +936,7 @@ async function handleStudentCommands(event, userId) {
 
     if (waitingCourses.length > 0) {
       replyMessage += '⏳ 你候補中的課程：\n';
+      waitingMessage = '';
       waitingCourses.forEach(c => {
         const waitingIndex = c.waiting.indexOf(userId) + 1; // 計算候補排位
         replyMessage += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位, 需扣 ${c.pointsCost} 點)\n`;
@@ -1106,6 +1114,12 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const replyToken = event.replyToken;
 
+  console.log(`Received event type: ${event.type}`); // DEBUG: 印出收到的事件類型
+  if (event.type === 'message' && event.message.text) {
+      console.log(`Received text message: "${event.message.text}" from user: ${userId}`); // DEBUG: 印出收到的文字訊息
+  }
+
+
   // --- 用戶資料初始化與更新 ---
   // 嘗試從資料庫讀取用戶資料
   let user = await getUser(userId);
@@ -1138,9 +1152,10 @@ async function handleEvent(event) {
   // --- Postback 事件處理 ---
   if (event.type === 'postback') {
     const data = event.postback.data;
+    console.log(`Received postback data: ${data}`); // DEBUG: 印出 postback data
 
     // 課程取消確認流程 (老師專用) - Postback觸發
-    if (data.startsWith('cancel_course_confirm_')) { // 注意這裡的匹配標識
+    if (data.startsWith('cancel_course_confirm_')) {
       const currentUser = await getUser(userId); // 獲取最新用戶角色
       if (currentUser.role !== 'teacher') {
         return reply(replyToken, '您沒有權限執行此操作。', teacherMenu);
@@ -1153,9 +1168,9 @@ async function handleEvent(event) {
       if (!course || new Date(course.time).getTime() < now) {
         return reply(replyToken, '找不到該課程，或課程已過期。', teacherCourseSubMenu);
       }
-      // 暫存待確認的課程 ID，將狀態機中的 key 從 `pendingCourseCancelConfirm` 更改為 `confirmingCancelCourse`
+      // 暫存待確認的課程 ID
       global.confirmingCancelCourse = global.confirmingCancelCourse || {}; // 確保物件存在
-      global.confirmingCancelCourse[userId] = courseId; //
+      global.confirmingCancelCourse[userId] = courseId;
 
       return reply(replyToken, `確認要取消課程「${course.title}」（${formatDateTime(course.time)}）嗎？\n一旦取消，已預約學生的點數將會退還，候補學生將收到取消通知。`, [
         { type: 'message', label: '✅ 是，確認取消', text: `確認取消課程 ${courseId}` }, // 將確認動作綁定到一個新指令
@@ -1204,7 +1219,7 @@ async function handleEvent(event) {
     }
   }
 
-  // 只處理文字訊息事件
+  // 如果不是文字訊息，直接返回，不進行後續處理
   if (event.type !== 'message' || !event.message.text) return;
 
   const text = event.message.text.trim();
@@ -1252,7 +1267,7 @@ async function handleEvent(event) {
       }
       // 處理候補學生通知
       for (const waitId of course.waiting) {
-          const waitingUser = await await getUser(waitId);
+          const waitingUser = await getUser(waitId);
           if (waitingUser) {
               if (!Array.isArray(waitingUser.history)) {
                   waitingUser.history = [];
@@ -1271,10 +1286,16 @@ async function handleEvent(event) {
       return reply(replyToken, `課程「${course.title}」已取消，所有相關學員已收到通知。`, teacherCourseSubMenu);
   }
 
-  // 2. 處理老師取消確認的「❌ 否，返回」指令 (這也需要優先處理，因為它也是一個文字指令，並且清除狀態)
+  // 2. 處理老師取消確認的「❌ 否，返回」指令 或 新增課程的取消 (這也需要優先處理，因為它也是一個文字指令，並且清除狀態)
+  // 如果處於取消課程確認狀態，且收到返回課程管理的指令
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT && global.confirmingCancelCourse && global.confirmingCancelCourse[userId]) {
       delete global.confirmingCancelCourse[userId]; // 清除流程狀態
       return reply(replyToken, '已中止取消課程操作，並返回課程管理。', teacherCourseSubMenu);
+  }
+  // 如果處於新增課程狀態，且收到取消新增課程的指令
+  if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE && pendingCourseCreation[userId]) {
+      delete pendingCourseCreation[userId];
+      return reply(replyToken, '已取消新增課程流程並返回選單。', teacherCourseSubMenu);
   }
 
 
@@ -1282,12 +1303,6 @@ async function handleEvent(event) {
   if (pendingCourseCreation[userId]) {
     const stepData = pendingCourseCreation[userId];
     const weekdays = { '星期日': 0, '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, '星期五': 5, '星期六': 6 };
-
-    // 允許在任何步驟中取消
-    if (text === COMMANDS.TEACHER.MAIN_MENU || text === COMMANDS.TEACHER.COURSE_MANAGEMENT || text === COMMANDS.STUDENT.CANCEL_ADD_COURSE) {
-        delete pendingCourseCreation[userId];
-        return reply(replyToken, '已取消新增課程流程並返回選單。', teacherCourseSubMenu);
-    }
 
     switch (stepData.step) {
       case 1: // 輸入課程名稱
@@ -1623,12 +1638,12 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 // 伺服器監聽啟動
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.0.0 (導入 PostgreSQL 資料庫)`);
+  console.log(`Bot 版本: V4.1.0 (整合所有修正與優化)`);
 
-  // 設定定時清理任務 (這個保持不變)
+  // 設定定時清理任務
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS); // 每 24 小時清理一次
 
-  // 設定定時檢查並發送提醒任務 (這個保持不變)
+  // 設定定時檢查並發送提醒任務
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
 
   // Keep-alive pinging (防止 Render 免費服務休眠)
@@ -1636,12 +1651,12 @@ app.listen(PORT, async () => {
     console.log(`⚡ 啟用 Keep-alive 功能，將每 ${PING_INTERVAL_MS / 1000 / 60} 分鐘 Ping 自身。`);
     // 首次 Ping
     fetch(SELF_URL)
-        .then(res => console.log(`Keep-alive initial response: ${res.status}`))
+        .then(res => console.log(`Keep-alive initial response from ${SELF_URL}: ${res.status}`))
         .catch((err) => console.error('❌ Keep-alive initial ping 失敗:', err.message));
     // 定時 Ping
     setInterval(() => {
         fetch(SELF_URL)
-            .then(res => console.log(`Keep-alive response: ${res.status}`))
+            .then(res => console.log(`Keep-alive response from ${SELF_URL}: ${res.status}`))
             .catch((err) => console.error('❌ Keep-alive ping 失敗:', err.message));
     }, PING_INTERVAL_MS);
   } else {
