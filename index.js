@@ -1,4 +1,4 @@
-// index.js - V4.2.1 (修正因前次回覆不完整導致的語法錯誤，並整合 Flex Message 取消課程流程優化)
+// index.js - V4.3.0 (整合新增課程與取消課程 Flex Message 輪播介面)
 
 // =====================================
 //                 模組載入
@@ -65,8 +65,8 @@ const COMMANDS = {
     MAIN_MENU: '@返回老師主選單',
     COURSE_MANAGEMENT: '@課程管理',
     POINT_MANAGEMENT: '@點數管理',
-    ADD_COURSE: '@新增課程',
-    CANCEL_COURSE: '@取消課程', // 此指令將直接觸發課程列表和取消功能
+    ADD_COURSE: '@新增課程', // 這個指令現在主要由 Flex Message 的 postback 觸發
+    CANCEL_COURSE: '@取消課程', // 此指令現在承擔顯示課程列表和取消功能
     COURSE_LIST: '@課程列表', // 此指令已不再單獨使用，功能被取消課程合併
     SEARCH_STUDENT: '@查學員',
     REPORT: '@統計報表',
@@ -236,8 +236,8 @@ function formatDateTime(isoString) {
 // =====================================
 const studentMenu = [ { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE }, { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES }, { type: 'message', label: '點數功能', text: COMMANDS.STUDENT.POINTS }, { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE }, ];
 const studentPointSubMenu = [ { type: 'message', label: '剩餘點數', text: COMMANDS.STUDENT.CHECK_POINTS }, { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS }, { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY }, { type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }, ];
-// 老師課程管理子選單，將 '課程列表' 移除，並由 '取消課程' 承擔展示功能
-const teacherCourseSubMenu = [ { type: 'message', label: '新增課程', text: COMMANDS.TEACHER.ADD_COURSE }, { type: 'message', label: '取消課程', text: COMMANDS.TEACHER.CANCEL_COURSE }, { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }, ];
+// 老師課程管理子選單，將 '新增課程' 移除，並由 '取消課程' 承擔展示所有課程並可新增的功能
+const teacherCourseSubMenu = [ { type: 'message', label: '取消/新增課程', text: COMMANDS.TEACHER.CANCEL_COURSE }, { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }, ];
 const teacherPointSubMenu = [ { type: 'message', label: '待確認訂單', text: COMMANDS.TEACHER.PENDING_ORDERS }, { type: 'message', label: '手動加減點', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS }, { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }, ];
 const teacherMenu = [ { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }, { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }, { type: 'message', label: '查詢學員', text: COMMANDS.TEACHER.SEARCH_STUDENT }, { type: 'message', label: '統計報表', text: COMMANDS.SWITCH_ROLE }, ]; // 老師主選單保留課程管理，但將 @統計報表 移到 @切換身份 之前
 
@@ -269,23 +269,14 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, '請選擇點數管理功能：', teacherPointSubMenu);
   }
 
-  if (text === COMMANDS.TEACHER.ADD_COURSE) {
-    pendingCourseCreation[userId] = { step: 1, data: {} };
-    return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-  }
-
-  // --- 取消課程指令 (使用 Flex Message 的新設計，同時承擔了課程列表的功能) ---
-  if (text === COMMANDS.TEACHER.CANCEL_COURSE || text === COMMANDS.TEACHER.COURSE_LIST) { // 合併了 COURSE_LIST 的功能
+  // --- 取消/新增課程指令 (使用 Flex Message 的新設計) ---
+  if (text === COMMANDS.TEACHER.CANCEL_COURSE || text === COMMANDS.TEACHER.COURSE_LIST || text === COMMANDS.TEACHER.ADD_COURSE) {
     const now = Date.now();
     const upcomingCourses = Object.values(courses)
       .filter(c => new Date(c.time).getTime() > now)
       .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
-    if (upcomingCourses.length === 0) {
-      return reply(replyToken, '目前沒有可取消或查看的未來課程。', teacherCourseSubMenu);
-    }
-
-    const courseBubbles = upcomingCourses.slice(0, 10).map(course => {
+    const courseBubbles = upcomingCourses.slice(0, 9).map(course => { // 最多顯示9個課程 + 1個新增按鈕 = 10個
       return {
         type: 'bubble',
         header: {
@@ -304,7 +295,7 @@ async function handleTeacherCommands(event, userId) {
                   type: 'box', layout: 'baseline', spacing: 'sm',
                   contents: [
                     { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
-                    { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                    { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 5 },
                   ],
                 },
                 {
@@ -335,19 +326,52 @@ async function handleTeacherCommands(event, userId) {
       };
     });
 
-    const flexMessage = {
-      type: 'flex',
-      altText: '請選擇要取消的課程',
-      contents: { type: 'carousel', contents: courseBubbles },
+    // 新增課程的卡片
+    const addCourseBubble = {
+      type: 'bubble',
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: 'xxl',
+        contents: [
+          {
+            type: 'box', layout: 'vertical', contents: [
+              { type: 'text', text: '+', size: 'xxl', weight: 'bold', color: '#CCCCCC', align: 'center' },
+              { type: 'text', text: '新增課程', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' },
+            ],
+            justifyContent: 'center', alignItems: 'center', height: '150px'
+          },
+        ],
+      },
+      action: {
+        type: 'postback',
+        label: '新增課程',
+        data: 'action=add_course_start',
+        displayText: '準備新增課程...'
+      },
+      styles: {
+        body: { separator: false, separatorColor: '#EEEEEE' }
+      }
     };
 
+    const flexMessage = {
+      type: 'flex',
+      altText: '請選擇要管理或新增的課程',
+      contents: { type: 'carousel', contents: [...courseBubbles, addCourseBubble] },
+    };
+
+    let introText = '以下是目前未來的課程：';
+    if (upcomingCourses.length === 0) {
+        introText = '目前沒有任何未來課程。您可以點擊最右側「+新增課程」卡片來新增課程。';
+    } else if (upcomingCourses.length > 9) {
+        introText += ` (僅顯示最新 ${upcomingCourses.length} 堂) `;
+    }
+
     return reply(replyToken, [
-        { type: 'text', text: '請滑動下方卡片，選擇您要取消的課程：' },
+        { type: 'text', text: introText },
         flexMessage
-    ], teacherCourseSubMenu); // 提供課程管理選單以便返回
+    ], teacherCourseSubMenu);
   }
 
-  // 移除了單獨的 COMMANDS.TEACHER.COURSE_LIST 處理區塊，功能已整合到 CANCEL_COURSE
+  // 移除了單獨的 COMMANDS.TEACHER.ADD_COURSE 處理區塊，功能已整合到 CANCEL_COURSE Flex Message
 
   if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
     const query = text.replace(COMMANDS.TEACHER.SEARCH_STUDENT + ' ', '').trim();
@@ -891,8 +915,14 @@ async function handleEvent(event) {
         const postbackAction = params.get('action');
 
         const currentUser = await getUser(userId);
-        if (currentUser.role !== 'teacher') {
+        if (currentUser.role !== 'teacher' && postbackAction !== 'add_course_start') { // 確保只有老師能執行除了 add_course_start 以外的管理操作
             return reply(replyToken, '您沒有權限執行此操作。');
+        }
+        
+        // --- 新增課程的 postback 觸發點 ---
+        if (postbackAction === 'add_course_start') {
+            pendingCourseCreation[userId] = { step: 1, data: {} };
+            return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
         }
 
         // --- 新的取消課程流程 ---
@@ -1251,7 +1281,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.2.1`);
+  console.log(`Bot 版本: V4.3.0`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
