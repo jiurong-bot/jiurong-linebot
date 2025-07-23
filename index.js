@@ -7,9 +7,7 @@ const express = require('express');
 const { Client } = require('pg'); // 引入 pg 模組的 Client
 const line = require('@line/bot-sdk');
 require('dotenv').config(); // 載入 .env 檔案中的環境變數 (Render 會自動注入)
-// const { URL } = require('url'); // 引入 URL 模組用於 Keep-alive (Fetch API 不需要 URL 模組)
-// 由於 Node.js v18+ 已內建 global.fetch，不再需要 node-fetch
-// const fetch = require('node-fetch'); // 確保 node-fetch 已安裝 (此行將被移除或註解)
+const crypto = require('crypto'); // 用於手動驗證 LINE 簽名，增強健壯性
 
 // =====================================
 //               應用程式常數
@@ -35,7 +33,7 @@ const pgClient = new Client({
 // 設定與密碼 (從環境變數讀取，未設定則使用預設值)
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
-const TEACHER_ID = process.env.TEACHER_ID;
+const TEACHER_ID = process.env.TEACHER_ID; // 從環境變數獲取老師 ID
 
 // 時間相關常數
 const ONE_DAY_IN_MS = 86400000;
@@ -165,7 +163,11 @@ async function initializeDatabase() {
 
   } catch (err) {
     console.error('❌ 資料庫初始化失敗:', err.message);
-    process.exit(1); // 如果資料庫無法初始化，則終止應用程式
+    // 如果資料庫無法初始化，則終止應用程式
+    // 為了更好地處理 Render 的自動重啟，這裡不直接 process.exit(1)
+    // 而是允許應用程式啟動，但後續操作會失敗，方便調試
+    // 通常 Render 會基於健康檢查來判斷是否重啟
+    // 如果資料庫連接失敗，最好讓應用程式啟動，並在每個 DB 操作前檢查連接狀態
   }
 }
 
@@ -495,10 +497,10 @@ async function handleTeacherCommands(event, userId) {
     const quickReplyItems = displayCourses.map(c => {
         const labelText = `${formatDateTime(c.time)} ${c.title}`;
         const label = labelText.slice(0, 20); // 確保 label 不超過 20 字元
-        // 確保 displayText 也是安全長度，並且用於 Postback 動作的 displayText 
+        // 確保 displayText 也是安全長度，並且用於 Postback 動作的 displayText
         // 實際上是給 LINE 平台顯示在用戶聊天記錄中的文本，限制為 200 字元。
         // 但由於這裡用作 quickReply，最好也限制在合理長度。
-        const displayText = `取消課程：${labelText}`.slice(0, 20); 
+        const displayText = `取消課程：${labelText}`.slice(0, 20);
 
         // 偵錯：列印即將生成的按鈕資訊
         console.log(`DEBUG: Generating quickReply item for course ${c.id}:`);
@@ -964,8 +966,7 @@ async function handleStudentCommands(event, userId) {
 
     if (waitingCourses.length > 0) {
       replyMessage += '⏳ 你候補中的課程：\n';
-      waitingMessage = '';
-      waitingCourses.forEach(c => {
+      waitingCourses.forEach(c => { // 修正為 waitingCourses
         const waitingIndex = c.waiting.indexOf(userId) + 1; // 計算候補排位
         replyMessage += `・${c.title} - ${formatDateTime(c.time)} (目前候補第 ${waitingIndex} 位, 需扣 ${c.pointsCost} 點)\n`;
       });
@@ -1151,49 +1152,76 @@ async function handleEvent(event) {
           console.log(`Received text message: "${event.message.text}" from user: ${userId}`);
       } else {
           console.log(`Received non-text message from user: ${userId} (Type: ${event.message.type})`);
-          // 如果不是文字訊息，且不是貼圖、圖片等常見類型，可以考慮返回
-          if (event.message.type !== 'sticker' && event.message.type !== 'image' && event.message.type !== 'video' && event.message.type !== 'audio') {
-              console.log(`DEBUG: 對於類型為 ${event.message.type} 的非文字訊息，直接返回。`);
-              // 對於無法處理的非文字訊息，直接返回，避免 400 錯誤
-              // 但這裡如果沒有 replyMessage 會導致 LINE 再次發送，
-              // 比較好的做法是回覆一個預設訊息，例如 "抱歉，目前只支援文字訊息。"
-              return reply(replyToken, '抱歉，目前只支援文字訊息或透過選單操作。');
+          // 對於非文字訊息，嘗試回覆一個通用訊息，避免 LINE SDK 拋出 400
+          // 但在處理邏輯中，我們會優先處理文字訊息和 Postback
+          try {
+              if (event.message.type === 'sticker') {
+                  await client.replyMessage(replyToken, { type: 'sticker', packageId: '446', stickerId: '1988' }); // 回覆一個可愛的貼圖
+              } else if (event.message.type === 'image' || event.message.type === 'video' || event.message.type === 'audio') {
+                  await reply(replyToken, '抱歉，目前暫時不支援圖片、影片或語音訊息，請使用文字訊息或點擊選單操作。');
+              } else {
+                  await reply(replyToken, '抱歉，目前只支援文字訊息或透過選單操作。');
+              }
+          } catch (replyError) {
+              console.error(`❌ 回覆非文字訊息失敗: ${replyError.message}`);
           }
+          return; // 處理完非文字訊息後直接返回，不再進入後續邏輯
       }
   } else if (event.type === 'postback') {
       console.log(`Received postback data: ${event.postback.data} from user: ${userId}`);
-  } else {
-      console.log(`Received other event: ${JSON.stringify(event)} from user: ${userId}`);
+  } else if (event.type === 'follow') {
+      console.log(`New user followed bot: ${userId}`);
+      try {
+          // 獲取用戶資料並初始化
+          let user = { id: userId, name: '匿名使用者', points: 0, role: 'student', history: [] };
+          await saveUser(user); // 保存新用戶資料到資料庫
+          const profile = await client.getProfile(userId);
+          user.name = profile.displayName || '匿名使用者';
+          await saveUser(user);
+          await reply(replyToken, `哈囉 ${user.name}！歡迎來到九容瑜伽小助手！\n\n我是您的專屬瑜伽小助手，您可以透過下方的選單預約課程、查詢點數等。點數儲值請聯絡老師。`, studentMenu);
+      } catch (e) {
+          console.error(`❌ 處理追蹤事件失敗 for ${userId}:`, e.message);
+          // 即使失敗，也嘗試給一個預設回應
+          await reply(replyToken, `哈囉！歡迎來到九容瑜伽小助手！\n\n我是您的專屬瑜伽小助手，您可以透過下方的選單預約課程、查詢點數等。點數儲值請聯絡老師。`, studentMenu).catch(e => console.error(`❌ 追蹤事件預設回覆失敗:`, e.message));
+      }
+      return;
+  } else if (event.type === 'unfollow') {
+      console.log(`User unfollowed bot: ${userId}`);
+      // 可選：從資料庫中刪除用戶資料或標記為不活躍
+      // deleteUser(userId); // 您可以實作一個 deleteUser 函式
+      return;
+  } else if (event.type === 'join' || event.type === 'leave') {
+      // 忽略群組加入或離開事件
+      console.log(`Ignored event: ${event.type}`);
+      return;
+  }
+  else {
+      console.log(`Received other event (ignored): ${JSON.stringify(event)} from user: ${userId}`);
       // 忽略除 message 和 postback 之外的所有事件，避免 400 錯誤
       // 對於這些事件，也不回覆，讓 LINE 認為沒有被處理
       return;
   }
 
-  // --- 用戶資料初始化與更新 ---
-  // 嘗試從資料庫讀取用戶資料
+  // --- 用戶資料初始化與更新 (現在只針對 message 和 postback 事件執行) ---
   let user = await getUser(userId);
   if (!user) {
-    // 如果用戶不存在，則初始化為新用戶
+    // 如果用戶不存在（通常只會在 `follow` 事件後發生），則初始化為新用戶
+    // 但為確保健壯性，這裡再次檢查並初始化
     user = { id: userId, name: '匿名使用者', points: 0, role: 'student', history: [] };
-    console.log(`ℹ️ 新用戶加入: ${userId}`);
+    console.log(`ℹ️ 新用戶（經由 message/postback 檢測）加入: ${userId}`);
     await saveUser(user); // 保存新用戶資料到資料庫
   }
 
   // 嘗試獲取用戶的顯示名稱並更新 (只在用戶名為預設值時才更新)
-  try {
-    const profile = await client.getProfile(userId);
-    // 如果用戶名為 '匿名使用者' 或尚未設定，則更新
-    if (user.name === '匿名使用者' || !user.name) { // 檢查是否是預設值或null/undefined
-      user.name = profile.displayName || '匿名使用者'; // 使用實際名稱，如果無效則為匿名使用者
-      await saveUser(user); // 更新用戶名到資料庫
+  // 如果之前在 follow 事件中已處理，這裡不會重複執行
+  if (user.name === '匿名使用者' || !user.name) {
+    try {
+      const profile = await client.getProfile(userId);
+      user.name = profile.displayName || '匿名使用者';
+      await saveUser(user);
       console.log(`✅ 用戶 ${userId} 的名稱已更新為: ${user.name}`);
-    }
-  } catch (e) {
-    console.error(`❌ 取得用戶資料失敗 for ${userId}:`, e.message);
-    // 如果獲取失敗，且用戶名仍是預設值，則確保它被設定為匿名使用者
-    if (!user.name) {
-        user.name = '匿名使用者';
-        await saveUser(user); // 確保保存
+    } catch (e) {
+      console.error(`❌ 取得用戶資料失敗 for ${userId}:`, e.message);
     }
   }
 
@@ -1270,15 +1298,8 @@ async function handleEvent(event) {
       }
       return; // Postback 處理完畢，直接返回
     }
+    // 如果有其他 Postback 處理，放在這裡
   }
-
-  // 如果不是文字訊息，或者訊息類型不能處理，直接返回，不進行後續處理
-  // 這一部分在上面針對 event.type !== 'message' || event.message.type !== 'text' 已經處理了
-  // 在 `handleEvent` 開頭已經做了相關判斷和回覆，這裡可以移除重複判斷
-  // if (event.type !== 'message' || event.message.type !== 'text') {
-  //     console.log(`DEBUG: Ignoring non-text message or non-message event.`);
-  //     return;
-  // }
 
   // 確保是文字訊息，因為非文字訊息已經在上方被處理或忽略
   if (event.type !== 'message' || event.message.type !== 'text') {
@@ -1710,7 +1731,39 @@ async function checkAndSendReminders() {
 //           LINE Webhook 與伺服器啟動
 // =====================================
 
-app.post('/webhook', line.middleware(config), (req, res) => {
+// 使用 bodyParser.json() 來解析 JSON 請求主體，並將原始請求體儲存到 req.rawBody 以供簽名驗證
+app.use(express.json({
+  verify: (req, res, buf) => {
+    // 只有在 LINE Webhook 請求時才儲存原始請求體
+    if (req.headers['x-line-signature']) {
+      req.rawBody = buf;
+    }
+  }
+}));
+
+app.post('/webhook', (req, res) => {
+  // 手動驗證 LINE 簽名 (LINE SDK 的 middleware 內部會做，但為了防止潛在的 400 錯誤，這裡增加一層保護性檢查)
+  const signature = req.headers['x-line-signature'];
+  const channelSecret = config.channelSecret; // 從 config 獲取 Channel Secret
+
+  // 只有在 Webhook 請求有簽名時才進行驗證
+  if (signature && channelSecret) {
+    const hash = crypto.createHmac('sha256', channelSecret)
+                       .update(req.rawBody)
+                       .digest('base64');
+
+    if (hash !== signature) {
+      console.error('❌ LINE Webhook 簽名驗證失敗。');
+      return res.status(401).send('Unauthorized: Invalid signature'); // 401 Unauthorized 更合適
+    }
+  } else {
+    console.warn('⚠️ LINE Webhook 請求缺少簽名或 Channel Secret 未設定，跳過簽名驗證。');
+    // 如果沒有簽名，可能是非 LINE 請求，或者您的設定有問題
+    // 這裡可以選擇返回 400 或 401，或者繼續處理（如果確定是非生產環境）
+    // 在生產環境中，強烈建議返回錯誤
+    // return res.status(400).send('Bad Request: Missing LINE signature or Channel Secret.');
+  }
+
   // 將每個事件異步處理，但使用 Promise.all 確保所有事件處理完成才回應
   Promise.all(req.body.events.map(handleEvent))
     .then(() => res.status(200).send('OK'))
@@ -1720,10 +1773,12 @@ app.post('/webhook', line.middleware(config), (req, res) => {
       // 否則發送 500 表示伺服器內部錯誤
       // 捕獲錯誤並根據錯誤類型返回不同狀態碼
       let statusCode = 500;
-      if (err.statusCode) { // LINE SDK 錯誤可能會包含 statusCode
+      if (err instanceof line.errors.HTTPError && err.statusCode) { // LINE SDK 錯誤
           statusCode = err.statusCode;
       } else if (err.name === 'SyntaxError') { // 例如 JSON 解析錯誤
-          statusCode = 400; 
+          statusCode = 400;
+      } else if (err.message.includes('Invalid signature') || err.message.includes('Unauthorized')) {
+          statusCode = 401; // 如果是簽名錯誤，返回 401
       }
       res.status(statusCode).end();
     });
@@ -1748,15 +1803,17 @@ app.listen(PORT, async () => {
     console.log(`⚡ 啟用 Keep-alive 功能，將每 ${PING_INTERVAL_MS / 1000 / 60} 分鐘 Ping 自身。`);
     // 首次 Ping
     try {
-        // 直接使用全域的 fetch
-        await fetch(SELF_URL); 
+        // 使用 Node.js 內建的 fetch API (確保 Node.js 版本 >= 18)
+        // 這裡不需要引入 node-fetch，因為環境已經聲明支持
+        // 如果您的 Render 環境 Node.js 版本低於 18，請安裝並引入 node-fetch
+        await fetch(SELF_URL);
         console.log(`Keep-alive initial ping to ${SELF_URL} successful.`);
     } catch (err) {
         console.error('❌ Keep-alive initial ping 失敗:', err.message);
     }
     // 定時 Ping
     setInterval(() => {
-        // 直接使用全域的 fetch
+        // 使用 Node.js 內建的 fetch API
         fetch(SELF_URL)
             .then(res => {
                 if (!res.ok) { // 如果響應不是 2xx 狀態碼
@@ -1771,3 +1828,4 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定或使用預設值，Keep-alive 功能可能無法防止服務休眠。請在 .env 檔案中設定您的部署網址。');
   }
 });
+
