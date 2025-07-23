@@ -475,7 +475,7 @@ async function handleTeacherCommands(event, userId) {
       type: 'action',
       action: {
         type: 'postback', // 使用 postback 可以傳遞更多資料，而不顯示在聊天內容中
-        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20), // 限制標籤長度
+        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20), // 限制標籤長度，不再顯示 ID
         data: `cancel_course_confirm_${c.id}`, // 傳遞課程 ID，並加上 `_confirm_` 標識，用於區分確認流程
       },
     }));
@@ -501,7 +501,7 @@ async function handleTeacherCommands(event, userId) {
 
     let replyMessage = '📋 已建立課程列表：\n\n';
     upcomingCourses.forEach(c => {
-      replyMessage += `🆔 ${c.id}\n`;
+      // 課程 ID 不再顯示給老師
       replyMessage += `🗓 ${formatDateTime(c.time)}｜${c.title}\n`;
       replyMessage += `💰 扣點：${c.pointsCost} 點｜👥 上限 ${c.capacity}\n`;
       replyMessage += `✅ 已報 ${c.students.length}｜🕓 候補 ${c.waiting.length}\n\n`;
@@ -834,8 +834,8 @@ async function handleStudentCommands(event, userId) {
       type: 'action',
       action: {
         type: 'message', // 使用 message 讓用戶看到自己點擊了什麼
-        label: `${formatDateTime(c.time)} ${c.title} (${c.pointsCost}點)`.slice(0, 20), // 限制標籤長度
-        text: `我要預約 ${c.id}`, // 發送一個特殊指令
+        label: `${formatDateTime(c.time)} ${c.title} (${c.pointsCost}點)`.slice(0, 20), // 限制標籤長度，不再顯示 ID
+        text: `我要預約 ${c.id}`, // 發送一個特殊指令，內部仍使用 ID
       },
     }));
     quickReplyItems.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
@@ -944,8 +944,8 @@ async function handleStudentCommands(event, userId) {
       type: 'action',
       action: {
         type: 'message',
-        label: `${formatDateTime(c.time)} ${c.title} (退${c.pointsCost}點)`.slice(0, 20),
-        text: `我要取消預約 ${c.id}`, // 發送一個特殊指令
+        label: `${formatDateTime(c.time)} ${c.title} (退${c.pointsCost}點)`.slice(0, 20), // 不顯示 ID
+        text: `我要取消預約 ${c.id}`, // 發送一個特殊指令，內部仍使用 ID
       },
     }));
     quickReplyItems.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
@@ -1049,8 +1049,8 @@ async function handleStudentCommands(event, userId) {
       type: 'action',
       action: {
         type: 'message',
-        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20),
-        text: `我要取消候補 ${c.id}`, // 發送一個特殊指令
+        label: `${formatDateTime(c.time)} ${c.title}`.slice(0, 20), // 不顯示 ID
+        text: `我要取消候補 ${c.id}`, // 發送一個特殊指令，內部仍使用 ID
       },
     }));
     quickReplyItems.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
@@ -1263,7 +1263,7 @@ async function handleEvent(event) {
           const today = new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
           const todayWeekdayUTC = today.getUTCDay(); // 今天的 UTC 星期
 
-          let dayDiff = (targetWeekdayIndex - todayWeekdayUTC + 7) % 7; // 計算距離目標星期的天數
+          let dayDiff = (targetWeekdayIndex - todayWeekdayUTC + 7) % 7;
           
           // 考慮時區和時間，如果目標時間已經過去，則跳到下一個星期
           const currentTaipeiTime = new Date(now.getTime() + taipeiOffsetMs); // 當前台北時間
@@ -1294,7 +1294,8 @@ async function handleEvent(event) {
           };
           await saveCourse(newCourse); // 儲存到資料庫
           delete pendingCourseCreation[userId]; // 清除流程狀態
-          return reply(replyToken, `課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoTime)}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點\n課程 ID: ${newId}`, teacherCourseSubMenu);
+          // 成功訊息中不再顯示課程 ID
+          return reply(replyToken, `課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoTime)}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點`, teacherCourseSubMenu);
         } else if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE) {
           delete pendingCourseCreation[userId];
           return reply(replyToken, '已取消新增課程。', teacherCourseSubMenu);
@@ -1560,7 +1561,7 @@ async function checkAndSendReminders() {
 
     // 如果課程在未來 1 小時內開始，且尚未發送提醒
     if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && !sentReminders[id]) {
-      console.log(`🔔 準備發送課程提醒：${course.title} (ID: ${id})`);
+      console.log(`🔔 準備發送課程提醒：${course.title}`); // 移除 ID 顯示
       for (const studentId of course.students) {
         const student = dbUsersMap.get(studentId); // 從 Map 中獲取學生資料
         if (student) {
