@@ -1845,4 +1845,4 @@ app.listen(PORT, async () => {
   } else {
     console.warn('⚠️ SELF_URL 未設定或使用預設值，Keep-alive 功能可能無法防止服務休眠。請在 .env 檔案中設定您的部署網址。');
   }
-}
+});
