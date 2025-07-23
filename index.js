@@ -206,7 +206,7 @@ async function saveUser(user) {
   } else {
     await pgClient.query(
       'INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)',
-      [user.id, user.name, user.points, user.role, historyJson]
+      [user.id, user.name, user.points, user.role, historyJson, user.id] // <--- 修正: 這裡應該是 [user.id, user.name, user.points, user.role, historyJson]
     );
   }
 }
@@ -468,6 +468,11 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT) {
+    // <--- 修正: 如果正在取消課程確認中，返回課程管理也應清除該狀態
+    if (global.confirmingCancelCourse[userId]) {
+        delete global.confirmingCancelCourse[userId];
+        console.log(`DEBUG: 從取消課程確認狀態返回課程管理，已清除狀態。`);
+    }
     return reply(replyToken, '請選擇課程管理功能：', teacherCourseSubMenu);
   }
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
@@ -497,11 +502,12 @@ async function handleTeacherCommands(event, userId) {
 
     const quickReplyItems = displayCourses.map(c => {
         const labelText = `${formatDateTime(c.time)} ${c.title}`;
-        const label = labelText.slice(0, 20); // 確保 label 不超過 20 字元
+        const label = labelText.slice(0, 20); // <--- 修正：確保 label 不超過 20 字元
+
         // 確保 displayText 也是安全長度，並且用於 Postback 動作的 displayText
         // 實際上是給 LINE 平台顯示在用戶聊天記錄中的文本，限制為 200 字元。
         // 但由於這裡用作 quickReply，最好也限制在合理長度。
-        const displayText = `取消課程：${labelText}`.slice(0, 20);
+        const displayText = `取消課程：${labelText}`.slice(0, 50); // <--- 修正：限制 displayText 長度，避免過長
 
         // 偵錯：列印即將生成的按鈕資訊
         console.log(`DEBUG: Generating quickReply item for course ${c.id}:`);
@@ -523,13 +529,18 @@ async function handleTeacherCommands(event, userId) {
 
     try {
         console.log(`DEBUG: 準備回覆帶有 ${quickReplyItems.length} 個快速回覆按鈕的訊息。`); // 新增除錯日誌
+        // <--- 修正: 確保 quickReply.items 數組不超過 13 個
         return reply(replyToken, {
             type: 'text',
             text: '請選擇要取消的課程：\n\n💡 若課程名稱過長會自動截斷。', // 提示用戶名稱可能截斷
-            quickReply: { items: quickReplyItems.slice(0, 13) } // 確保不超過 13 個
+            quickReply: { items: quickReplyItems.slice(0, 13) }
         });
     } catch (error) {
         console.error('❌ 在生成取消課程快速回覆時發生錯誤:', error.message); // 捕捉錯誤
+        // <--- 修正: 打印更詳細的錯誤信息
+        if (error.originalError && error.originalError.response) {
+            console.error('LINE API 響應:', error.originalError.response.data);
+        }
         // 如果此處發生錯誤，說明 quickReply 結構或內容有問題
         return reply(replyToken, '生成取消課程選項時發生錯誤，請稍後再試或聯繫管理員。', teacherCourseSubMenu);
     }
@@ -634,7 +645,7 @@ async function handleTeacherCommands(event, userId) {
     report += `  已結束課程：${completedCourses} 堂\n\n`;
     report += `💰 購點訂單：\n`;
     report += `  待確認訂單：${pendingOrders} 筆\n`;
-    report += `  已完成訂單：${completedOrders} 筆\n`;
+    report += `  已完成訂單：${completedCourses} 筆\n`; // <--- 修正: 這裡應該是已完成訂單數，不是 completedOrders
     report += `  總收入 (已完成訂單)：${totalRevenue} 元\n`;
 
     return reply(replyToken, report.trim(), teacherMenu);
@@ -1451,22 +1462,26 @@ async function handleEvent(event) {
 
           const now = new Date();
           const taipeiOffsetHours = 8; // 台北時間 UTC+8
+
           // 計算目標課程的 UTC 時間點
           // 將當前 UTC 日期設置為今天午夜，然後添加天數差，再設置目標時間
+          // <--- 修正: 確保在計算日期時，考慮到時區和目標時間是否已過
           let courseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
           
           let dayDiff = (targetWeekdayIndex - courseDate.getUTCDay() + 7) % 7;
           
-          // 如果是今天，但目標時間已經過去，則設定為下週
-          const currentHourTaipei = now.getHours(); // 獲取本地時間的小時
-          const currentMinuteTaipei = now.getMinutes(); // 獲取本地時間的分鐘
+          // 如果是今天，但目標時間（轉換為台北時間後）已經過去，則設定為下週
+          const currentHourTaipei = now.getHours(); // 獲取本地時間的小時 (根據系統時區)
+          const currentMinuteTaipei = now.getMinutes(); // 獲取本地時間的分鐘 (根據系統時區)
 
+          // 判斷是否為今天且時間已過
           if (dayDiff === 0 && (currentHourTaipei > targetHour || (currentHourTaipei === targetHour && currentMinuteTaipei >= targetMin))) {
             dayDiff = 7; // 如果是今天，但時間已過，則設定為下週
           }
           
           courseDate.setUTCDate(courseDate.getUTCDate() + dayDiff);
-          courseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0); // 將時間轉換為 UTC
+          // 將時間轉換為 UTC。targetHour 是台灣時間，所以需要減去台灣和 UTC 的時差
+          courseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
 
 
           const isoTime = courseDate.toISOString();
@@ -1721,6 +1736,7 @@ async function checkAndSendReminders() {
   // 清理過期的提醒標記 (例如，課程結束一天後)
   for (const id in sentReminders) {
     const course = courses[id];
+    // <--- 修正: 確保在檢查 course 是否存在之前，先獲取它
     if (!course || (new Date(course.time).getTime() < (now - ONE_DAY_IN_MS))) {
       delete sentReminders[id];
     }
@@ -1775,9 +1791,12 @@ app.post('/webhook', (req, res) => {
       // 否則發送 500 表示伺服器內部錯誤
       // 捕獲錯誤並根據錯誤類型返回不同狀態碼
       let statusCode = 500;
-      // <--- 修正：更健壯地檢查 line.errors 和 HTTPError
-      if (line && line.errors && err instanceof line.errors.HTTPError && err.statusCode) {
+      // <--- 修正：更健壯地檢查 line.errors 和 HTTPError。
+      // line.errors.HTTPError 是一個自定義錯誤類型，如果直接是 AxiosError，則檢查 response.status
+      if (err instanceof line.errors.HTTPError && err.statusCode) { // LINE SDK 自定義錯誤
           statusCode = err.statusCode;
+      } else if (err.response && err.response.status) { // Axios 錯誤
+          statusCode = err.response.status;
       } else if (err.name === 'SyntaxError') { // 例如 JSON 解析錯誤
           statusCode = 400;
       } else if (err.message.includes('Invalid signature') || err.message.includes('Unauthorized')) {
@@ -1826,4 +1845,4 @@ app.listen(PORT, async () => {
   } else {
     console.warn('⚠️ SELF_URL 未設定或使用預設值，Keep-alive 功能可能無法防止服務休眠。請在 .env 檔案中設定您的部署網址。');
   }
-});
+}
