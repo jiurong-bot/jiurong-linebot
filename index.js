@@ -10,6 +10,8 @@ require('dotenv').config(); // 載入 .env 檔案中的環境變數 (Render 會�
 const crypto = require('crypto'); // 用於手動驗證 LINE 簽名，增強健壯性
 const fetch = require('node-fetch'); // <--- 修正：明確引入 node-fetch，以確保 fetch 函式可用
 
+// ... (其他常數、資料庫設定等保持不變) ...
+
 // =====================================
 //               應用程式常數
 // =====================================
@@ -204,9 +206,10 @@ async function saveUser(user) {
       [user.name, user.points, user.role, historyJson, user.id]
     );
   } else {
+    // 修正: INSERT 語句的參數數量應與 VALUES 中的佔位符數量匹配
     await pgClient.query(
       'INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)',
-      [user.id, user.name, user.points, user.role, historyJson, user.id] // <--- 修正: 這裡應該是 [user.id, user.name, user.points, user.role, historyJson]
+      [user.id, user.name, user.points, user.role, historyJson]
     );
   }
 }
@@ -341,6 +344,7 @@ async function reply(replyToken, content, menu = null) {
   }
 
   // 僅對第一個文字訊息應用 quickReply
+  // 修正：確保 quickReply.items 數組不超過 13 個，這是 LINE 的限制
   if (menu && messages.length > 0 && messages[0].type === 'text') {
     messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
   }
@@ -498,16 +502,16 @@ async function handleTeacherCommands(event, userId) {
     }
 
     // 限制顯示的課程數量，避免快速回覆按鈕過多
-    const displayCourses = upcomingCourses.slice(0, 10); // 只顯示最近的 10 門課程
+    // LINE Quick Reply 最多 13 個項目
+    const displayCourses = upcomingCourses.slice(0, 12); // 為「返回課程管理」預留一個位置
 
     const quickReplyItems = displayCourses.map(c => {
         const labelText = `${formatDateTime(c.time)} ${c.title}`;
-        const label = labelText.slice(0, 20); // <--- 修正：確保 label 不超過 20 字元
+        const label = labelText.slice(0, 20); // 確保 label 不超過 20 字元
 
-        // 確保 displayText 也是安全長度，並且用於 Postback 動作的 displayText
-        // 實際上是給 LINE 平台顯示在用戶聊天記錄中的文本，限制為 200 字元。
-        // 但由於這裡用作 quickReply，最好也限制在合理長度。
-        const displayText = `取消課程：${labelText}`.slice(0, 50); // <--- 修正：限制 displayText 長度，避免過長
+        // `displayText` 限制為 200 字元，但在快速回覆中，過長可能導致問題
+        // 建議這裡也限制在 50-100 字元以內
+        const displayText = `取消課程：${labelText}`.slice(0, 100); // 修正：限制 displayText 長度
 
         // 偵錯：列印即將生成的按鈕資訊
         console.log(`DEBUG: Generating quickReply item for course ${c.id}:`);
@@ -521,7 +525,7 @@ async function handleTeacherCommands(event, userId) {
                 type: 'postback',
                 label: label,
                 data: `cancel_course_confirm_${c.id}`,
-                displayText: displayText
+                displayText: displayText // Postback action 的 displayText 建議簡短
             },
         };
     });
@@ -529,17 +533,21 @@ async function handleTeacherCommands(event, userId) {
 
     try {
         console.log(`DEBUG: 準備回覆帶有 ${quickReplyItems.length} 個快速回覆按鈕的訊息。`); // 新增除錯日誌
-        // <--- 修正: 確保 quickReply.items 數組不超過 13 個
+        // 修正: 確保 quickReply.items 數組不超過 13 個，這一點已經在 reply 函式中處理，
+        // 但這裡明確 slice(0, 13) 可以在生成前就避免過多。
         return reply(replyToken, {
             type: 'text',
             text: '請選擇要取消的課程：\n\n💡 若課程名稱過長會自動截斷。', // 提示用戶名稱可能截斷
-            quickReply: { items: quickReplyItems.slice(0, 13) }
+            quickReply: { items: quickReplyItems } // 这里不再 slice，因为前面的 displayCourses 和 push 已经控制了总数
         });
     } catch (error) {
         console.error('❌ 在生成取消課程快速回覆時發生錯誤:', error.message); // 捕捉錯誤
-        // <--- 修正: 打印更詳細的錯誤信息
+        // 修正: 打印更詳細的錯誤信息
         if (error.originalError && error.originalError.response) {
             console.error('LINE API 響應:', error.originalError.response.data);
+        } else if (error.response && error.response.data) { // 捕獲 axios 錯誤
+            console.error('LINE API 響應數據:', error.response.data);
+            console.error('LINE API 響應狀態:', error.response.status);
         }
         // 如果此處發生錯誤，說明 quickReply 結構或內容有問題
         return reply(replyToken, '生成取消課程選項時發生錯誤，請稍後再試或聯繫管理員。', teacherCourseSubMenu);
@@ -630,7 +638,7 @@ async function handleTeacherCommands(event, userId) {
     const ordersRes = await pgClient.query(`SELECT * FROM orders`);
     const allOrders = ordersRes.rows;
     const pendingOrders = allOrders.filter(o => o.status === 'pending_confirmation').length;
-    const completedOrders = allOrders.filter(o => o.status === 'completed').length;
+    const completedOrdersCount = allOrders.filter(o => o.status === 'completed').length; // 修正變數名稱
     const totalRevenue = allOrders
       .filter(o => o.status === 'completed')
       .reduce((sum, order) => sum + order.amount, 0);
@@ -645,7 +653,7 @@ async function handleTeacherCommands(event, userId) {
     report += `  已結束課程：${completedCourses} 堂\n\n`;
     report += `💰 購點訂單：\n`;
     report += `  待確認訂單：${pendingOrders} 筆\n`;
-    report += `  已完成訂單：${completedCourses} 筆\n`; // <--- 修正: 這裡應該是已完成訂單數，不是 completedOrders
+    report += `  已完成訂單：${completedOrdersCount} 筆\n`; // 使用修正後的變數名稱
     report += `  總收入 (已完成訂單)：${totalRevenue} 元\n`;
 
     return reply(replyToken, report.trim(), teacherMenu);
@@ -671,7 +679,10 @@ async function handleTeacherCommands(event, userId) {
 
     let replyMessage = '以下是待確認的購點訂單：\n\n';
 
-    pendingConfirmationOrders.forEach(order => {
+    // 為了避免快速回覆按鈕過多，限制顯示的訂單數量
+    const displayOrders = pendingConfirmationOrders.slice(0, 6); // 每筆訂單兩個按鈕，所以最多顯示 6 筆，總計 12 個按鈕
+
+    displayOrders.forEach(order => {
       replyMessage += `--- 訂單 #${order.orderId} ---\n`;
       replyMessage += `學員名稱: ${order.userName}\n`;
       replyMessage += `學員ID: ${order.userId.substring(0, 8)}...\n`; // 顯示部分 ID
@@ -683,7 +694,7 @@ async function handleTeacherCommands(event, userId) {
     });
 
     // 為每筆訂單生成確認和取消按鈕
-    const quickReplyItems = pendingConfirmationOrders.flatMap(order => [
+    const quickReplyItems = displayOrders.flatMap(order => [
       { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`.slice(0, 20), data: `confirm_order_${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
       { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`.slice(0, 20), data: `cancel_order_${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
     ]);
@@ -692,7 +703,7 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, {
       type: 'text',
       text: replyMessage.trim(),
-      quickReply: { items: quickReplyItems.slice(0, 13) } // 最多 13 個
+      quickReply: { items: quickReplyItems } // 这里不再 slice，因为前面的 displayOrders 已经控制了总数
     });
   }
 
@@ -886,7 +897,10 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, '目前沒有可預約的課程。', studentMenu);
     }
 
-    const quickReplyItems = upcoming.map(c => ({
+    // 修正：限制快速回覆的數量
+    const displayCourses = upcoming.slice(0, 12); // 为「返回主选单」预留一个位置
+
+    const quickReplyItems = displayCourses.map(c => ({
       type: 'action',
       action: {
         type: 'message', // 使用 message 讓用戶看到自己點擊了什麼
@@ -899,7 +913,7 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, {
       type: 'text',
       text: '以下是目前可以預約的課程，點擊即可預約並扣除對應點數。\n\n💡 請注意：課程開始前 8 小時不可退課。',
-      quickReply: { items: quickReplyItems.slice(0, 13) }, // 最多 13 個
+      quickReply: { items: quickReplyItems }, // 这里不再 slice，因为前面的 displayCourses 已经控制了总数
     });
   }
 
@@ -998,7 +1012,10 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, '你目前沒有可取消的預約課程。', studentMenu);
     }
 
-    const quickReplyItems = enrolled.map(c => ({
+    // 修正：限制快速回覆的數量
+    const displayCourses = enrolled.slice(0, 12); // 为「返回主选单」预留一个位置
+
+    const quickReplyItems = displayCourses.map(c => ({
       type: 'action',
       action: {
         type: 'message',
@@ -1011,7 +1028,7 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, {
       type: 'text',
       text: '請選擇要取消的預約課程：',
-      quickReply: { items: quickReplyItems.slice(0, 13) },
+      quickReply: { items: quickReplyItems }, // 这里不再 slice，因为前面的 displayCourses 已经控制了总数
     });
   }
 
@@ -1104,7 +1121,10 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, '你目前沒有可取消的候補課程。', studentMenu);
     }
 
-    const quickReplyItems = waitingCourses.map(c => ({
+    // 修正：限制快速回覆的數量
+    const displayCourses = waitingCourses.slice(0, 12); // 为「返回主选单」预留一个位置
+
+    const quickReplyItems = displayCourses.map(c => ({
       type: 'action',
       action: {
         type: 'message',
@@ -1117,7 +1137,7 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, {
       type: 'text',
       text: '請選擇要取消候補的課程：',
-      quickReply: { items: quickReplyItems.slice(0, 13) },
+      quickReply: { items: quickReplyItems }, // 这里不再 slice，因为前面的 displayCourses 已经控制了总数
     });
   }
 
@@ -1168,7 +1188,9 @@ async function handleEvent(event) {
           // 但在處理邏輯中，我們會優先處理文字訊息和 Postback
           try {
               if (event.message.type === 'sticker') {
-                  await client.replyMessage(replyToken, { type: 'sticker', packageId: '446', stickerId: '1988' }); // 回覆一個可愛的貼圖
+                  // LINE貼圖的 packageId 和 stickerId 是固定的，但確保存在的ID
+                  // 例如：packageId: '1', stickerId: '1' 是一些通用貼圖
+                  await client.replyMessage(replyToken, { type: 'sticker', packageId: '1', stickerId: '1' }); // 回覆一個通用貼圖
               } else if (event.message.type === 'image' || event.message.type === 'video' || event.message.type === 'audio') {
                   await reply(replyToken, '抱歉，目前暫時不支援圖片、影片或語音訊息，請使用文字訊息或點擊選單操作。');
               } else {
@@ -1176,6 +1198,10 @@ async function handleEvent(event) {
               }
           } catch (replyError) {
               console.error(`❌ 回覆非文字訊息失敗: ${replyError.message}`);
+              // 記錄原始錯誤的詳細資訊
+              if (replyError.originalError && replyError.originalError.response) {
+                  console.error('LINE API 響應 (回覆非文字訊息):', replyError.originalError.response.data);
+              }
           }
           return; // 處理完非文字訊息後直接返回，不再進入後續邏輯
       }
@@ -1785,13 +1811,13 @@ app.post('/webhook', (req, res) => {
     .then(() => res.status(200).send('OK'))
     .catch((err) => {
       console.error('❌ Webhook 處理失敗:', err.message);
-      console.error('完整錯誤物件:', err); // <--- 修正：打印完整錯誤，以便更詳細的調試
+      console.error('完整錯誤物件:', err); // 修正：打印完整錯誤，以便更詳細的調試
 
       // 對於 400 錯誤，雖然我們盡力在內部處理了，但如果 LINE SDK 仍然返回，則需要發送 400
       // 否則發送 500 表示伺服器內部錯誤
       // 捕獲錯誤並根據錯誤類型返回不同狀態碼
       let statusCode = 500;
-      // <--- 修正：更健壯地檢查 line.errors 和 HTTPError。
+      // 修正：更健壯地檢查 line.errors 和 HTTPError。
       // line.errors.HTTPError 是一個自定義錯誤類型，如果直接是 AxiosError，則檢查 response.status
       if (err instanceof line.errors.HTTPError && err.statusCode) { // LINE SDK 自定義錯誤
           statusCode = err.statusCode;
