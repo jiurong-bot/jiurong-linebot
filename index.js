@@ -1,4 +1,4 @@
-// index.js - V4.4.2e (Add more debug logs in saveUser)
+// index.js - V4.4.2f (Add more detailed debug logs in handleTeacherCommands for manual point adjustment)
 
 // =====================================
 //                 模組載入
@@ -9,7 +9,7 @@ const line = require('@line/bot-sdk');
 require('dotenv').config();
 const crypto = require('crypto');
 // 修正 fetch 的引入方式以解決 TypeError: fetch is not a function
-const { default: fetch } = require('node-fetch'); // 針對 node-fetch v3+ 的引入方式
+const { default: fetch } = require('node-fetch');
 
 // =====================================
 //               應用程式常數
@@ -130,17 +130,16 @@ async function getUser(userId) {
   const res = await pgClient.query('SELECT * FROM users WHERE id = $1', [userId]);
   const userData = res.rows[0];
   if (userData && typeof userData.history === 'string') {
-    try { // 加上 try-catch 確保 JSON 解析錯誤不會中斷
+    try {
       userData.history = JSON.parse(userData.history);
     } catch (e) {
       console.error(`❌ 解析用戶 ${userId} 歷史記錄 JSON 失敗:`, e.message);
-      userData.history = []; // 設置為空陣列以避免後續錯誤
+      userData.history = [];
     }
   }
   return userData;
 }
 
-// **請將此 saveUser 函式替換掉您現有的**
 async function saveUser(user) {
   try {
     const existingUser = await getUser(user.id);
@@ -180,9 +179,9 @@ async function saveUser(user) {
       stack: err.stack,
       userId: user.id,
       userName: user.name,
-      pointsBeforeSave: user.points // 嘗試保存時的點數
+      pointsBeforeSave: user.points
     });
-    throw err; // 重新拋出錯誤以便外部捕獲
+    throw err;
   }
 }
 
@@ -218,21 +217,19 @@ async function getAllOrders() {
 }
 
 async function saveOrder(order) {
-  try { // 增加 try-catch 區塊來捕獲潛在錯誤
+  try {
     const existingOrder = await pgClient.query('SELECT order_id FROM orders WHERE order_id = $1', [order.orderId]);
     if (existingOrder.rows.length > 0) {
       await pgClient.query('UPDATE orders SET user_id = $1, user_name = $2, points = $3, amount = $4, last_5_digits = $5, status = $6, timestamp = $7 WHERE order_id = $8', [order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp, order.orderId]);
     } else {
-      // 修正 INSERT 語句，確保參數數量匹配
       await pgClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)', [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]);
     }
   } catch (err) {
     console.error('❌ saveOrder 函式錯誤:', err.message, 'Order ID:', order.orderId);
-    throw err; // 重新拋出錯誤以便外部捕獲
+    throw err;
   }
 }
 
-// 修正後的 deleteOrder 函式
 async function deleteOrder(orderId) {
   await pgClient.query('DELETE FROM orders WHERE order_id = $1', [orderId]);
 }
@@ -323,7 +320,7 @@ async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
 
-  const courses = await getAllCourses(); // 保持這個在前面
+  const courses = await getAllCourses();
 
   // 先檢查是否為特定指令，如果是，則清除 pendingManualAdjust
   if (Object.values(COMMANDS.TEACHER).includes(text) || Object.values(COMMANDS.STUDENT).includes(text) || text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
@@ -357,6 +354,10 @@ async function handleTeacherCommands(event, userId) {
           delete pendingManualAdjust[userId];
           return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
       }
+
+      // ==== 新增的 DEBUG 日誌點 ====
+      console.log(`DEBUG: 手動調整點數 - 找到學員 ${foundUser.name} (ID: ${foundUser.id})，原始點數: ${foundUser.points}`); 
+      
       const operation = amount > 0 ? '加點' : '扣點';
       const absAmount = Math.abs(amount);
       if (operation === '扣點' && foundUser.points < absAmount) {
@@ -364,6 +365,10 @@ async function handleTeacherCommands(event, userId) {
           return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
       }
       foundUser.points += amount;
+
+      console.log(`DEBUG: 手動調整點數 - 學員 ${foundUser.name} 點數計算後: ${foundUser.points}`); 
+      // ==== 結束新增的 DEBUG 日誌點 ====
+
       if (!Array.isArray(foundUser.history)) foundUser.history = [];
       foundUser.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
       await saveUser(foundUser);
@@ -396,9 +401,9 @@ async function handleTeacherCommands(event, userId) {
           justifyContent: 'center', alignItems: 'center', height: '150px'
         },
         action: {
-          type: 'message', // 這裡的 type 是 message
+          type: 'message',
           label: '查看待確認訂單',
-          text: COMMANDS.TEACHER.PENDING_ORDERS // 這會發送 COMMANDS.TEACHER.PENDING_ORDERS 文字
+          text: COMMANDS.TEACHER.PENDING_ORDERS
         },
         styles: {
           body: { separator: false, separatorColor: '#EEEEEE' }
@@ -560,7 +565,7 @@ async function handleTeacherCommands(event, userId) {
     } else {
       studentInfo += `無歷史記錄。\n`;
     }
-    return reply(replyToken, studentInfo, teacherMenu);
+    return reply(replyToken, studentInfo.trim(), teacherMenu);
   }
 
   if (text === COMMANDS.TEACHER.REPORT) {
@@ -590,7 +595,7 @@ async function handleTeacherCommands(event, userId) {
     report += `💎 所有學員總點數：${totalPoints} 點\n\n`;
     report += `🗓️ 課程統計：\n`;
     report += `  總課程數：${totalCourses} 堂\n`;
-report += `  進行中/未開課：${upcomingCourses} 堂\n`;
+    report += `  進行中/未開課：${upcomingCourses} 堂\n`;
     report += `  已結束課程：${completedCourses} 堂\n\n`;
     report += `💰 購點訂單：\n`;
     report += `  待確認訂單：${pendingOrders} 筆\n`;
@@ -738,7 +743,7 @@ async function handleStudentCommands(event, userId) {
     const pendingOrder = ordersRes.rows[0];
 
     if (pendingOrder) {
-      await deleteOrder(pendingOrder.order_id); // 這裡會呼叫修正後的 deleteOrder 函式
+      await deleteOrder(pendingOrder.order_id);
       delete pendingPurchase[userId];
       return reply(replyToken, '已取消您的購點訂單。', studentMenu);
     }
@@ -1086,13 +1091,13 @@ async function handleStudentCommands(event, userId) {
     }
     await saveCourse(course);
     await saveUser(user);
-    return reply(replyToken, replyMessage, studentMenu);
+    return reply(replyToken, replyMessage.trim(), studentMenu);
   }
 
   if (text.startsWith('我要取消候補 ')) {
     const id = text.replace('我要取消候補 ', '').trim();
     const course = courses[id];
-    const now = Date.now();
+    const now = Date.Date();
 
     if (!course || !course.waiting?.includes(userId)) {
       return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
@@ -1514,7 +1519,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.2e`); // 更新版本號
+  console.log(`Bot 版本: V4.4.2f`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
@@ -1522,7 +1527,6 @@ app.listen(PORT, async () => {
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
     console.log(`⚡ 啟用 Keep-alive 功能，將每 ${PING_INTERVAL_MS / 1000 / 60} 分鐘 Ping 自身。`);
     setInterval(() => {
-        // 使用修正後的 fetch
         fetch(SELF_URL)
             .then(res => console.log(`Keep-alive response from ${SELF_URL}: ${res.status}`))
             .catch((err) => console.error('❌ Keep-alive ping 失敗:', err.message));
