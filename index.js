@@ -70,7 +70,7 @@ const COMMANDS = {
     COURSE_LIST: '@課程列表',
     SEARCH_STUDENT: '@查學員',
     REPORT: '@統計報表',
-    PENDING_ORDERS: '@待確認清單',
+    PENDING_ORDERS: '@待確認清單', // 這個指令會被 Flex Message 的 action 發送
     MANUAL_ADJUST_POINTS: '@手動調整點數',
     CANCEL_MANUAL_ADJUST: '@返回點數管理',
   },
@@ -275,54 +275,54 @@ async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
 
-  // BUG FIX: Moved pendingManualAdjust logic here from handleEvent
-  if (pendingManualAdjust[userId]) {
-    if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
-        delete pendingManualAdjust[userId];
-        return reply(replyToken, '已取消手動調整點數。', teacherMenu);
-    }
-    
-    // Check if the input is another command, which should cancel the pending state.
-    const isOtherCommand = Object.values(COMMANDS.TEACHER).includes(text) || Object.values(COMMANDS.STUDENT).includes(text);
-    if (!isOtherCommand) {
-        const parts = text.split(' ');
-        if (parts.length !== 2) {
-            return reply(replyToken, '指令格式錯誤。\n請輸入：學員姓名/ID [空格] 點數\n例如：王小明 5\n或輸入 @返回點數管理 取消。');
-        }
-        const targetIdentifier = parts[0];
-        const amount = parseInt(parts[1]);
-        if (isNaN(amount) || amount === 0) {
-            return reply(replyToken, '點數數量必須是非零整數。');
-        }
-        let foundUser = await getUser(targetIdentifier);
-        if (!foundUser) {
-            const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
-            if (res.rows.length > 0) foundUser = res.rows[0];
-        }
-        if (!foundUser) {
-            delete pendingManualAdjust[userId];
-            return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
-        }
-        const operation = amount > 0 ? '加點' : '扣點';
-        const absAmount = Math.abs(amount);
-        if (operation === '扣點' && foundUser.points < absAmount) {
-            delete pendingManualAdjust[userId];
-            return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
-        }
-        foundUser.points += amount;
-        if (!Array.isArray(foundUser.history)) foundUser.history = [];
-        foundUser.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
-        await saveUser(foundUser);
-        push(foundUser.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${foundUser.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
-        delete pendingManualAdjust[userId];
-        return reply(replyToken, `✅ 已成功為學員 ${foundUser.name} ${operation} ${absAmount} 點，目前點數：${foundUser.points} 點。`, teacherMenu);
-    } else {
-        // If the input is another command, cancel the current state and proceed.
-        delete pendingManualAdjust[userId];
-    }
+  const courses = await getAllCourses(); // 保持這個在前面
+
+  // 先檢查是否為特定指令，如果是，則清除 pendingManualAdjust
+  if (Object.values(COMMANDS.TEACHER).includes(text) || Object.values(COMMANDS.STUDENT).includes(text) || text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
+      if (pendingManualAdjust[userId]) {
+          delete pendingManualAdjust[userId]; // 清除手動調整點數的狀態
+      }
   }
 
-  const courses = await getAllCourses();
+  // 處理手動調整點數的輸入 (如果還處於這個狀態且不是其他指令)
+  if (pendingManualAdjust[userId]) {
+      if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
+          delete pendingManualAdjust[userId];
+          return reply(replyToken, '已取消手動調整點數。', teacherMenu);
+      }
+      
+      const parts = text.split(' ');
+      if (parts.length !== 2) {
+          return reply(replyToken, '指令格式錯誤。\n請輸入：學員姓名/ID [空格] 點數\n例如：王小明 5\n或輸入 @返回點數管理 取消。');
+      }
+      const targetIdentifier = parts[0];
+      const amount = parseInt(parts[1]);
+      if (isNaN(amount) || amount === 0) {
+          return reply(replyToken, '點數數量必須是非零整數。');
+      }
+      let foundUser = await getUser(targetIdentifier);
+      if (!foundUser) {
+          const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
+          if (res.rows.length > 0) foundUser = res.rows[0];
+      }
+      if (!foundUser) {
+          delete pendingManualAdjust[userId];
+          return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
+      }
+      const operation = amount > 0 ? '加點' : '扣點';
+      const absAmount = Math.abs(amount);
+      if (operation === '扣點' && foundUser.points < absAmount) {
+          delete pendingManualAdjust[userId];
+          return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
+      }
+      foundUser.points += amount;
+      if (!Array.isArray(foundUser.history)) foundUser.history = [];
+      foundUser.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
+      await saveUser(foundUser);
+      push(foundUser.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${foundUser.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
+      delete pendingManualAdjust[userId];
+      return reply(replyToken, `✅ 已成功為學員 ${foundUser.name} ${operation} ${absAmount} 點，目前點數：${foundUser.points} 點。`, teacherMenu);
+  }
 
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
@@ -348,9 +348,9 @@ async function handleTeacherCommands(event, userId) {
           justifyContent: 'center', alignItems: 'center', height: '150px'
         },
         action: {
-          type: 'message',
+          type: 'message', // 這裡的 type 是 message
           label: '查看待確認訂單',
-          text: COMMANDS.TEACHER.PENDING_ORDERS
+          text: COMMANDS.TEACHER.PENDING_ORDERS // 這會發送 COMMANDS.TEACHER.PENDING_ORDERS 文字
         },
         styles: {
           body: { separator: false, separatorColor: '#EEEEEE' }
@@ -552,6 +552,7 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, report.trim(), teacherMenu);
   }
   
+  // 處理點擊「查看待確認清單」按鈕後的文字指令
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
     const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
     const pendingConfirmationOrders = ordersRes.rows.map(row => ({
