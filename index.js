@@ -1,4 +1,4 @@
-// index.js - V4.4.2c (Bug Fix: 修正老師指令狀態管理 & orders 表 order_id 欄位錯誤)
+// index.js - V4.4.2d (Bug Fix: 修正老師指令狀態管理 & orders 表 order_id 欄位錯誤 & fetch is not a function)
 
 // =====================================
 //                 模組載入
@@ -8,7 +8,8 @@ const { Client } = require('pg');
 const line = require('@line/bot-sdk');
 require('dotenv').config();
 const crypto = require('crypto');
-const fetch = require('node-fetch');
+// 修正 fetch 的引入方式以解決 TypeError: fetch is not a function
+const { default: fetch } = require('node-fetch'); // 針對 node-fetch v3+ 的引入方式
 
 // =====================================
 //               應用程式常數
@@ -135,12 +136,22 @@ async function getUser(userId) {
 }
 
 async function saveUser(user) {
-  const existingUser = await getUser(user.id);
-  const historyJson = JSON.stringify(user.history || []);
-  if (existingUser) {
-    await pgClient.query('UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5', [user.name, user.points, user.role, historyJson, user.id]);
-  } else {
-    await pgClient.query('INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5, $6)', [user.id, user.name, user.points, user.role, historyJson]);
+  try { // 增加 try-catch 區塊來捕獲潛在錯誤
+    const existingUser = await getUser(user.id);
+    const historyJson = JSON.stringify(user.history || []);
+    if (existingUser) {
+      // console.log(`Debug: Updating user ${user.id}, points from ${existingUser.points} to ${user.points}`); // 除錯用日誌
+      await pgClient.query('UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5', [user.name, user.points, user.role, historyJson, user.id]);
+      // console.log(`Debug: User ${user.id} updated successfully.`); // 除錯用日誌
+    } else {
+      // 修正 INSERT 語句，確保參數數量匹配
+      // console.log(`Debug: Inserting new user ${user.id} with points ${user.points}`); // 除錯用日誌
+      await pgClient.query('INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)', [user.id, user.name, user.points, user.role, historyJson]);
+      // console.log(`Debug: New user ${user.id} inserted successfully.`); // 除錯用日誌
+    }
+  } catch (err) {
+    console.error('❌ saveUser 函式錯誤:', err.message, 'User ID:', user.id, 'Points:', user.points);
+    throw err; // 重新拋出錯誤以便外部捕獲
   }
 }
 
@@ -176,11 +187,17 @@ async function getAllOrders() {
 }
 
 async function saveOrder(order) {
-  const existingOrder = await pgClient.query('SELECT order_id FROM orders WHERE order_id = $1', [order.orderId]);
-  if (existingOrder.rows.length > 0) {
-    await pgClient.query('UPDATE orders SET user_id = $1, user_name = $2, points = $3, amount = $4, last_5_digits = $5, status = $6, timestamp = $7 WHERE order_id = $8', [order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp, order.orderId]);
-  } else {
-    await pgClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]);
+  try { // 增加 try-catch 區塊來捕獲潛在錯誤
+    const existingOrder = await pgClient.query('SELECT order_id FROM orders WHERE order_id = $1', [order.orderId]);
+    if (existingOrder.rows.length > 0) {
+      await pgClient.query('UPDATE orders SET user_id = $1, user_name = $2, points = $3, amount = $4, last_5_digits = $5, status = $6, timestamp = $7 WHERE order_id = $8', [order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp, order.orderId]);
+    } else {
+      // 修正 INSERT 語句，確保參數數量匹配
+      await pgClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)', [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]);
+    }
+  } catch (err) {
+    console.error('❌ saveOrder 函式錯誤:', err.message, 'Order ID:', order.orderId);
+    throw err; // 重新拋出錯誤以便外部捕獲
   }
 }
 
@@ -1433,7 +1450,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.2`);
+  console.log(`Bot 版本: V4.4.2d`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
@@ -1441,6 +1458,7 @@ app.listen(PORT, async () => {
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
     console.log(`⚡ 啟用 Keep-alive 功能，將每 ${PING_INTERVAL_MS / 1000 / 60} 分鐘 Ping 自身。`);
     setInterval(() => {
+        // 使用修正後的 fetch
         fetch(SELF_URL)
             .then(res => console.log(`Keep-alive response from ${SELF_URL}: ${res.status}`))
             .catch((err) => console.error('❌ Keep-alive ping 失敗:', err.message));
