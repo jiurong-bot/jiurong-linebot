@@ -1,4 +1,4 @@
-// index.js - V4.4.2d (Bug Fix: 修正老師指令狀態管理 & orders 表 order_id 欄位錯誤 & fetch is not a function)
+// index.js - V4.4.2e (Add more debug logs in saveUser)
 
 // =====================================
 //                 模組載入
@@ -130,27 +130,58 @@ async function getUser(userId) {
   const res = await pgClient.query('SELECT * FROM users WHERE id = $1', [userId]);
   const userData = res.rows[0];
   if (userData && typeof userData.history === 'string') {
-    userData.history = JSON.parse(userData.history);
+    try { // 加上 try-catch 確保 JSON 解析錯誤不會中斷
+      userData.history = JSON.parse(userData.history);
+    } catch (e) {
+      console.error(`❌ 解析用戶 ${userId} 歷史記錄 JSON 失敗:`, e.message);
+      userData.history = []; // 設置為空陣列以避免後續錯誤
+    }
   }
   return userData;
 }
 
+// **請將此 saveUser 函式替換掉您現有的**
 async function saveUser(user) {
-  try { // 增加 try-catch 區塊來捕獲潛在錯誤
+  try {
     const existingUser = await getUser(user.id);
     const historyJson = JSON.stringify(user.history || []);
+    
+    console.log(`DEBUG: saveUser - 嘗試保存用戶 ${user.id}, 名稱: ${user.name}, 點數: ${user.points}`);
+    console.log(`DEBUG: saveUser - 歷史記錄將保存為 (前100字元): ${historyJson.substring(0, 100)}...`); 
+
     if (existingUser) {
-      // console.log(`Debug: Updating user ${user.id}, points from ${existingUser.points} to ${user.points}`); // 除錯用日誌
-      await pgClient.query('UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5', [user.name, user.points, user.role, historyJson, user.id]);
-      // console.log(`Debug: User ${user.id} updated successfully.`); // 除錯用日誌
+      console.log(`DEBUG: saveUser - 用戶 ${user.id} 已存在，準備更新。`);
+      const updateResult = await pgClient.query(
+        'UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5',
+        [user.name, user.points, user.role, historyJson, user.id]
+      );
+      console.log(`DEBUG: saveUser - UPDATE 結果: 行數 ${updateResult.rowCount}`);
+      if (updateResult.rowCount === 0) {
+        console.warn(`WARN: saveUser - 更新用戶 ${user.id} 失敗，0 行受影響。這可能表示該 ID 不存在於資料庫中，或 ID 在操作期間改變。`);
+      } else {
+        console.log(`DEBUG: saveUser - 用戶 ${user.id} 點數更新成功，新點數: ${user.points}`);
+      }
     } else {
-      // 修正 INSERT 語句，確保參數數量匹配
-      // console.log(`Debug: Inserting new user ${user.id} with points ${user.points}`); // 除錯用日誌
-      await pgClient.query('INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)', [user.id, user.name, user.points, user.role, historyJson]);
-      // console.log(`Debug: New user ${user.id} inserted successfully.`); // 除錯用日誌
+      console.log(`DEBUG: saveUser - 用戶 ${user.id} 不存在，準備插入新記錄。`);
+      const insertResult = await pgClient.query(
+        'INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)',
+        [user.id, user.name, user.points, user.role, historyJson]
+      );
+      console.log(`DEBUG: saveUser - INSERT 結果: 行數 ${insertResult.rowCount}`);
+      if (insertResult.rowCount === 0) {
+        console.warn(`WARN: saveUser - 插入新用戶 ${user.id} 失敗，0 行受影響。`);
+      } else {
+        console.log(`DEBUG: saveUser - 新用戶 ${user.id} 插入成功，點數: ${user.points}`);
+      }
     }
   } catch (err) {
-    console.error('❌ saveUser 函式錯誤:', err.message, 'User ID:', user.id, 'Points:', user.points);
+    console.error(`FATAL ERROR: saveUser 函式捕獲到錯誤!`, {
+      message: err.message,
+      stack: err.stack,
+      userId: user.id,
+      userName: user.name,
+      pointsBeforeSave: user.points // 嘗試保存時的點數
+    });
     throw err; // 重新拋出錯誤以便外部捕獲
   }
 }
@@ -790,6 +821,39 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, '目前沒有需要取消的輸入流程。', studentMenu);
     }
   }
+
+  if (pendingPurchase[userId] && pendingPurchase[userId].step === 'select_plan') {
+    const selectedPlan = PURCHASE_PLANS.find(p => p.label === text);
+    if (text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
+      delete pendingPurchase[userId];
+      return reply(replyToken, '已返回點數相關功能。', studentPointSubMenu);
+    }
+    if (!selectedPlan) {
+      return reply(replyToken, '請從列表中選擇有效的點數方案。');
+    }
+    pendingPurchase[userId].data = { points: selectedPlan.points, amount: selectedPlan.amount, userId: userId, userName: user.name, timestamp: new Date().toISOString(), status: 'pending_payment' };
+    pendingPurchase[userId].step = 'confirm_purchase';
+    return reply(replyToken, `您選擇了購買 ${selectedPlan.points} 點，共 ${selectedPlan.amount} 元。請確認。`, [
+      { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: COMMANDS.STUDENT.CONFIRM_BUY_POINTS },
+      { type: 'message', label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
+    ]);
+  }
+
+  if (pendingPurchase[userId] && pendingPurchase[userId].step === 'confirm_purchase') {
+    if (text === COMMANDS.STUDENT.CONFIRM_BUY_POINTS) {
+      const orderId = `O${Date.now()}`;
+      const newOrder = { ...pendingPurchase[userId].data, orderId: orderId };
+      await saveOrder(newOrder);
+      delete pendingPurchase[userId];
+      return reply(replyToken, `✅ 已確認購買 ${newOrder.points} 點，請先完成轉帳。\n\n` + `戶名：${BANK_INFO.accountName}\n` + `銀行：${BANK_INFO.bankName}\n` + `帳號：${BANK_INFO.accountNumber}\n\n` + `完成轉帳後，請至「購點紀錄」輸入您的匯款帳號後五碼。\n\n` + `您的訂單編號為：${orderId}`, studentMenu);
+    } else if (text === COMMANDS.STUDENT.CANCEL_PURCHASE) {
+      delete pendingPurchase[userId];
+      return reply(replyToken, '已取消購買點數。', studentMenu);
+    } else {
+      return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_BUY_POINTS}」或「${COMMANDS.STUDENT.CANCEL_PURCHASE}」。`);
+    }
+  }
+
 
   if (text === COMMANDS.STUDENT.BOOK_COURSE) {
     const now = Date.now();
@@ -1450,7 +1514,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.2d`); // 更新版本號
+  console.log(`Bot 版本: V4.4.2e`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
