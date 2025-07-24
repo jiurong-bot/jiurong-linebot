@@ -273,7 +273,7 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
   
-  // 點數管理 Flex Message
+  // 點數管理 Flex Message (修正後的版本)
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
     const pendingOrdersCount = (await pgClient.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
 
@@ -291,12 +291,13 @@ async function handleTeacherCommands(event, userId) {
             { type: 'text', text: `${pendingOrdersCount} 筆`, weight: 'bold', size: 'xxl', align: 'center' },
             { type: 'text', text: '點擊查看並處理', color: '#666666', size: 'sm', align: 'center' },
           ],
-          justifyContent: 'center', alignItems: 'center', height: '150px'
-        },
-        action: {
-          type: 'message',
-          label: '查看待確認訂單',
-          text: COMMANDS.TEACHER.PENDING_ORDERS
+          justifyContent: 'center', alignItems: 'center', height: '150px',
+          // *** 修正: 將 action 移到 body 的 box 內 ***
+          action: {
+            type: 'message',
+            label: '查看待確認訂單',
+            text: COMMANDS.TEACHER.PENDING_ORDERS
+          },
         },
         styles: {
           body: { separator: false, separatorColor: '#EEEEEE' }
@@ -314,12 +315,13 @@ async function handleTeacherCommands(event, userId) {
           contents: [
             { type: 'text', text: '增減學員點數', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' },
           ],
-          justifyContent: 'center', alignItems: 'center', height: '150px'
-        },
-        action: {
-          type: 'message',
-          label: '手動調整點數',
-          text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS
+          justifyContent: 'center', alignItems: 'center', height: '150px',
+          // *** 修正: 將 action 移到 body 的 box 內 ***
+          action: {
+            type: 'message',
+            label: '手動調整點數',
+            text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS
+          },
         },
         styles: {
           body: { separator: false, separatorColor: '#EEEEEE' }
