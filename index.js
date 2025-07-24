@@ -1,4 +1,4 @@
-// index.js - V4.3.1 (課程管理 Flex Message 底部增加返回主選單)
+// index.js - V4.3.2 (點數管理 Flex Message)
 
 // =====================================
 //                 模組載入
@@ -204,6 +204,7 @@ async function reply(replyToken, content, menu = null) {
     messages = [content];
   }
 
+  // 處理 Text Message 的 Quick Reply
   if (menu && messages.length > 0 && messages[0].type === 'text') {
     messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
   }
@@ -242,7 +243,6 @@ function formatDateTime(isoString) {
 const studentMenu = [ { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE }, { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES }, { type: 'message', label: '點數功能', text: COMMANDS.STUDENT.POINTS }, { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE }, ];
 const studentPointSubMenu = [ { type: 'message', label: '剩餘點數', text: COMMANDS.STUDENT.CHECK_POINTS }, { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS }, { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY }, { type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }, ];
 
-const teacherPointSubMenu = [ { type: 'message', label: '待確認訂單', text: COMMANDS.TEACHER.PENDING_ORDERS }, { type: 'message', label: '手動加減點', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS }, { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }, ];
 // 老師主選單：直接將課程管理導向 COMMANDS.TEACHER.COURSE_MANAGEMENT (新的)
 const teacherMenu = [ { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }, { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }, { type: 'message', label: '查詢學員', text: COMMANDS.TEACHER.SEARCH_STUDENT }, { type: 'message', label: '統計報表', text: COMMANDS.SWITCH_ROLE }, ]; // 老師主選單保留課程管理，但將 @統計報表 移到 @切換身份 之前
 
@@ -268,9 +268,75 @@ async function handleTeacherCommands(event, userId) {
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
-  // 課程管理現在直接顯示 Flex Message
+  
+  // 點數管理 Flex Message
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
-    return reply(replyToken, '請選擇點數管理功能：', teacherPointSubMenu);
+    const pendingOrdersCount = (await pgClient.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
+
+    const pointManagementBubbles = [
+      {
+        type: 'bubble',
+        header: {
+          type: 'box', layout: 'vertical',
+          contents: [{ type: 'text', text: '待確認訂單', color: '#ffffff', weight: 'bold', size: 'md' }],
+          backgroundColor: '#52b69a', paddingAll: 'lg'
+        },
+        body: {
+          type: 'box', layout: 'vertical', spacing: 'md',
+          contents: [
+            { type: 'text', text: `${pendingOrdersCount} 筆`, weight: 'bold', size: 'xxl', align: 'center' },
+            { type: 'text', text: '點擊查看並處理', color: '#666666', size: 'sm', align: 'center' },
+          ],
+          justifyContent: 'center', alignItems: 'center', height: '150px'
+        },
+        action: {
+          type: 'message',
+          label: '查看待確認訂單',
+          text: COMMANDS.TEACHER.PENDING_ORDERS
+        },
+        styles: {
+          body: { separator: false, separatorColor: '#EEEEEE' }
+        }
+      },
+      {
+        type: 'bubble',
+        header: {
+          type: 'box', layout: 'vertical',
+          contents: [{ type: 'text', text: '手動調整點數', color: '#ffffff', weight: 'bold', size: 'md' }],
+          backgroundColor: '#52b69a', paddingAll: 'lg'
+        },
+        body: {
+          type: 'box', layout: 'vertical', paddingAll: 'xxl',
+          contents: [
+            { type: 'text', text: '增減學員點數', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' },
+          ],
+          justifyContent: 'center', alignItems: 'center', height: '150px'
+        },
+        action: {
+          type: 'message',
+          label: '手動調整點數',
+          text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS
+        },
+        styles: {
+          body: { separator: false, separatorColor: '#EEEEEE' }
+        }
+      }
+    ];
+
+    const flexMessage = {
+      type: 'flex',
+      altText: '點數管理功能',
+      contents: { type: 'carousel', contents: pointManagementBubbles },
+    };
+
+    const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
+
+    return reply(replyToken, {
+        type: 'flex',
+        altText: '請選擇點數管理功能：',
+        contents: flexMessage.contents, 
+        quickReply: { items: menuOptions.map(i => ({ type: 'action', action: i })) }
+    });
   }
 
   // --- 課程管理指令 (使用 Flex Message 的新設計) ---
@@ -352,7 +418,7 @@ async function handleTeacherCommands(event, userId) {
 
     const flexMessage = {
       type: 'flex',
-      altText: '課程管理', // 將 altText 變更為「課程管理」
+      altText: '課程管理', 
       contents: { type: 'carousel', contents: [...courseBubbles, addCourseBubble] },
     };
 
@@ -366,14 +432,11 @@ async function handleTeacherCommands(event, userId) {
     // 提供返回老師主選單的選項
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
 
-    // 將 introText 作為 Flex Message 的替代文字或直接在 Flex Message 前發送。
-    // 如果希望 Flex Message 本身有 Quick Reply，則需要將 Quick Reply 附加到 Flex Message 上。
-    // 修改為：
     return reply(replyToken, {
         type: 'flex',
-        altText: introText, // 將引導文字放在 altText
+        altText: introText, 
         contents: { type: 'carousel', contents: [...courseBubbles, addCourseBubble] },
-        quickReply: { items: menuOptions.map(i => ({ type: 'action', action: i })) } // 直接附加 Quick Reply 到 Flex Message
+        quickReply: { items: menuOptions.map(i => ({ type: 'action', action: i })) } 
     });
   }
 
@@ -921,7 +984,9 @@ async function handleEvent(event) {
         const postbackAction = params.get('action');
 
         const currentUser = await getUser(userId);
-        if (currentUser.role !== 'teacher' && postbackAction !== 'add_course_start') { // 確保只有老師能執行除了 add_course_start 以外的管理操作
+        // 確保只有老師能執行除了 add_course_start 以外的管理操作
+        // 排除 `add_course_start` 是因為它只在老師視圖的 Flex Message 中顯示，不需額外權限檢查
+        if (currentUser.role !== 'teacher' && postbackAction !== 'add_course_start') { 
             return reply(replyToken, '您沒有權限執行此操作。');
         }
         
@@ -1105,7 +1170,7 @@ async function handleEvent(event) {
     if (pendingManualAdjust[userId]) {
         if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
             delete pendingManualAdjust[userId];
-            return reply(replyToken, '已取消手動調整點數。', teacherPointSubMenu);
+            return reply(replyToken, '已取消手動調整點數。', teacherMenu); // 返回老師主選單
         }
         const parts = text.split(' ');
         if (parts.length !== 2) {
@@ -1123,13 +1188,13 @@ async function handleEvent(event) {
         }
         if (!foundUser) {
             delete pendingManualAdjust[userId];
-            return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherPointSubMenu);
+            return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu); // 返回老師主選單
         }
         const operation = amount > 0 ? '加點' : '扣點';
         const absAmount = Math.abs(amount);
         if (operation === '扣點' && foundUser.points < absAmount) {
             delete pendingManualAdjust[userId];
-            return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherPointSubMenu);
+            return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu); // 返回老師主選單
         }
         foundUser.points += amount;
         if (!Array.isArray(foundUser.history)) foundUser.history = [];
@@ -1137,7 +1202,7 @@ async function handleEvent(event) {
         await saveUser(foundUser);
         push(foundUser.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${foundUser.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
         delete pendingManualAdjust[userId];
-        return reply(replyToken, `✅ 已成功為學員 ${foundUser.name} ${operation} ${absAmount} 點，目前點數：${foundUser.points} 點。`, teacherPointSubMenu);
+        return reply(replyToken, `✅ 已成功為學員 ${foundUser.name} ${operation} ${absAmount} 點，目前點數：${foundUser.points} 點。`, teacherMenu); // 返回老師主選單
     }
     
     if (pendingPurchase[userId]) {
@@ -1287,7 +1352,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.3.1`);
+  console.log(`Bot 版本: V4.3.2`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
