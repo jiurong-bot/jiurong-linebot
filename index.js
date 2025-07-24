@@ -1,4 +1,4 @@
-// index.js - V4.4.1 (Bug Fix: 修正購點後五碼輸入流程)
+// index.js - V4.4.2 (Bug Fix: 修正老師指令狀態管理)
 
 // =====================================
 //                 模組載入
@@ -273,6 +273,53 @@ const sentReminders = {};
 async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
+
+  // BUG FIX: Moved pendingManualAdjust logic here from handleEvent
+  if (pendingManualAdjust[userId]) {
+    if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
+        delete pendingManualAdjust[userId];
+        return reply(replyToken, '已取消手動調整點數。', teacherMenu);
+    }
+    
+    // Check if the input is another command, which should cancel the pending state.
+    const isOtherCommand = Object.values(COMMANDS.TEACHER).includes(text) || Object.values(COMMANDS.STUDENT).includes(text);
+    if (!isOtherCommand) {
+        const parts = text.split(' ');
+        if (parts.length !== 2) {
+            return reply(replyToken, '指令格式錯誤。\n請輸入：學員姓名/ID [空格] 點數\n例如：王小明 5\n或輸入 @返回點數管理 取消。');
+        }
+        const targetIdentifier = parts[0];
+        const amount = parseInt(parts[1]);
+        if (isNaN(amount) || amount === 0) {
+            return reply(replyToken, '點數數量必須是非零整數。');
+        }
+        let foundUser = await getUser(targetIdentifier);
+        if (!foundUser) {
+            const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
+            if (res.rows.length > 0) foundUser = res.rows[0];
+        }
+        if (!foundUser) {
+            delete pendingManualAdjust[userId];
+            return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
+        }
+        const operation = amount > 0 ? '加點' : '扣點';
+        const absAmount = Math.abs(amount);
+        if (operation === '扣點' && foundUser.points < absAmount) {
+            delete pendingManualAdjust[userId];
+            return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
+        }
+        foundUser.points += amount;
+        if (!Array.isArray(foundUser.history)) foundUser.history = [];
+        foundUser.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
+        await saveUser(foundUser);
+        push(foundUser.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${foundUser.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
+        delete pendingManualAdjust[userId];
+        return reply(replyToken, `✅ 已成功為學員 ${foundUser.name} ${operation} ${absAmount} 點，目前點數：${foundUser.points} 點。`, teacherMenu);
+    } else {
+        // If the input is another command, cancel the current state and proceed.
+        delete pendingManualAdjust[userId];
+    }
+  }
 
   const courses = await getAllCourses();
 
@@ -551,7 +598,7 @@ async function handleTeacherCommands(event, userId) {
 }
 
 // =====================================
-//           👩‍🎓 學員指令處理函式 (已修正)
+//           👩‍🎓 學員指令處理函式
 // =====================================
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
@@ -691,7 +738,6 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, '您輸入的匯款帳號後五碼格式不正確，請輸入五位數字。');
     }
 
-    // BUG FIX: Allow updating an order that is in 'pending_payment' OR 'pending_confirmation' state.
     const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE order_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation')`, [orderId]);
     const order = ordersRes.rows[0];
 
@@ -1164,6 +1210,8 @@ async function handleEvent(event) {
     }
     const text = event.message.text.trim();
 
+    // BUG FIX: Removed pendingManualAdjust logic from here. It is now in handleTeacherCommands.
+
     if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE && pendingCourseCreation[userId]) {
         delete pendingCourseCreation[userId];
         return reply(replyToken, '已取消新增課程流程並返回老師主選單。', teacherMenu);
@@ -1240,44 +1288,6 @@ async function handleEvent(event) {
                     return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_ADD_COURSE}」或「${COMMANDS.STUDENT.CANCEL_ADD_COURSE}」。`);
                 }
         }
-    }
-
-    if (pendingManualAdjust[userId]) {
-        if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
-            delete pendingManualAdjust[userId];
-            return reply(replyToken, '已取消手動調整點數。', teacherMenu);
-        }
-        const parts = text.split(' ');
-        if (parts.length !== 2) {
-            return reply(replyToken, '指令格式錯誤。');
-        }
-        const targetIdentifier = parts[0];
-        const amount = parseInt(parts[1]);
-        if (isNaN(amount) || amount === 0) {
-            return reply(replyToken, '點數數量必須是非零整數。');
-        }
-        let foundUser = await getUser(targetIdentifier);
-        if (!foundUser) {
-            const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
-            if (res.rows.length > 0) foundUser = res.rows[0];
-        }
-        if (!foundUser) {
-            delete pendingManualAdjust[userId];
-            return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
-        }
-        const operation = amount > 0 ? '加點' : '扣點';
-        const absAmount = Math.abs(amount);
-        if (operation === '扣點' && foundUser.points < absAmount) {
-            delete pendingManualAdjust[userId];
-            return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
-        }
-        foundUser.points += amount;
-        if (!Array.isArray(foundUser.history)) foundUser.history = [];
-        foundUser.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
-        await saveUser(foundUser);
-        push(foundUser.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${foundUser.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
-        delete pendingManualAdjust[userId];
-        return reply(replyToken, `✅ 已成功為學員 ${foundUser.name} ${operation} ${absAmount} 點，目前點數：${foundUser.points} 點。`, teacherMenu);
     }
     
     if (pendingPurchase[userId]) {
@@ -1423,7 +1433,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.1`);
+  console.log(`Bot 版本: V4.4.2`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
