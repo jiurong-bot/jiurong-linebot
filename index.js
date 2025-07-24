@@ -184,8 +184,9 @@ async function saveOrder(order) {
   }
 }
 
+// 修正後的 deleteOrder 函式
 async function deleteOrder(orderId) {
-  await pgClient.query('DELETE FROM orders WHERE id = $1', [orderId]);
+  await pgClient.query('DELETE FROM orders WHERE order_id = $1', [orderId]);
 }
 
 async function cleanCoursesDB() {
@@ -688,7 +689,7 @@ async function handleStudentCommands(event, userId) {
     const pendingOrder = ordersRes.rows[0];
 
     if (pendingOrder) {
-      await deleteOrder(pendingOrder.order_id);
+      await deleteOrder(pendingOrder.order_id); // 這裡會呼叫修正後的 deleteOrder 函式
       delete pendingPurchase[userId];
       return reply(replyToken, '已取消您的購點訂單。', studentMenu);
     }
@@ -1209,8 +1210,6 @@ async function handleEvent(event) {
         return;
     }
     const text = event.message.text.trim();
-
-    // BUG FIX: Removed pendingManualAdjust logic from here. It is now in handleTeacherCommands.
 
     if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE && pendingCourseCreation[userId]) {
         delete pendingCourseCreation[userId];
