@@ -1,4 +1,4 @@
-// index.js - V4.5.2T (Transactional update, bug fixes, refactoring, async pending orders - Quick Reply Reinstated)
+// index.js - V4.5.1T (Transactional update, bug fixes, refactoring, async pending orders - No Quick Reply)
 
 // =====================================
 //                 模組載入
@@ -630,6 +630,7 @@ async function handleTeacherCommands(event, userId) {
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
     console.log(`DEBUG: handleTeacherCommands - 處理 PENDING_ORDERS`);
 
+    // --- 修改開始 ---
     // 1. 立即回覆，避免 reply token 超時
     reply(replyToken, '正在查詢待確認訂單，請稍候...').catch(e => console.error(e));
 
@@ -649,8 +650,7 @@ async function handleTeacherCommands(event, userId) {
             }
 
             let replyMessage = '以下是待確認的購點訂單：\n\n';
-            // 顯示最多 3 筆訂單，因為 Quick Reply 限制為 13 個項目 (每筆訂單 2 個動作 + 1 個返回按鈕，所以 3 筆*2 + 1 = 7個，比較合適)
-            const displayOrders = pendingConfirmationOrders.slice(0, 3);
+            const displayOrders = pendingConfirmationOrders.slice(0, 6);
             displayOrders.forEach(order => {
                 replyMessage += `--- 訂單 #${order.orderId} ---\n`;
                 replyMessage += `學員姓名: ${order.userName}\n`;
@@ -661,18 +661,8 @@ async function handleTeacherCommands(event, userId) {
                 replyMessage += `提交時間: ${formatDateTime(order.timestamp)}\n\n`;
             });
 
-            // --- 重新加入 Quick Reply 的部分 ---
-            const quickReplyItems = displayOrders.flatMap(order => [
-                { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`.slice(0, 20), data: `action=confirm_order&orderId=${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
-                { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`.slice(0, 20), data: `action=cancel_order&orderId=${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
-            ]);
-            quickReplyItems.push({ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT });
-
-            // 3. 使用 push 將帶有 Quick Reply 的結果發送出去
-            await push(userId, {
-                type: 'text', text: replyMessage.trim(),
-                quickReply: { items: quickReplyItems }
-            });
+            // 3. 使用 push 將結果發送出去 (只發送文字訊息，移除 Quick Reply)
+            await push(userId, replyMessage.trim());
 
         } catch (err) {
             console.error('❌ 查詢待確認訂單時發生錯誤:', err);
@@ -683,6 +673,7 @@ async function handleTeacherCommands(event, userId) {
     
     // 因為我們已經用非同步方式處理，這裡直接返回，結束函式
     return;
+    // --- 修改結束 ---
   }
 
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
@@ -1715,7 +1706,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.2T (Quick Reply Reinstated for Pending Orders)`); // 更新版本號
+  console.log(`Bot 版本: V4.5.1T (No Quick Reply)`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
