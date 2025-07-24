@@ -1,4 +1,4 @@
-// index.js - V4.4.2 (Bug Fix: 修正老師指令狀態管理)
+// index.js - V4.4.2 (Bug Fix: 修正老師指令狀態管理 & orders 表 id 欄位錯誤)
 
 // =====================================
 //                 模組載入
@@ -140,7 +140,7 @@ async function saveUser(user) {
   if (existingUser) {
     await pgClient.query('UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5', [user.name, user.points, user.role, historyJson, user.id]);
   } else {
-    await pgClient.query('INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)', [user.id, user.name, user.points, user.role, historyJson]);
+    await pgClient.query('INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5, $6)', [user.id, user.name, user.points, user.role, historyJson]);
   }
 }
 
@@ -542,7 +542,7 @@ async function handleTeacherCommands(event, userId) {
     report += `💎 所有學員總點數：${totalPoints} 點\n\n`;
     report += `🗓️ 課程統計：\n`;
     report += `  總課程數：${totalCourses} 堂\n`;
-    report += `  進行中/未開課：${upcomingCourses} 堂\n`;
+report += `  進行中/未開課：${upcomingCourses} 堂\n`;
     report += `  已結束課程：${completedCourses} 堂\n\n`;
     report += `💰 購點訂單：\n`;
     report += `  待確認訂單：${pendingOrders} 筆\n`;
