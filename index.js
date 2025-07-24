@@ -1,4 +1,4 @@
-// index.js - V4.4.0 (整合 Flex Message 優化使用者介面)
+// index.js - V4.4.1 (Bug Fix: 修正購點後五碼輸入流程)
 
 // =====================================
 //                 模組載入
@@ -84,8 +84,8 @@ const COMMANDS = {
     CANCEL_INPUT_LAST5: '❌ 取消輸入後五碼',
     BOOK_COURSE: '@預約課程',
     MY_COURSES: '@我的課程',
-    CANCEL_BOOKING: '@取消預約', // 此指令將被 Flex Message Postback 取代
-    CANCEL_WAITING: '@取消候補', // 此指令將被 Flex Message Postback 取代
+    CANCEL_BOOKING: '@取消預約',
+    CANCEL_WAITING: '@取消候補',
     CONFIRM_ADD_COURSE: '確認新增課程',
     CANCEL_ADD_COURSE: '取消新增課程',
     RETURN_POINTS_MENU: '返回點數功能',
@@ -235,7 +235,6 @@ function formatDateTime(isoString) {
 // =====================================
 //               📋 快速選單定義
 // =====================================
-// MODIFICATION: Removed cancel booking/waiting buttons. They are now integrated into "My Courses" UI.
 const studentMenu = [
     { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
     { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
@@ -254,7 +253,7 @@ const teacherMenu = [
     { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
     { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
     { type: 'message', label: '查詢學員', text: COMMANDS.TEACHER.SEARCH_STUDENT },
-    { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT }, // Corrected order as per original code
+    { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
     { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE },
 ];
 
@@ -514,7 +513,6 @@ async function handleTeacherCommands(event, userId) {
     }));
 
     if (pendingConfirmationOrders.length === 0) {
-        // MODIFICATION: Return to point management menu for consistency.
         return reply(replyToken, '目前沒有待確認的購點訂單。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
     }
 
@@ -553,7 +551,7 @@ async function handleTeacherCommands(event, userId) {
 }
 
 // =====================================
-//           👩‍🎓 學員指令處理函式
+//           👩‍🎓 學員指令處理函式 (已修正)
 // =====================================
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
@@ -566,7 +564,6 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, '已返回學員主選單。', studentMenu);
   }
   
-  // MODIFICATION: Redesigned the student points menu to use a Flex Message carousel.
   if (text === COMMANDS.STUDENT.POINTS || text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
     delete pendingPurchase[userId];
 
@@ -694,7 +691,8 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, '您輸入的匯款帳號後五碼格式不正確，請輸入五位數字。');
     }
 
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE order_id = $1 AND status = 'pending_payment'`, [orderId]);
+    // BUG FIX: Allow updating an order that is in 'pending_payment' OR 'pending_confirmation' state.
+    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE order_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation')`, [orderId]);
     const order = ordersRes.rows[0];
 
     if (!order) {
@@ -728,7 +726,6 @@ async function handleStudentCommands(event, userId) {
     }
   }
 
-  // MODIFICATION: Redesigned course booking to use a Flex Message carousel.
   if (text === COMMANDS.STUDENT.BOOK_COURSE) {
     const now = Date.now();
     const upcoming = Object.values(courses)
@@ -842,7 +839,6 @@ async function handleStudentCommands(event, userId) {
     }
   }
 
-  // MODIFICATION: Redesigned My Courses to use a Flex Message carousel and integrate cancellation.
   if (text === COMMANDS.STUDENT.MY_COURSES) {
     const now = Date.now();
     const enrolledCourses = Object.values(courses)
@@ -877,7 +873,7 @@ async function handleStudentCommands(event, userId) {
                         type: 'button', style: 'primary', color: '#de5246', height: 'sm',
                         action: { type: 'postback', label: '取消預約', data: `action=cancel_booking_confirm&courseId=${course.id}`, displayText: `正在準備取消預約：${course.title}` }
                     }]
-                } : undefined // Do not show footer if cancellation is not allowed
+                } : undefined
             };
         }),
         ...waitingCourses.map(course => ({
@@ -910,7 +906,6 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, flexMessage, [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
 
-  // REMOVED: Old text command handlers for @取消預約 and @取消候補. Functionality is now in the "My Courses" Flex Message.
   if (text.startsWith('我要取消預約 ')) {
     const id = text.replace('我要取消預約 ', '').trim();
     const course = courses[id];
@@ -1143,7 +1138,6 @@ async function handleEvent(event) {
                 });
             }
             if (postbackAction === 'cancel_booking_execute') {
-                // This re-routes the execution to the existing text-based command handler for now to avoid code duplication
                 return handleStudentCommands({ ...event, message: { type: 'text', text: `我要取消預約 ${courseId}` } }, userId);
             }
 
@@ -1158,7 +1152,6 @@ async function handleEvent(event) {
                 });
             }
             if (postbackAction === 'cancel_waiting_execute') {
-                // Re-routes to the text command handler
                 return handleStudentCommands({ ...event, message: { type: 'text', text: `我要取消候補 ${courseId}` } }, userId);
             }
         }
@@ -1430,7 +1423,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.0`);
+  console.log(`Bot 版本: V4.4.1`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
