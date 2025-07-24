@@ -1,4 +1,4 @@
-// index.js - V4.4.2j (Fix saveOrder INSERT column count)
+// index.js - V4.4.2k (Enhance last5digits submission/edit UX)
 
 // =====================================
 //                 模組載入
@@ -91,6 +91,7 @@ const COMMANDS = {
     RETURN_POINTS_MENU: '返回點數功能',
     CONFIRM_BUY_POINTS: '✅ 確認購買',
     INPUT_LAST5_CARD_TRIGGER: '@輸入匯款後五碼', // 新增的隱藏指令，用於觸發輸入輸入後五碼流程
+    EDIT_LAST5_CARD_TRIGGER: '@修改匯款後五碼', // 新增的隱藏指令，用於觸發修改後五碼流程
   }
 };
 
@@ -635,7 +636,7 @@ async function handleTeacherCommands(event, userId) {
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
     console.log(`DEBUG: handleTeacherCommands - 處理 PENDING_ORDERS`);
     const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
-    const pendingConfirmationOrders = ordersR.ows.map(row => ({
+    const pendingConfirmationOrders = ordersRes.rows.map(row => ({ // 修正變數名稱 ordersR.ows -> ordersRes.rows
       orderId: row.order_id, userId: row.user_id, userName: row.user_name,
       points: row.points, amount: row.amount, last5Digits: row.last_5_digits,
       timestamp: row.timestamp.toISOString()
@@ -699,27 +700,34 @@ async function handleStudentCommands(event, userId) {
   }
   
   if (text === COMMANDS.STUDENT.POINTS || text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
-    // 進入點數功能時，確保清除 pendingPurchase 狀態，除非是明確進入 input_last5 流程
-    if (!pendingPurchase[userId] || pendingPurchase[userId].step !== 'input_last5_from_card') {
+    // 進入點數功能時，確保清除 pendingPurchase 狀態，除非是明確進入 input_last5 或 edit_last5 流程
+    if (!pendingPurchase[userId] || (pendingPurchase[userId].step !== 'input_last5' && pendingPurchase[userId].step !== 'edit_last5')) {
       delete pendingPurchase[userId]; 
     }
 
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation')`, [userId]);
+    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
 
     const pointBubbles = [];
 
-    // 如果有待確認訂單，則新增輸入後五碼卡片
+    // 如果有待確認或待付款訂單，則新增提示卡片
     if (pendingOrder) {
-        console.log(`DEBUG: POINTS - 發現待處理訂單 ${pendingOrder.order_id}，新增輸入後五碼卡片。`);
+        console.log(`DEBUG: POINTS - 發現待處理訂單 ${pendingOrder.order_id}，新增提示卡片。`);
+        const actionButtonLabel = pendingOrder.status === 'pending_confirmation' ? '修改匯款後五碼' : '輸入匯款後五碼';
+        const actionButtonCommand = pendingOrder.status === 'pending_confirmation' ? COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER : COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER;
+        const cardTitle = pendingOrder.status === 'pending_confirmation' ? '🕒 匯款已提交，等待確認' : '❗ 匯款待確認';
+        const cardColor = pendingOrder.status === 'pending_confirmation' ? '#ff9e00' : '#f28482'; // 黃色表示已提交，紅色表示待提交
+
         pointBubbles.push({
             type: 'bubble',
-            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '❗ 匯款待確認', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#f28482', paddingAll: 'lg' },
+            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: cardTitle, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: cardColor, paddingAll: 'lg' },
             body: {
                 type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px',
                 contents: [
                     { type: 'text', text: `訂單 ID: ${pendingOrder.order_id}`, weight: 'bold', size: 'md', align: 'center' },
                     { type: 'text', text: `購買 ${pendingOrder.points} 點 / ${pendingOrder.amount} 元`, size: 'sm', align: 'center' },
+                    { type: 'text', text: `狀態: ${pendingOrder.status === 'pending_confirmation' ? '已提交五碼，等待老師確認' : '待付款'}`, size: 'sm', align: 'center' },
+                    { type: 'text', text: `後五碼: ${pendingOrder.last_5_digits || '未輸入'}`, size: 'sm', align: 'center' },
                     { type: 'text', text: `提交時間: ${formatDateTime(pendingOrder.timestamp)}`, size: 'xs', align: 'center', color: '#666666' }
                 ],
             },
@@ -727,7 +735,7 @@ async function handleStudentCommands(event, userId) {
                 type: 'box', layout: 'vertical', spacing: 'sm',
                 contents: [{
                     type: 'button', style: 'primary', height: 'sm', color: '#de5246',
-                    action: { type: 'message', label: '輸入匯款後五碼', text: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER }
+                    action: { type: 'message', label: actionButtonLabel, text: actionButtonCommand }
                 }, {
                     type: 'button', style: 'secondary', height: 'sm', color: '#8d99ae',
                     action: { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE }
@@ -781,22 +789,22 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, flexMessage, [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
 
-  // 處理點擊「輸入匯款後五碼」卡片按鈕
-  if (text === COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER) {
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation')`, [userId]);
+  // 處理點擊「輸入匯款後五碼」或「修改匯款後五碼」卡片按鈕
+  if (text === COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER || text === COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER) {
+    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
 
     if (pendingOrder) {
-      console.log(`DEBUG: INPUT_LAST5_CARD_TRIGGER - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶輸入後五碼。`);
+      console.log(`DEBUG: INPUT/EDIT_LAST5_CARD_TRIGGER - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶輸入/修改後五碼。`);
       pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.order_id } }; // 設定狀態，準備接收後五碼
-      return reply(replyToken, `您的訂單 ${pendingOrder.order_id} 尚未確認匯款，請輸入您轉帳的銀行帳號後五碼以便核對：`, [
+      return reply(replyToken, `請輸入您的訂單 ${pendingOrder.order_id} 的匯款帳號後五碼：`, [
         { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 },
         { type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
       ]);
     } else {
       // 如果沒有待處理訂單，但用戶點了這個按鈕，可能是誤觸或訂單已處理
       delete pendingPurchase[userId]; // 清除可能殘留的狀態
-      return reply(replyToken, '目前沒有需要輸入匯款後五碼的待確認訂單。', studentPointSubMenu);
+      return reply(replyToken, '目前沒有需要輸入或修改匯款後五碼的待確認訂單。', studentPointSubMenu);
     }
   }
 
@@ -807,7 +815,7 @@ async function handleStudentCommands(event, userId) {
 
   // 修改 BUY_POINTS 處理邏輯
   if (text === COMMANDS.STUDENT.BUY_POINTS) {
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation')`, [userId]);
+    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
 
     if (pendingOrder) {
@@ -834,7 +842,7 @@ async function handleStudentCommands(event, userId) {
   }
 
   if (text === COMMANDS.STUDENT.CANCEL_PURCHASE) {
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation')`, [userId]);
+    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
 
     if (pendingOrder) {
@@ -906,9 +914,20 @@ async function handleStudentCommands(event, userId) {
         });
         delete pendingPurchase[userId]; // 完成後清除狀態
 
-        await reply(replyToken, `已收到您的匯款帳號後五碼：${last5Digits}，感謝您的配合！我們將盡快為您核對並加點。`, studentMenu);
+        // 提交後五碼後的提示詞：已收到並等待老師確認，並提供修改按鈕
+        await reply(replyToken, {
+          type: 'text',
+          text: `✅ 已收到您的匯款帳號後五碼：${last5Digits}。\n感謝您的配合！我們將盡快為您核對並加點。\n\n目前訂單狀態：等待老師確認。`,
+          quickReply: {
+            items: [
+              { type: 'message', label: '修改匯款後五碼', text: COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER },
+              { type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
+            ]
+          }
+        });
+        
         if (TEACHER_ID) {
-          await push(TEACHER_ID, `🔔 有新的購點訂單待確認！請輸入 ${COMMANDS.TEACHER.PENDING_ORDERS} 進入管理介面。`)
+          await push(TEACHER_ID, `🔔 有新的購點訂單待確認！學員 ${user.name} (ID: ${userId.substring(0, 8)}...) 提交了訂單 ${orderId} 的後五碼 (${last5Digits})。請輸入 ${COMMANDS.TEACHER.PENDING_ORDERS} 進入管理介面。`)
             .catch(e => console.error('❌ 通知老師新購點訂單失敗:', e.message));
         }
         return;
@@ -1179,7 +1198,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要取消候補 ')) {
     const id = text.replace('我要取消候補 ', '').trim();
     const course = courses[id];
-    const now = Date.now();
+    const now = Date.Date();
 
     if (!course || !course.waiting?.includes(userId)) {
       return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
@@ -1508,9 +1527,20 @@ async function handleEvent(event) {
                 });
                 delete pendingPurchase[userId]; // 完成後清除狀態
 
-                await reply(replyToken, `已收到您的匯款帳號後五碼：${last5Digits}，感謝您的配合！我們將盡快為您核對並加點。`, studentMenu);
+                // 提交後五碼後的提示詞：已收到並等待老師確認，並提供修改按鈕
+                await reply(replyToken, {
+                  type: 'text',
+                  text: `✅ 已收到您的匯款帳號後五碼：${last5Digits}。\n感謝您的配合！我們將盡快為您核對並加點。\n\n目前訂單狀態：等待老師確認。`,
+                  quickReply: {
+                    items: [
+                      { type: 'message', label: '修改匯款後五碼', text: COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER }, // 提供修改後五碼的按鈕
+                      { type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
+                    ]
+                  }
+                });
+                
                 if (TEACHER_ID) {
-                    await push(TEACHER_ID, `🔔 有新的購點訂單待確認！請輸入 ${COMMANDS.TEACHER.PENDING_ORDERS} 進入管理介面。`)
+                    await push(TEACHER_ID, `🔔 有新的購點訂單待確認！學員 ${user.name} (ID: ${userId.substring(0, 8)}...) 提交了訂單 ${orderId} 的後五碼 (${last5Digits})。請輸入 ${COMMANDS.TEACHER.PENDING_ORDERS} 進入管理介面。`)
                         .catch(e => console.error('❌ 通知老師新購點訂單失敗:', e.message));
                 }
                 return;
@@ -1656,7 +1686,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.2j`); // 更新版本號
+  console.log(`Bot 版本: V4.4.2k`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
