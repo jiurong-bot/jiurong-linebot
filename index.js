@@ -1,4 +1,4 @@
-// index.js - V4.4.2i (Add dedicated card for pending last 5 digits input)
+// index.js - V4.4.2j (Fix saveOrder INSERT column count)
 
 // =====================================
 //                 模組載入
@@ -90,7 +90,7 @@ const COMMANDS = {
     CANCEL_ADD_COURSE: '取消新增課程',
     RETURN_POINTS_MENU: '返回點數功能',
     CONFIRM_BUY_POINTS: '✅ 確認購買',
-    INPUT_LAST5_CARD_TRIGGER: '@輸入匯款後五碼', // 新增的隱藏指令，用於觸發輸入後五碼流程
+    INPUT_LAST5_CARD_TRIGGER: '@輸入匯款後五碼', // 新增的隱藏指令，用於觸發輸入輸入後五碼流程
   }
 };
 
@@ -222,7 +222,9 @@ async function saveOrder(order) {
     if (existingOrder.rows.length > 0) {
       await pgClient.query('UPDATE orders SET user_id = $1, user_name = $2, points = $3, amount = $4, last_5_digits = $5, status = $6, timestamp = $7 WHERE order_id = $8', [order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp, order.orderId]);
     } else {
-      await pgClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)', [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]);
+      // 修正 INSERT 語句，確保欄位與值數量匹配
+      await pgClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', 
+        [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]);
     }
   } catch (err) {
     console.error('❌ saveOrder 函式錯誤:', err.message, 'Order ID:', order.orderId);
@@ -633,7 +635,7 @@ async function handleTeacherCommands(event, userId) {
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
     console.log(`DEBUG: handleTeacherCommands - 處理 PENDING_ORDERS`);
     const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
-    const pendingConfirmationOrders = ordersRes.rows.map(row => ({
+    const pendingConfirmationOrders = ordersR.ows.map(row => ({
       orderId: row.order_id, userId: row.user_id, userName: row.user_name,
       points: row.points, amount: row.amount, last5Digits: row.last_5_digits,
       timestamp: row.timestamp.toISOString()
@@ -1536,7 +1538,7 @@ async function handleEvent(event) {
                     delete pendingPurchase[userId]; // 取消後清除狀態
                     return reply(replyToken, '已取消購買點數。', studentMenu);
                 } else {
-                    return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_BUY_POINTS}」或「${COMMANDS.STUDENT.CANCEL_BUY_POINTS}」。`); // Bug fix: Changed CANCEL_PURCHASE to CANCEL_BUY_POINTS
+                    return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_BUY_POINTS}」或「${COMMANDS.STUDENT.CANCEL_PURCHASE}」。`); 
                 }
         }
     }
@@ -1654,7 +1656,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.2i`); // 更新版本號
+  console.log(`Bot 版本: V4.4.2j`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
