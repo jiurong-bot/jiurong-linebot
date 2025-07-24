@@ -1,4 +1,4 @@
-// index.js - V4.4.2f (Add more detailed debug logs in handleTeacherCommands for manual point adjustment)
+// index.js - V4.4.2g (Refined handleTeacherCommands, Webhook error handling)
 
 // =====================================
 //                 模組載入
@@ -8,7 +8,6 @@ const { Client } = require('pg');
 const line = require('@line/bot-sdk');
 require('dotenv').config();
 const crypto = require('crypto');
-// 修正 fetch 的引入方式以解決 TypeError: fetch is not a function
 const { default: fetch } = require('node-fetch');
 
 // =====================================
@@ -71,7 +70,7 @@ const COMMANDS = {
     COURSE_LIST: '@課程列表',
     SEARCH_STUDENT: '@查學員',
     REPORT: '@統計報表',
-    PENDING_ORDERS: '@待確認清單', // 這個指令會被 Flex Message 的 action 發送
+    PENDING_ORDERS: '@待確認清單',
     MANUAL_ADJUST_POINTS: '@手動調整點數',
     CANCEL_MANUAL_ADJUST: '@返回點數管理',
   },
@@ -142,13 +141,13 @@ async function getUser(userId) {
 
 async function saveUser(user) {
   try {
-    const existingUser = await getUser(user.id);
+    const existingUser = await pgClient.query('SELECT id FROM users WHERE id = $1', [user.id]);
     const historyJson = JSON.stringify(user.history || []);
     
     console.log(`DEBUG: saveUser - 嘗試保存用戶 ${user.id}, 名稱: ${user.name}, 點數: ${user.points}`);
     console.log(`DEBUG: saveUser - 歷史記錄將保存為 (前100字元): ${historyJson.substring(0, 100)}...`); 
 
-    if (existingUser) {
+    if (existingUser.rows.length > 0) {
       console.log(`DEBUG: saveUser - 用戶 ${user.id} 已存在，準備更新。`);
       const updateResult = await pgClient.query(
         'UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5',
@@ -240,6 +239,7 @@ async function cleanCoursesDB() {
   console.log('✅ 已清理過期課程。');
 }
 
+// 修改 reply 函式，增加錯誤處理
 async function reply(replyToken, content, menu = null) {
   let messages;
   if (Array.isArray(content)) {
@@ -254,12 +254,24 @@ async function reply(replyToken, content, menu = null) {
     messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
   }
 
-  return client.replyMessage(replyToken, messages);
+  try {
+    await client.replyMessage(replyToken, messages);
+    console.log(`DEBUG: reply - 成功回覆訊息給 ${replyToken}`);
+  } catch (error) {
+    console.error(`❌ reply 函式發送失敗:`, error.originalError ? error.originalError.response : error.message);
+    // 可以考慮在這裡發送一條推播消息給用戶，告知系統異常
+    // client.pushMessage(to, '系統忙碌中，請稍後再試。').catch(e => console.error('Fall-back push failed', e));
+  }
 }
 
 async function push(to, content) {
   const messages = Array.isArray(content) ? content : [{ type: 'text', text: content }];
-  return client.pushMessage(to, messages);
+  try {
+    await client.pushMessage(to, messages);
+    console.log(`DEBUG: push - 成功推播訊息給 ${to}`);
+  } catch (error) {
+    console.error(`❌ push 函式發送失敗給 ${to}:`, error.originalError ? error.originalError.response : error.message);
+  }
 }
 
 function formatDateTime(isoString) {
@@ -319,18 +331,23 @@ const sentReminders = {};
 async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
+  console.log(`DEBUG: handleTeacherCommands - 處理指令: "${text}", 用戶ID: ${userId}`); // 新增
 
   const courses = await getAllCourses();
 
-  // 先檢查是否為特定指令，如果是，則清除 pendingManualAdjust
-  if (Object.values(COMMANDS.TEACHER).includes(text) || Object.values(COMMANDS.STUDENT).includes(text) || text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
-      if (pendingManualAdjust[userId]) {
-          delete pendingManualAdjust[userId]; // 清除手動調整點數的狀態
-      }
+  // 清除其他狀態，但要考慮 pendingManualAdjust 本身的流程
+  if (text !== COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST && !text.match(/^\S+\s+(-?\d+)$/)) {
+    // 如果不是手動調整點數相關的指令，則清除 pendingManualAdjust 狀態
+    if (pendingManualAdjust[userId]) {
+        console.log(`DEBUG: handleTeacherCommands - 清除 pendingManualAdjust 狀態，因為收到新指令: "${text}"`);
+        delete pendingManualAdjust[userId];
+    }
   }
+
 
   // 處理手動調整點數的輸入 (如果還處於這個狀態且不是其他指令)
   if (pendingManualAdjust[userId]) {
+      console.log(`DEBUG: handleTeacherCommands - 進入手動調整點數流程，當前狀態: ${pendingManualAdjust[userId].step}`);
       if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
           delete pendingManualAdjust[userId];
           return reply(replyToken, '已取消手動調整點數。', teacherMenu);
@@ -338,11 +355,13 @@ async function handleTeacherCommands(event, userId) {
       
       const parts = text.split(' ');
       if (parts.length !== 2) {
+          console.log(`DEBUG: 手動調整點數 - 格式錯誤，收到 "${text}"`);
           return reply(replyToken, '指令格式錯誤。\n請輸入：學員姓名/ID [空格] 點數\n例如：王小明 5\n或輸入 @返回點數管理 取消。');
       }
       const targetIdentifier = parts[0];
       const amount = parseInt(parts[1]);
       if (isNaN(amount) || amount === 0) {
+          console.log(`DEBUG: 手動調整點數 - 點數數量無效，收到 "${parts[1]}"`);
           return reply(replyToken, '點數數量必須是非零整數。');
       }
       let foundUser = await getUser(targetIdentifier);
@@ -351,37 +370,40 @@ async function handleTeacherCommands(event, userId) {
           if (res.rows.length > 0) foundUser = res.rows[0];
       }
       if (!foundUser) {
-          delete pendingManualAdjust[userId];
+          console.log(`DEBUG: 手動調整點數 - 找不到學員: "${targetIdentifier}"`);
+          delete pendingManualAdjust[userId]; // 找不到學員也清除狀態，避免循環
           return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
       }
 
-      // ==== 新增的 DEBUG 日誌點 ====
       console.log(`DEBUG: 手動調整點數 - 找到學員 ${foundUser.name} (ID: ${foundUser.id})，原始點數: ${foundUser.points}`); 
       
       const operation = amount > 0 ? '加點' : '扣點';
       const absAmount = Math.abs(amount);
       if (operation === '扣點' && foundUser.points < absAmount) {
+          console.log(`DEBUG: 手動調整點數 - 學員點數不足，無法扣點。`);
           delete pendingManualAdjust[userId];
           return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
       }
       foundUser.points += amount;
 
       console.log(`DEBUG: 手動調整點數 - 學員 ${foundUser.name} 點數計算後: ${foundUser.points}`); 
-      // ==== 結束新增的 DEBUG 日誌點 ====
-
+      
       if (!Array.isArray(foundUser.history)) foundUser.history = [];
       foundUser.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
-      await saveUser(foundUser);
+      await saveUser(foundUser); // 確保這裡保存的是正確的點數
       push(foundUser.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${foundUser.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
       delete pendingManualAdjust[userId];
       return reply(replyToken, `✅ 已成功為學員 ${foundUser.name} ${operation} ${absAmount} 點，目前點數：${foundUser.points} 點。`, teacherMenu);
   }
 
+  // 以下是其他指令的處理邏輯
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
+    console.log(`DEBUG: handleTeacherCommands - 處理 MAIN_MENU`);
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
   
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
+    console.log(`DEBUG: handleTeacherCommands - 處理 POINT_MANAGEMENT`);
     const pendingOrdersCount = (await pgClient.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
 
     const pointManagementBubbles = [
@@ -445,6 +467,7 @@ async function handleTeacherCommands(event, userId) {
   }
 
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT || text === COMMANDS.TEACHER.CANCEL_COURSE || text === COMMANDS.TEACHER.COURSE_LIST || text === COMMANDS.TEACHER.ADD_COURSE) {
+    console.log(`DEBUG: handleTeacherCommands - 處理 COURSE_MANAGEMENT 相關指令`);
     const now = Date.now();
     const upcomingCourses = Object.values(courses)
       .filter(c => new Date(c.time).getTime() > now)
@@ -536,6 +559,7 @@ async function handleTeacherCommands(event, userId) {
   }
 
   if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
+    console.log(`DEBUG: handleTeacherCommands - 處理 SEARCH_STUDENT`);
     const query = text.replace(COMMANDS.TEACHER.SEARCH_STUDENT + ' ', '').trim();
     if (!query) {
       return reply(replyToken, '請輸入要查詢的學員名稱或 ID。', teacherMenu);
@@ -569,6 +593,7 @@ async function handleTeacherCommands(event, userId) {
   }
 
   if (text === COMMANDS.TEACHER.REPORT) {
+    console.log(`DEBUG: handleTeacherCommands - 處理 REPORT`);
     const usersRes = await pgClient.query(`SELECT * FROM users WHERE role = 'student'`);
     const students = usersRes.rows;
     const totalPoints = students.reduce((sum, student) => sum + student.points, 0);
@@ -607,6 +632,7 @@ async function handleTeacherCommands(event, userId) {
   
   // 處理點擊「查看待確認清單」按鈕後的文字指令
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
+    console.log(`DEBUG: handleTeacherCommands - 處理 PENDING_ORDERS`);
     const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
     const pendingConfirmationOrders = ordersRes.rows.map(row => ({
       orderId: row.order_id, userId: row.user_id, userName: row.user_name,
@@ -643,12 +669,14 @@ async function handleTeacherCommands(event, userId) {
   }
 
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
+    console.log(`DEBUG: handleTeacherCommands - 處理 MANUAL_ADJUST_POINTS，設定 pendingManualAdjust 狀態。`);
     pendingManualAdjust[userId] = { step: 1 };
     return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回點數管理 取消。', [
       { type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
     ]);
   }
 
+  console.log(`DEBUG: handleTeacherCommands - 未匹配任何已知指令。`);
   return reply(replyToken, '指令無效，請使用下方老師選單或輸入正確指令。', teacherMenu);
 }
 
@@ -658,6 +686,7 @@ async function handleTeacherCommands(event, userId) {
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
+  console.log(`DEBUG: handleStudentCommands - 處理指令: "${text}", 用戶ID: ${userId}`); // 新增
 
   const user = await getUser(userId);
   const courses = await getAllCourses();
@@ -667,7 +696,7 @@ async function handleStudentCommands(event, userId) {
   }
   
   if (text === COMMANDS.STUDENT.POINTS || text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
-    delete pendingPurchase[userId];
+    delete pendingPurchase[userId]; // 確保進入點數功能時清除 pendingPurchase 狀態
 
     const pointBubbles = [
         {
@@ -1097,7 +1126,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要取消候補 ')) {
     const id = text.replace('我要取消候補 ', '').trim();
     const course = courses[id];
-    const now = Date.Date();
+    const now = Date.now();
 
     if (!course || !course.waiting?.includes(userId)) {
       return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
@@ -1124,6 +1153,11 @@ async function handleStudentCommands(event, userId) {
 async function handleEvent(event) {
     const userId = event.source.userId;
     const replyToken = event.replyToken;
+
+    console.log(`DEBUG: handleEvent - 收到事件類型: ${event.type}, 用戶ID: ${userId}`);
+    if (event.type === 'message' && event.message.type === 'text') {
+        console.log(`DEBUG: handleEvent - 收到文字訊息: "${event.message.text}"`);
+    }
 
     if (event.type !== 'message' && event.type !== 'postback' && event.type !== 'follow' && event.type !== 'unfollow') {
         console.log(`Ignored event type: ${event.type}`);
@@ -1168,6 +1202,7 @@ async function handleEvent(event) {
 
     // --- Postback 事件處理 ---
     if (event.type === 'postback') {
+        console.log(`DEBUG: handleEvent - 處理 Postback 事件: ${event.postback.data}`);
         const data = event.postback.data;
         const params = new URLSearchParams(data);
         const postbackAction = params.get('action');
@@ -1440,9 +1475,12 @@ async function handleEvent(event) {
     }
 
     const finalUser = await getUser(userId);
+    console.log(`DEBUG: handleEvent - 用戶 ${userId} 角色: ${finalUser.role}`);
     if (finalUser.role === 'teacher') {
+        console.log(`DEBUG: handleEvent - 呼叫 handleTeacherCommands`);
         return handleTeacherCommands(event, userId);
     } else {
+        console.log(`DEBUG: handleEvent - 呼叫 handleStudentCommands`);
         return handleStudentCommands(event, userId);
     }
 }
@@ -1511,7 +1549,9 @@ app.post('/webhook', (req, res) => {
     .then(() => res.status(200).send('OK'))
     .catch((err) => {
       console.error('❌ Webhook 處理失敗:', err);
-      res.status(500).end();
+      // 在這裡，您可能不應該直接發送回覆，因為可能已經在 handleEvent 中處理過
+      // 而是記錄錯誤並確保響應狀態
+      res.status(500).end(); 
     });
 });
 
@@ -1519,7 +1559,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.4.2f`);
+  console.log(`Bot 版本: V4.4.2g`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
