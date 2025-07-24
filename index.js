@@ -1,4 +1,4 @@
-// index.js - V4.5.0T (Transactional update, bug fixes, refactoring)
+// index.js - V4.5.1T (Transactional update, bug fixes, refactoring, async pending orders)
 
 // =====================================
 //                 模組載入
@@ -629,39 +629,60 @@ async function handleTeacherCommands(event, userId) {
   // 處理點擊「查看待確認清單」按鈕後的文字指令
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
     console.log(`DEBUG: handleTeacherCommands - 處理 PENDING_ORDERS`);
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
-    const pendingConfirmationOrders = ordersRes.rows.map(row => ({ // 修正變數名稱 ordersR.ows -> ordersRes.rows
-      orderId: row.order_id, userId: row.user_id, userName: row.user_name,
-      points: row.points, amount: row.amount, last5Digits: row.last_5_digits,
-      timestamp: row.timestamp.toISOString()
-    }));
 
-    if (pendingConfirmationOrders.length === 0) {
-        return reply(replyToken, '目前沒有待確認的購點訂單。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-    }
+    // --- 修改開始 ---
+    // 1. 立即回覆，避免 reply token 超時
+    reply(replyToken, '正在查詢待確認訂單，請稍候...').catch(e => console.error(e));
 
-    let replyMessage = '以下是待確認的購點訂單：\n\n';
-    const displayOrders = pendingConfirmationOrders.slice(0, 6);
-    displayOrders.forEach(order => {
-      replyMessage += `--- 訂單 #${order.orderId} ---\n`;
-      replyMessage += `學員姓名: ${order.userName}\n`;
-      replyMessage += `學員ID: ${order.userId.substring(0, 8)}...\n`;
-      replyMessage += `購買點數: ${order.points} 點\n`;
-      replyMessage += `應付金額: $${order.amount}\n`;
-      replyMessage += `匯款後五碼: ${order.last5Digits || 'N/A'}\n`;
-      replyMessage += `提交時間: ${formatDateTime(order.timestamp)}\n\n`;
-    });
+    // 2. 在背景執行耗時的資料庫查詢，並使用 pushMessage 推送結果
+    (async () => {
+        try {
+            const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
+            const pendingConfirmationOrders = ordersRes.rows.map(row => ({
+                orderId: row.order_id, userId: row.user_id, userName: row.user_name,
+                points: row.points, amount: row.amount, last5Digits: row.last_5_digits,
+                timestamp: row.timestamp.toISOString()
+            }));
 
-    const quickReplyItems = displayOrders.flatMap(order => [
-      { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`.slice(0, 20), data: `action=confirm_order&orderId=${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
-      { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`.slice(0, 20), data: `action=cancel_order&orderId=${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
-    ]);
-    quickReplyItems.push({ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT });
+            if (pendingConfirmationOrders.length === 0) {
+                // 如果沒有訂單，也用 push 通知
+                return push(userId, '目前沒有待確認的購點訂單。');
+            }
 
-    return reply(replyToken, {
-      type: 'text', text: replyMessage.trim(),
-      quickReply: { items: quickReplyItems }
-    });
+            let replyMessage = '以下是待確認的購點訂單：\n\n';
+            const displayOrders = pendingConfirmationOrders.slice(0, 6);
+            displayOrders.forEach(order => {
+                replyMessage += `--- 訂單 #${order.orderId} ---\n`;
+                replyMessage += `學員姓名: ${order.userName}\n`;
+                replyMessage += `學員ID: ${order.userId.substring(0, 8)}...\n`;
+                replyMessage += `購買點數: ${order.points} 點\n`;
+                replyMessage += `應付金額: $${order.amount}\n`;
+                replyMessage += `匯款後五碼: ${order.last5Digits || 'N/A'}\n`;
+                replyMessage += `提交時間: ${formatDateTime(order.timestamp)}\n\n`;
+            });
+
+            const quickReplyItems = displayOrders.flatMap(order => [
+                { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`.slice(0, 20), data: `action=confirm_order&orderId=${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
+                { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`.slice(0, 20), data: `action=cancel_order&orderId=${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
+            ]);
+            quickReplyItems.push({ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT });
+
+            // 3. 使用 push 將帶有 Quick Reply 的結果發送出去
+            await push(userId, {
+                type: 'text', text: replyMessage.trim(),
+                quickReply: { items: quickReplyItems }
+            });
+
+        } catch (err) {
+            console.error('❌ 查詢待確認訂單時發生錯誤:', err);
+            // 發生錯誤時，也用 push 通知使用者
+            await push(userId, '查詢訂單時發生錯誤，請稍後再試。');
+        }
+    })();
+    
+    // 因為我們已經用非同步方式處理，這裡直接返回，結束函式
+    return;
+    // --- 修改結束 ---
   }
 
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
@@ -1694,7 +1715,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.0T`); // 更新版本號
+  console.log(`Bot 版本: V4.5.1T`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
