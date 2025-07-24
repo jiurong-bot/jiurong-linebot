@@ -1,4 +1,4 @@
-// index.js - V4.5.1T (Transactional update, bug fixes, refactoring, async pending orders)
+// index.js - V4.5.1T (Transactional update, bug fixes, refactoring, async pending orders - No Quick Reply)
 
 // =====================================
 //                 模組載入
@@ -661,17 +661,8 @@ async function handleTeacherCommands(event, userId) {
                 replyMessage += `提交時間: ${formatDateTime(order.timestamp)}\n\n`;
             });
 
-            const quickReplyItems = displayOrders.flatMap(order => [
-                { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`.slice(0, 20), data: `action=confirm_order&orderId=${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
-                { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`.slice(0, 20), data: `action=cancel_order&orderId=${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
-            ]);
-            quickReplyItems.push({ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT });
-
-            // 3. 使用 push 將帶有 Quick Reply 的結果發送出去
-            await push(userId, {
-                type: 'text', text: replyMessage.trim(),
-                quickReply: { items: quickReplyItems }
-            });
+            // 3. 使用 push 將結果發送出去 (只發送文字訊息，移除 Quick Reply)
+            await push(userId, replyMessage.trim());
 
         } catch (err) {
             console.error('❌ 查詢待確認訂單時發生錯誤:', err);
@@ -1715,7 +1706,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.1T`); // 更新版本號
+  console.log(`Bot 版本: V4.5.1T (No Quick Reply)`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
