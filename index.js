@@ -224,6 +224,11 @@ async function reply(replyToken, content, menu = null) {
     messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
   }
 
+  // --- DEBUG LOGGING ---
+  console.log(`Debug: Preparing to reply to ${replyToken.substring(0, 8)}...`);
+  console.log(`Debug: Messages content: ${JSON.stringify(messages, null, 2)}`);
+  // --- END DEBUG LOGGING ---
+
   return client.replyMessage(replyToken, messages);
 }
 
@@ -602,6 +607,9 @@ async function handleTeacherCommands(event, userId) {
     let replyMessage = '以下是待確認的購點訂單：\n\n';
     const displayOrders = pendingConfirmationOrders.slice(0, 6); // 最多顯示6筆
     displayOrders.forEach(order => {
+      // --- DEBUG LOGGING ---
+      console.log(`Debug: Displaying pending order - OrderId: ${order.orderId}, UserName: ${order.userName}, Status: ${order.status}`);
+      // --- END DEBUG LOGGING ---
       replyMessage += `--- 訂單 #${order.orderId} ---\n`;
       replyMessage += `學員名稱: ${order.userName}\n`;
       replyMessage += `學員ID: ${order.userId.substring(0, 8)}...\n`;
@@ -612,10 +620,15 @@ async function handleTeacherCommands(event, userId) {
     });
 
     // 動態生成快速回覆按鈕
-    const quickReplyItems = displayOrders.flatMap(order => [
-      { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`.slice(0, 20), data: `action=confirm_order&orderId=${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
-      { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`.slice(0, 20), data: `action=cancel_order&orderId=${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
-    ]);
+    const quickReplyItems = displayOrders.flatMap(order => {
+        // --- DEBUG LOGGING ---
+        console.log(`Debug: Creating quick reply buttons for order - OrderId: ${order.orderId}`);
+        // --- END DEBUG LOGGING ---
+        return [
+            { type: 'action', action: { type: 'postback', label: `✅ 確認#${order.orderId}`.slice(0, 20), data: `action=confirm_order&orderId=${order.orderId}`, displayText: `✅ 確認訂單 ${order.orderId} 入帳` } },
+            { type: 'action', action: { type: 'postback', label: `❌ 取消#${order.orderId}`.slice(0, 20), data: `action=cancel_order&orderId=${order.orderId}`, displayText: `❌ 取消訂單 ${order.orderId}` } },
+        ];
+    });
     quickReplyItems.push({ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT });
 
     return reply(replyToken, {
@@ -1153,6 +1166,11 @@ async function handleEvent(event) {
         const courseId = params.get('courseId');
         const orderId = params.get('orderId');
 
+        // --- DEBUG LOGGING ---
+        console.log(`Debug: Received postback data: ${data}`);
+        console.log(`Debug: Parsed postback - Action: ${postbackAction}, CourseId: ${courseId}, OrderId: ${orderId}`);
+        // --- END DEBUG LOGGING ---
+
         const currentUser = await getUser(userId);
         
         // --- Teacher Postbacks ---
@@ -1220,10 +1238,16 @@ async function handleEvent(event) {
                 const orders = await getAllOrders();
                 const order = orders[orderId];
                 if (!order || order.status !== 'pending_confirmation') {
+                    // --- DEBUG LOGGING ---
+                    console.log(`Debug: Order ${orderId} not found or status not pending_confirmation.`);
+                    // --- END DEBUG LOGGING ---
                     return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                 }
                 const studentUser = await getUser(order.userId);
                 if (!studentUser) {
+                    // --- DEBUG LOGGING ---
+                    console.log(`Debug: Student user ${order.userId} not found for order ${orderId}.`);
+                    // --- END DEBUG LOGGING ---
                     return reply(replyToken, `找不到購點學員 (ID: ${order.userId}) 的資料。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                 }
                 if (postbackAction === 'confirm_order') {
@@ -1557,4 +1581,3 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。請設定 SELF_URL 環境變數以確保機器人持續運行。');
   }
 });
-
