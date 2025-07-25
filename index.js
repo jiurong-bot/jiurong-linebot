@@ -1479,7 +1479,7 @@ async function handleStudentCommands(event, userId) {
                 await saveUser(nextWaitingUser, pgClient);
                 
                 push(nextWaitingUserId, `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(updatedCourse.time)}\n系統已自動扣除 ${course.pointsCost} 點。請確認你的「我的課程」。\n\n💡 請注意：課程開始前 8 小時不可退課。`)
-                    .catch(e => console.error(`❌ 通知候補者 ${nextWaitingUserId} 失敗:`, e.message));
+                    .catch(e => console.error(`❌ 向學員 ${nextWaitingUserId} 發送提醒失敗:`, e.message));
                 replyMessage += '\n有候補學生已遞補成功。';
             } else if (nextWaitingUser) {
                 const studentName = nextWaitingUser.name || `未知學員(${nextWaitingUser.id.substring(0, 4)}...)`; // Fix: Use nextWaitingUser.id
@@ -1805,6 +1805,7 @@ async function handleEvent(event) {
         return reply(replyToken, '已取消新增課程流程並返回老師主選單。', teacherMenu);
     }
 
+    // 將輸入總堂數的步驟移到輸入課程名稱之後
     if (pendingCourseCreation[userId]) {
         const stepData = pendingCourseCreation[userId];
         const weekdays = { '星期日': 0, '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, '星期五': 5, '星期六': 6 };
@@ -1822,52 +1823,53 @@ async function handleEvent(event) {
                 return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             case 2: // 輸入課程名稱
                 stepData.data.title = text;
-                stepData.step = 3;
-                const weekdayOptions = Object.keys(weekdays).map(day => ({ type: 'message', label: day, text: day }));
-                weekdayOptions.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
-                return reply(replyToken, '請選擇課程日期（星期幾）：', weekdayOptions);
-            case 3: // 選擇星期幾
-                if (!weekdays.hasOwnProperty(text)) {
-                    return reply(replyToken, '請選擇正確的星期。');
-                }
-                stepData.data.weekday = text;
-                stepData.step = 4;
-                return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 4: // 輸入時間
-                if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
-                    return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
-                }
-                stepData.data.time = text;
-                stepData.step = 5;
-                return reply(replyToken, '請輸入人員上限（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 5: // 輸入人數上限
-                const capacity = parseInt(text);
-                if (isNaN(capacity) || capacity <= 0) {
-                    return reply(replyToken, '人數上限必須是正整數。');
-                }
-                stepData.data.capacity = capacity;
-                stepData.step = 6;
-                return reply(replyToken, '請輸入課程所需扣除的點數（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 6: // 輸入點數
-                const pointsCost = parseInt(text);
-                if (isNaN(pointsCost) || pointsCost <= 0) {
-                    return reply(replyToken, '扣除點數必須是正整數。');
-                }
-                stepData.data.pointsCost = pointsCost;
-                stepData.step = 7; // 新增一步驟來詢問總堂數
+                stepData.step = 3; // **修改：下一步驟為輸入總堂數**
                 return reply(replyToken, '請輸入此週期課程的總堂數（例如：5，表示 Y01 到 Y05）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 7: // 輸入總堂數
+            case 3: // **新增的步驟：輸入總堂數**
                 const totalClasses = parseInt(text);
                 if (isNaN(totalClasses) || totalClasses <= 0) {
                     return reply(replyToken, '總堂數必須是正整數。');
                 }
                 stepData.data.totalClasses = totalClasses;
-                stepData.step = 8; // 跳到確認步驟
-                return reply(replyToken, `請確認是否建立課程：\n課程類別：${stepData.data.categoryName}\n課程名稱：${stepData.data.title}\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點\n總堂數：${stepData.data.totalClasses} 堂`, [
+                stepData.step = 4; // **修改：下一步驟為選擇星期幾**
+                // 由於 Line 不支持動態 Quick Reply，如果需要星期幾的選單，則在這一回覆中提供
+                const weekdayOptions = Object.keys(weekdays).map(day => ({ type: 'message', label: day, text: day }));
+                weekdayOptions.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
+                return reply(replyToken, '請選擇課程日期（星期幾）：', weekdayOptions);
+            case 4: // **原來的選擇星期幾 (現在是 4)**
+                if (!weekdays.hasOwnProperty(text)) {
+                    return reply(replyToken, '請選擇正確的星期。');
+                }
+                stepData.data.weekday = text;
+                stepData.step = 5; // **修改：下一步驟為輸入時間**
+                return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+            case 5: // **原來的輸入時間 (現在是 5)**
+                if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
+                    return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
+                }
+                stepData.data.time = text;
+                stepData.step = 6; // **修改：下一步驟為輸入人數上限**
+                return reply(replyToken, '請輸入人員上限（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+            case 6: // **原來的輸入人數上限 (現在是 6)**
+                const capacity = parseInt(text);
+                if (isNaN(capacity) || capacity <= 0) {
+                    return reply(replyToken, '人數上限必須是正整數。');
+                }
+                stepData.data.capacity = capacity;
+                stepData.step = 7; // **修改：下一步驟為輸入點數**
+                return reply(replyToken, '請輸入課程所需扣除的點數（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+            case 7: // **原來的輸入點數 (現在是 7)**
+                const pointsCost = parseInt(text);
+                if (isNaN(pointsCost) || pointsCost <= 0) {
+                    return reply(replyToken, '扣除點數必須是正整數。');
+                }
+                stepData.data.pointsCost = pointsCost;
+                stepData.step = 8; // **修改：下一步驟為確認**
+                return reply(replyToken, `請確認是否建立課程：\n課程類別：${stepData.data.categoryName}\n課程名稱：${stepData.data.title}\n總堂數：${stepData.data.totalClasses} 堂\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點`, [
                     { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE },
                     { type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE },
                 ]);
-            case 8: // 確認新增課程
+            case 8: // **原來的確認新增課程 (現在是 8)**
                 if (text === COMMANDS.STUDENT.CONFIRM_ADD_COURSE) {
                     const targetWeekdayIndex = weekdays[stepData.data.weekday];
                     const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
