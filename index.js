@@ -58,14 +58,12 @@ const BANK_INFO = {
   accountNumber: '012540278393',
 };
 
-// 課程類別定義
-// 這個物件定義了課程的類別及其對應的英文字母前綴
+// 課程類別定義 (此物件現在僅用於參考，不再用於生成課程ID的前綴)
 const courseCategories = {
     '陰瑜伽': 'Y',
     '有氧拳擊': 'B',
     '健身訓練': 'F',
-    '其他課程': 'O', // 新增一個通用類別，如果課程不屬於上述任何一種
-    // 可以根據需求在這裡新增更多課程類別和對應的前綴
+    '其他課程': 'O',
 };
 
 // 指令常數
@@ -94,7 +92,6 @@ const COMMANDS = {
     CANCEL_INPUT_LAST5: '❌ 取消輸入後五碼',
     BOOK_COURSE: '@預約課程',
     MY_COURSES: '@我的課程',
-    // VIEW_UPCOMING_COURSES: '@查看未來7天課程', // 已移除此指令
     CANCEL_BOOKING: '@取消預約',
     CANCEL_WAITING: '@取消候補',
     CONFIRM_ADD_COURSE: '確認新增課程',
@@ -109,11 +106,6 @@ const COMMANDS = {
 // =====================================
 //        資料庫初始化與工具函式
 // =====================================
-// 全局課程 ID 計數器，現在是一個物件，按前綴分類
-// 課程 ID 生成邏輯變更後，這個計數器可以不再需要全局維護，ID 將完全隨機
-// 但為了確保 ID 不重複，我們需要一種方式來檢查新生成的隨機 ID 是否已存在
-// 這裡將修改 ID 生成策略，改為隨機生成，並在新增課程時檢查唯一性
-// global.courseIdCounters = {}; // 不再需要這個全局計數器
 
 async function initializeDatabase() {
   try {
@@ -123,21 +115,11 @@ async function initializeDatabase() {
     await pgClient.query(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, points INTEGER DEFAULT 0, role VARCHAR(50) DEFAULT 'student', history JSONB DEFAULT '[]')`);
     console.log('✅ 檢查並建立 users 表完成');
 
-    // 修改 courses 表，新增 course_category_prefix 欄位 (可選，但有助於資料結構清晰)
-    // 這裡假設新的課程ID (例如 Y01) 已經包含前綴，所以可以從ID中解析
     await pgClient.query(`CREATE TABLE IF NOT EXISTS courses (id VARCHAR(255) PRIMARY KEY, title VARCHAR(255) NOT NULL, time TIMESTAMPTZ NOT NULL, capacity INTEGER NOT NULL, points_cost INTEGER NOT NULL, students TEXT[] DEFAULT '{}', waiting TEXT[] DEFAULT '{}')`);
     console.log('✅ 檢查並建立 courses 表完成');
 
     await pgClient.query(`CREATE TABLE IF NOT EXISTS orders (order_id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, points INTEGER NOT NULL, amount INTEGER NOT NULL, last_5_digits VARCHAR(5), status VARCHAR(50) NOT NULL, timestamp TIMESTAMPTZ NOT NULL)`);
     console.log('✅ 檢查並建立 orders 表完成');
-
-    // 初始化所有課程類別的計數器 (現在不再需要，因為 ID 隨機生成)
-    // for (const categoryName in courseCategories) {
-    //     const prefix = courseCategories[categoryName];
-    //     const res = await pgClient.query(`SELECT MAX(SUBSTRING(id FROM 2)::INTEGER) AS max_id FROM courses WHERE id LIKE $1`, [`${prefix}%`]);
-    //     global.courseIdCounters[prefix] = (res.rows[0].max_id || 0) + 1;
-    //     console.log(`ℹ️ 課程 ID 計數器 ${prefix} 初始化為: ${global.courseIdCounters[prefix]}`);
-    // }
     
     await cleanCoursesDB();
     console.log('✅ 首次資料庫清理完成。');
@@ -150,13 +132,12 @@ async function initializeDatabase() {
 initializeDatabase();
 
 // --- 新增: 隨機課程 ID 生成器 ---
-async function generateUniqueCourseId(prefix, dbClient = pgClient) {
+async function generateUniqueCourseId(dbClient = pgClient) {
     let newId;
     let isUnique = false;
     while (!isUnique) {
-        // 隨機生成一個大寫字母
+        // 隨機生成兩個大寫字母
         const randomChar1 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-        // 隨機生成另一個大寫字母
         const randomChar2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
         // 隨機生成兩個數字
         const randomNumber1 = Math.floor(Math.random() * 10);
@@ -384,8 +365,6 @@ const studentMenu = [
     { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
     { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
     { type: 'message', label: '點數管理', text: COMMANDS.STUDENT.POINTS },
-    // { type: 'message', label: '未來7天課程', text: COMMANDS.STUDENT.VIEW_UPCOMING_COURSES }, // 已移除此選項
-    // 已隱藏切換身份選項，但功能仍可透過指令使用
 ];
 
 const studentPointSubMenu = [
@@ -405,7 +384,6 @@ const teacherMenu = [
         displayText: '準備查詢學員...' 
     },
     { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
-    // 已隱藏切換身份選項，但功能仍可透過指令使用
 ];
 
 
@@ -1361,11 +1339,6 @@ async function handleStudentCommands(event, userId) {
     ], [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
 
-  // 新增 學員查詢未來 7 天課程 功能 (此段已移除，功能整合至 BOOK_COURSE)
-  // if (text === COMMANDS.STUDENT.VIEW_UPCOMING_COURSES) {
-  //   ... (原來的邏輯) ...
-  // }
-
   if (text.startsWith('我要預約 ')) {
     const courseId = text.replace('我要預約 ', '').trim();
     const course = courses[courseId];
@@ -1679,12 +1652,9 @@ async function handleEvent(event) {
         // --- Teacher Postbacks ---
         if (currentUser.role === 'teacher') {
             if (postbackAction === 'add_course_start') {
-                pendingCourseCreation[userId] = { step: 1, data: {} };
-                const categoryOptions = Object.keys(courseCategories).map(categoryName => ({
-                    type: 'message', label: categoryName, text: categoryName
-                }));
-                categoryOptions.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
-                return reply(replyToken, '請選擇課程類別：', categoryOptions);
+                // 直接跳過類別選擇步驟，進入輸入課程名稱
+                pendingCourseCreation[userId] = { step: 1, data: {} }; 
+                return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             }
 
             // (新增) 處理點擊「查詢學員」按鈕後的邏輯
@@ -1894,66 +1864,54 @@ async function handleEvent(event) {
         const stepData = pendingCourseCreation[userId];
         const weekdays = { '星期日': 0, '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, '星期五': 5, '星期六': 6 };
         switch (stepData.step) {
-            case 1: // 選擇課程類別
-                const selectedCategoryPrefix = courseCategories[text];
-                if (!selectedCategoryPrefix) {
-                    const availableCategories = Object.keys(courseCategories).map(cat => ({ type: 'message', label: cat, text: cat }));
-                    availableCategories.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
-                    return reply(replyToken, '請從列表中選擇有效的課程類別。', availableCategories);
-                }
-                stepData.data.categoryPrefix = selectedCategoryPrefix;
-                stepData.data.categoryName = text; // 儲存類別名稱以供確認訊息使用
-                stepData.step = 2;
-                return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 2: // 輸入課程名稱
+            case 1: // 選擇課程名稱 (原步驟2，現在是第一個步驟)
                 stepData.data.title = text;
-                stepData.step = 3; // **修改：下一步驟為輸入總堂數**
+                stepData.step = 2; // 下一步驟為輸入總堂數 (原步驟3)
                 return reply(replyToken, '請輸入此週期課程的總堂數（例如：5）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 3: // **新增的步驟：輸入總堂數**
+            case 2: // 輸入總堂數 (原步驟3，現在是2)
                 const totalClasses = parseInt(text);
                 if (isNaN(totalClasses) || totalClasses <= 0) {
                     return reply(replyToken, '總堂數必須是正整數。');
                 }
                 stepData.data.totalClasses = totalClasses;
-                stepData.step = 4; // **修改：下一步驟為選擇星期幾**
-                // 由於 Line 不支持動態 Quick Reply，如果需要星期幾的選單，則在這一回覆中提供
+                stepData.step = 3; // 下一步驟為選擇星期幾 (原步驟4)
                 const weekdayOptions = Object.keys(weekdays).map(day => ({ type: 'message', label: day, text: day }));
                 weekdayOptions.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
                 return reply(replyToken, '請選擇課程日期（星期幾）：', weekdayOptions);
-            case 4: // **原來的選擇星期幾 (現在是 4)**
+            case 3: // 選擇星期幾 (原步驟4，現在是3)
                 if (!weekdays.hasOwnProperty(text)) {
                     return reply(replyToken, '請選擇正確的星期。');
                 }
                 stepData.data.weekday = text;
-                stepData.step = 5; // **修改：下一步驟為輸入時間**
+                stepData.step = 4; // 下一步驟為輸入時間 (原步驟5)
                 return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 5: // **原來的輸入時間 (現在是 5)**
+            case 4: // 輸入時間 (原步驟5，現在是4)
                 if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
                     return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
                 }
                 stepData.data.time = text;
-                stepData.step = 6; // **修改：下一步驟為輸入人數上限**
+                stepData.step = 5; // 下一步驟為輸入人數上限 (原步驟6)
                 return reply(replyToken, '請輸入人員上限（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 6: // **原來的輸入人數上限 (現在是 6)**
+            case 5: // 輸入人數上限 (原步驟6，現在是5)
                 const capacity = parseInt(text);
                 if (isNaN(capacity) || capacity <= 0) {
                     return reply(replyToken, '人數上限必須是正整數。');
                 }
                 stepData.data.capacity = capacity;
-                stepData.step = 7; // **修改：下一步驟為輸入點數**
+                stepData.step = 6; // 下一步驟為輸入點數 (原步驟7)
                 return reply(replyToken, '請輸入課程所需扣除的點數（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 7: // **原來的輸入點數 (現在是 7)**
+            case 6: // 輸入點數 (原步驟7，現在是6)
                 const pointsCost = parseInt(text);
                 if (isNaN(pointsCost) || pointsCost <= 0) {
                     return reply(replyToken, '扣除點數必須是正整數。');
                 }
                 stepData.data.pointsCost = pointsCost;
-                stepData.step = 8; // **修改：下一步驟為確認**
-                return reply(replyToken, `請確認是否建立課程：\n課程類別：${stepData.data.categoryName}\n課程名稱：${stepData.data.title}\n總堂數：${stepData.data.totalClasses} 堂\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點`, [
+                stepData.step = 7; // 下一步驟為確認 (原步驟8)
+                return reply(replyToken, `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n總堂數：${stepData.data.totalClasses} 堂\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點`, [
                     { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE },
                     { type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE },
                 ]);
-            case 8: // **原來的確認新增課程 (現在是 8)**
+            case 7: // 確認新增課程 (原步驟8，現在是7)
                 if (text === COMMANDS.STUDENT.CONFIRM_ADD_COURSE) {
                     const targetWeekdayIndex = weekdays[stepData.data.weekday];
                     const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
@@ -1973,11 +1931,9 @@ async function handleEvent(event) {
                     firstCourseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
 
                     const coursesToAdd = [];
-                    // --- 修改：課程 ID 生成方式 ---
                     for (let i = 0; i < stepData.data.totalClasses; i++) {
                         const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS)); // 每週同一天
-                        // 這裡不再使用 categoryPrefix 作為 ID 的單一前綴，而是隨機生成兩位字母
-                        const newId = await generateUniqueCourseId(stepData.data.categoryPrefix, pgClient); // 調用新的隨機 ID 生成函數
+                        const newId = await generateUniqueCourseId(pgClient); // 調用新的隨機 ID 生成函數
                         
                         coursesToAdd.push({
                             id: newId,
