@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 
-const { client } = require('./lineUtils'); // 引入 Line Client
+const { client, reply } = require('./lineUtils'); // 引入 Line Client 和 reply 函數
 const { connectDb, getUser, saveUser, pgClient } = require('./db'); // 引入資料庫連接和操作
 const { COMMANDS, MESSAGES } = require('./config'); // 引入常數
 const { studentMenu, teacherMenu } = require('./menus'); // 引入菜單
@@ -46,22 +46,28 @@ async function handleTextMessage(event) {
       // 這裡簡單設定為學生
       user = { id: userId, name: await getLineProfileName(userId), role: 'student', points: 0, state: {}, history: [] };
       await saveUser(user);
-      return studentHandlers.handleStudentMainMenu(event, userId, replyToken); // 導向學生主選單
+      // 注意：這裡直接調用 reply，因為 studentHandlers.handleStudentMainMenu 可能會傳回訊息物件，而不是直接發送
+      await studentHandlers.handleStudentMainMenu(event, userId, replyToken); // 導向學生主選單
+      return; // 處理完新用戶後即返回
     }
   } catch (err) {
     console.error(`❌ 獲取或創建用戶失敗 (${userId}):`, err.message);
-    return reply(replyToken, MESSAGES.COMMON.SYSTEM_ERROR);
+    await reply(replyToken, MESSAGES.COMMON.SYSTEM_ERROR); // 使用引入的 reply 函數
+    return;
   }
 
   // 檢查是否在某個狀態機中
   if (teacherHandlers.pendingManualAdjust[userId]) {
-      return teacherHandlers.handleTeacherManualAdjustPointsInput(event, userId, replyToken, text);
+      await teacherHandlers.handleTeacherManualAdjustPointsInput(event, userId, replyToken, text);
+      return; // 處理完狀態機後即返回
   }
   if (teacherHandlers.pendingCourseAdd[userId]) {
-      return teacherHandlers.handleAddCourseInput(event, userId, replyToken, text);
+      await teacherHandlers.handleAddCourseInput(event, userId, replyToken, text);
+      return; // 處理完狀態機後即返回
   }
   if (studentHandlers.pendingLast5Input[userId]) {
-      return studentHandlers.handleStudentInputLast5Digits(event, userId, replyToken, text);
+      await studentHandlers.handleStudentInputLast5Digits(event, userId, replyToken, text);
+      return; // 處理完狀態機後即返回
   }
 
   // 根據用戶角色分派指令
@@ -71,7 +77,7 @@ async function handleTextMessage(event) {
     await handleStudentCommands(event, userId, text, replyToken);
   } else {
     // 未知角色或新用戶
-    await reply(replyToken, MESSAGES.COMMON.PERMISSION_DENIED, studentMenu);
+    await reply(replyToken, MESSAGES.COMMON.PERMISSION_DENIED, studentMenu); // 使用引入的 reply 函數
   }
 }
 
@@ -87,11 +93,14 @@ async function handlePostbackEvent(event) {
         // 通常 postback 不會是新用戶，但以防萬一
         user = { id: userId, name: await getLineProfileName(userId), role: 'student', points: 0, state: {}, history: [] };
         await saveUser(user);
-        return studentHandlers.handleStudentMainMenu(event, userId, replyToken);
+        // 注意：這裡直接調用 reply
+        await studentHandlers.handleStudentMainMenu(event, userId, replyToken);
+        return;
     }
   } catch (err) {
     console.error(`❌ 獲取或創建用戶失敗 (${userId}):`, err.message);
-    return reply(replyToken, MESSAGES.COMMON.SYSTEM_ERROR);
+    await reply(replyToken, MESSAGES.COMMON.SYSTEM_ERROR); // 使用引入的 reply 函數
+    return;
   }
 
   // 解析 postback data
@@ -110,6 +119,7 @@ async function handlePostbackEvent(event) {
         await teacherHandlers.handleCancelCourseExecute(event, userId, replyToken, params.get('courseId'));
         break;
       case COMMANDS.TEACHER.ACTION_CONFIRM_ORDER:
+        // 確保 orderId 有正確傳遞，這是解決 order_id 為 null 的關鍵之一
         await teacherHandlers.handleConfirmOrder(event, userId, replyToken, params.get('orderId'));
         break;
       case COMMANDS.TEACHER.ACTION_REJECT_ORDER:
@@ -117,7 +127,7 @@ async function handlePostbackEvent(event) {
         break;
       default:
         console.warn(`WARN: 老師收到未處理的 Postback Action: ${action}`);
-        await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, teacherMenu);
+        await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, teacherMenu); // 使用引入的 reply 函數
     }
   } else if (user.role === 'student') {
     switch (action) {
@@ -135,7 +145,7 @@ async function handlePostbackEvent(event) {
         break;
       default:
         console.warn(`WARN: 學員收到未處理的 Postback Action: ${action}`);
-        await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, studentMenu);
+        await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, studentMenu); // 使用引入的 reply 函數
     }
   }
 }
@@ -151,18 +161,18 @@ async function handleNewUserEvent(event) {
       user = { id: userId, name: profile.displayName, role: 'student', points: 0, state: {}, history: [] };
       await saveUser(user);
       console.log(`✅ 新用戶加入: ${profile.displayName} (${userId})`);
-      await reply(replyToken, `哈囉 ${profile.displayName}！歡迎使用本系統，您目前是學員身分。`, studentMenu);
+      await reply(replyToken, `哈囉 ${profile.displayName}！歡迎使用本系統，您目前是學員身分。`, studentMenu); // 使用引入的 reply 函數
     } else {
       console.log(`ℹ️ 已有用戶重新加入/追蹤: ${user.name} (${userId})`);
       if (user.role === 'student') {
-        await reply(replyToken, `歡迎回來，${user.name}！`, studentMenu);
+        await reply(replyToken, `歡迎回來，${user.name}！`, studentMenu); // 使用引入的 reply 函數
       } else if (user.role === 'teacher') {
-        await reply(replyToken, `歡迎回來，老師！`, teacherMenu);
+        await reply(replyToken, `歡迎回來，老師！`, teacherMenu); // 使用引入的 reply 函數
       }
     }
   } catch (err) {
     console.error(`❌ 處理新用戶事件失敗 (${userId}):`, err.message);
-    await reply(replyToken, MESSAGES.COMMON.SYSTEM_ERROR);
+    await reply(replyToken, MESSAGES.COMMON.SYSTEM_ERROR); // 使用引入的 reply 函數
   }
 }
 
@@ -175,7 +185,6 @@ async function getLineProfileName(userId) {
     return '新用戶'; // 返回一個預設名稱
   }
 }
-
 
 // --- 核心指令分派邏輯 ---
 async function handleTeacherCommands(event, userId, text, replyToken) {
@@ -202,14 +211,14 @@ async function handleTeacherCommands(event, userId, text, replyToken) {
             teacherHandlers.pendingManualAdjust[userId] = { step: 1 }; // 設定狀態機開始
             await reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回點數管理 取消。', [
                 { type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
-            ]);
+            ]); // 使用引入的 reply 函數
             break;
         default:
             if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT)) {
                 const query = text.replace(COMMANDS.TEACHER.SEARCH_STUDENT, '').trim();
                 await teacherHandlers.handleTeacherSearchStudent(event, userId, replyToken, query);
             } else {
-                await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, teacherMenu);
+                await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, teacherMenu); // 使用引入的 reply 函數
             }
             break;
     }
@@ -243,7 +252,7 @@ async function handleStudentCommands(event, userId, text, replyToken) {
             await studentHandlers.handleStudentCancelPurchase(event, userId, replyToken);
             break;
         default:
-            await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, studentMenu);
+            await reply(replyToken, MESSAGES.COMMON.INVALID_COMMAND, studentMenu); // 使用引入的 reply 函數
             break;
     }
 }
