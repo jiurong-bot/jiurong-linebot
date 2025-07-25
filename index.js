@@ -1,7 +1,7 @@
-// index.js - V4.7.0T (Enhanced Course Management & Student Upcoming Courses) - 已根據要求修改
+// index.js - V4.8.0 (Periodic Course Grouping & Cancellation) - 已根據要求修改
 
 // =====================================
-//                 模組載入
+//                 模듈載入
 // =====================================
 const express = require('express');
 const { Client } = require('pg');
@@ -58,14 +58,6 @@ const BANK_INFO = {
   accountNumber: '012540278393',
 };
 
-// 課程類別定義 (此物件現在僅用於參考，不再用於生成課程ID的前綴)
-const courseCategories = {
-    '陰瑜伽': 'Y',
-    '有氧拳擊': 'B',
-    '健身訓練': 'F',
-    '其他課程': 'O',
-};
-
 // 指令常數
 const COMMANDS = {
   SWITCH_ROLE: '@切換身份',
@@ -76,7 +68,7 @@ const COMMANDS = {
     ADD_COURSE: '@新增課程',
     CANCEL_COURSE: '@取消課程',
     COURSE_LIST: '@課程列表',
-    SEARCH_STUDENT: '@查學員', 
+    SEARCH_STUDENT: '@查學員',
     REPORT: '@統計報表',
     PENDING_ORDERS: '@待確認清單',
     MANUAL_ADJUST_POINTS: '@手動調整點數',
@@ -84,7 +76,7 @@ const COMMANDS = {
   },
   STUDENT: {
     MAIN_MENU: '@返回學員主選單',
-    POINTS: '@點數管理', 
+    POINTS: '@點數管理',
     CHECK_POINTS: '@剩餘點數',
     BUY_POINTS: '@購買點數',
     PURCHASE_HISTORY: '@購點紀錄',
@@ -120,7 +112,7 @@ async function initializeDatabase() {
 
     await pgClient.query(`CREATE TABLE IF NOT EXISTS orders (order_id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, points INTEGER NOT NULL, amount INTEGER NOT NULL, last_5_digits VARCHAR(5), status VARCHAR(50) NOT NULL, timestamp TIMESTAMPTZ NOT NULL)`);
     console.log('✅ 檢查並建立 orders 表完成');
-    
+
     await cleanCoursesDB();
     console.log('✅ 首次資料庫清理完成。');
 
@@ -131,30 +123,27 @@ async function initializeDatabase() {
 
 initializeDatabase();
 
-// --- 新增: 隨機課程 ID 生成器 ---
-async function generateUniqueCourseId(dbClient = pgClient) {
-    let newId;
+// --- 新增: 課程組代碼 (Prefix) 生成器 ---
+async function generateUniqueCoursePrefix(dbClient = pgClient) {
+    let prefix;
     let isUnique = false;
     while (!isUnique) {
         // 隨機生成兩個大寫字母
         const randomChar1 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
         const randomChar2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-        // 隨機生成兩個數字
-        const randomNumber1 = Math.floor(Math.random() * 10);
-        const randomNumber2 = Math.floor(Math.random() * 10);
-        
-        newId = `${randomChar1}${randomChar2}${randomNumber1}${randomNumber2}`;
-        
-        // 檢查這個 ID 是否已存在於資料庫
-        const res = await dbClient.query('SELECT id FROM courses WHERE id = $1', [newId]);
+        prefix = `${randomChar1}${randomChar2}`;
+
+        // 檢查這個前綴是否已被任何現存課程使用
+        const res = await dbClient.query('SELECT id FROM courses WHERE id LIKE $1', [`${prefix}%`]);
         if (res.rows.length === 0) {
             isUnique = true;
         } else {
-            console.log(`DEBUG: 生成的課程 ID ${newId} 已存在，重新生成。`);
+            console.log(`DEBUG: 生成的課程組代碼 ${prefix} 已存在，重新生成。`);
         }
     }
-    return newId;
+    return prefix;
 }
+
 
 async function getUser(userId, dbClient = pgClient) { // Add optional client for transactions
   const res = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
@@ -174,7 +163,7 @@ async function saveUser(user, dbClient = pgClient) { // Add optional client for 
   try {
     const existingUser = await dbClient.query('SELECT id FROM users WHERE id = $1', [user.id]);
     const historyJson = JSON.stringify(user.history || []);
-    
+
     if (existingUser.rows.length > 0) {
       await dbClient.query(
         'UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5',
@@ -264,7 +253,7 @@ async function saveOrder(order, dbClient = pgClient) { // Add optional client fo
     if (existingOrder.rows.length > 0) {
       await dbClient.query('UPDATE orders SET user_id = $1, user_name = $2, points = $3, amount = $4, last_5_digits = $5, status = $6, timestamp = $7 WHERE order_id = $8', [order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp, order.orderId]);
     } else {
-      await dbClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', 
+      await dbClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
         [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]);
     }
   } catch (err) {
@@ -329,7 +318,7 @@ async function push(to, content) {
   } catch (error) {
     // --- 增強錯誤日誌 ---
     if (error.originalError && error.originalError.response) {
-        console.error(`❌ push 函式發送失敗給 ${to}:`, 
+        console.error(`❌ push 函式發送失敗給 ${to}:`,
                       `狀態碼: ${error.originalError.response.status},`,
                       `訊息: ${error.originalError.response.statusText},`);
         // 嘗試打印響應數據，這通常包含詳細的 LINE API 錯誤信息
@@ -377,11 +366,11 @@ const studentPointSubMenu = [
 const teacherMenu = [
     { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
     { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
-    { 
-        type: 'postback', 
-        label: '查詢學員', 
-        data: 'action=start_student_search', 
-        displayText: '準備查詢學員...' 
+    {
+        type: 'postback',
+        label: '查詢學員',
+        data: 'action=start_student_search',
+        displayText: '準備查詢學員...'
     },
     { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
 ];
@@ -395,7 +384,7 @@ const pendingCourseCreation = {};
 const pendingPurchase = {};
 const pendingManualAdjust = {};
 const sentReminders = {};
-const pendingStudentSearch = {}; 
+const pendingStudentSearch = {};
 
 // =====================================
 //          👨‍🏫 老師指令處理函式
@@ -413,7 +402,7 @@ async function handleTeacherCommands(event, userId) {
           delete pendingStudentSearch[userId];
           return reply(replyToken, '已取消學員查詢。', teacherMenu);
       }
-      
+
       // 處理查詢邏輯
       const query = text; // 直接將用戶輸入的文字作為查詢內容
       let foundUser = null;
@@ -427,7 +416,7 @@ async function handleTeacherCommands(event, userId) {
               foundUser = res.rows[0];
           }
       }
-      
+
       delete pendingStudentSearch[userId]; // 完成查詢或找不到後清除狀態
 
       if (!foundUser) {
@@ -454,7 +443,7 @@ async function handleTeacherCommands(event, userId) {
           delete pendingManualAdjust[userId];
           return reply(replyToken, '已取消手動調整點數。', teacherMenu);
       }
-      
+
       const parts = text.split(' ');
       if (parts.length !== 2) {
           console.log(`DEBUG: 手動調整點數 - 格式錯誤，收到 "${text}"`);
@@ -477,8 +466,8 @@ async function handleTeacherCommands(event, userId) {
           return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
       }
 
-      console.log(`DEBUG: 手動調整點數 - 找到學員 ${foundUser.name} (ID: ${foundUser.id})，原始點數: ${foundUser.points}`); 
-      
+      console.log(`DEBUG: 手動調整點數 - 找到學員 ${foundUser.name} (ID: ${foundUser.id})，原始點數: ${foundUser.points}`);
+
       const operation = amount > 0 ? '加點' : '扣點';
       const absAmount = Math.abs(amount);
       if (operation === '扣點' && foundUser.points < absAmount) {
@@ -494,11 +483,11 @@ async function handleTeacherCommands(event, userId) {
           const userInTransaction = await getUser(foundUser.id, pgClient);
           userInTransaction.points += amount;
 
-          console.log(`DEBUG: 手動調整點數 - 學員 ${userInTransaction.name} 點數計算後: ${userInTransaction.points}`); 
-          
+          console.log(`DEBUG: 手動調整點數 - 學員 ${userInTransaction.name} 點數計算後: ${userInTransaction.points}`);
+
           if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
           userInTransaction.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
-          
+
           await saveUser(userInTransaction, pgClient); // Pass client to use transaction
           await pgClient.query('COMMIT');
 
@@ -532,7 +521,7 @@ async function handleTeacherCommands(event, userId) {
     delete pendingCourseCreation[userId]; // 新增：確保清除課程新增狀態
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
-  
+
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
     console.log(`DEBUG: 處理 POINT_MANAGEMENT`);
     const pendingOrdersCount = (await pgClient.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
@@ -626,8 +615,7 @@ async function handleTeacherCommands(event, userId) {
 
     // 只顯示一張卡片：未來7天內最早的課程
     if (earliestUpcomingCourse) {
-      // 獲取這張卡片代表的課程的前綴 (例如 'UT', 'UY')
-      // 假設課程ID是 AB12 格式，前綴就是 AB
+      // 獲取這張卡片代表的課程的前綴 (例如 'UY')
       const coursePrefix = earliestUpcomingCourse.id.substring(0, 2);
 
       courseBubbles.push({
@@ -672,8 +660,8 @@ async function handleTeacherCommands(event, userId) {
               action: {
                 type: 'postback',
                 // 將要取消的「前綴」傳遞給 Postback
-                label: '取消此課程組', 
-                data: `action=cancel_course_group_confirm&prefix=${coursePrefix}`, 
+                label: '取消此課程組',
+                data: `action=cancel_course_group_confirm&prefix=${coursePrefix}`,
                 displayText: `準備取消 ${coursePrefix} 系列課程`
               },
             },
@@ -705,7 +693,7 @@ async function handleTeacherCommands(event, userId) {
         body: { separator: false, separatorColor: '#EEEEEE' }
       }
     };
-    
+
     // 將「新增課程」氣泡總是放在最後一個
     courseBubbles.push(addCourseBubble);
 
@@ -716,15 +704,15 @@ async function handleTeacherCommands(event, userId) {
 
     const flexMessage = {
       type: 'flex',
-      altText: introText, 
+      altText: introText,
       contents: { type: 'carousel', contents: courseBubbles },
     };
-    
+
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
 
     return reply(replyToken, flexMessage, menuOptions);
   }
-  
+
   if (text === COMMANDS.TEACHER.REPORT) {
     console.log(`DEBUG: 處理 REPORT`);
     const usersRes = await pgClient.query(`SELECT * FROM users WHERE role = 'student'`);
@@ -762,7 +750,7 @@ async function handleTeacherCommands(event, userId) {
 
     return reply(replyToken, report.trim(), teacherMenu);
   }
-  
+
   // 處理點擊「查看待確認清單」按鈕後的文字指令
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
     console.log(`DEBUG: 處理 PENDING_ORDERS`);
@@ -848,7 +836,7 @@ async function handleTeacherCommands(event, userId) {
             await push(userId, '查詢訂單時發生錯誤，請稍後再試。');
         }
     })();
-    
+
     // 因為我們已經用非同步方式處理，這裡直接返回，結束函式
     return;
   }
@@ -901,7 +889,7 @@ async function handlePurchaseFlow(event, userId) {
         await reply(replyToken, '您輸入的匯款帳號後五碼格式不正確，請輸入五位數字。');
         return true; // Flow handled, but waiting for correct input
       }
-      
+
       const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE order_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected')`, [orderId]);
       const order = ordersRes.rows[0];
 
@@ -925,7 +913,7 @@ async function handlePurchaseFlow(event, userId) {
 
         orderInTransaction.last_5_digits = last5Digits;
         orderInTransaction.status = 'pending_confirmation';
-        
+
         await saveOrder({
           orderId: orderInTransaction.order_id, userId: orderInTransaction.user_id, userName: orderInTransaction.user_name,
           points: orderInTransaction.points, amount: orderInTransaction.amount, last5Digits: orderInTransaction.last_5_digits,
@@ -936,7 +924,7 @@ async function handlePurchaseFlow(event, userId) {
         delete pendingPurchase[userId]; // 完成後清除狀態
 
         await reply(replyToken, `✅ 已收到您的匯款帳號後五碼：${last5Digits}。\n感謝您的配合！我們將盡快為您核對並加點。\n\n目前訂單狀態：等待老師確認。`);
-        
+
         // 完成後，模擬用戶點擊「點數管理」按鈕，返回主介面
         await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
         return true; // Flow handled
@@ -1014,14 +1002,14 @@ async function handleStudentCommands(event, userId) {
 
   if (text === COMMANDS.STUDENT.MAIN_MENU) {
     // 清除所有與購點相關的 pending 狀態，回到主菜單
-    delete pendingPurchase[userId]; 
+    delete pendingPurchase[userId];
     return reply(replyToken, '已返回學員主選單。', studentMenu);
   }
-  
+
   if (text === COMMANDS.STUDENT.POINTS || text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
     // 進入點數功能時，確保清除 pendingPurchase 狀態，除非是明確進入 input_last5 或 edit_last5 流程
     if (!pendingPurchase[userId] || (pendingPurchase[userId].step !== 'input_last5' && pendingPurchase[userId].step !== 'edit_last5')) {
-      delete pendingPurchase[userId]; 
+      delete pendingPurchase[userId];
     }
 
     // 查詢最近一筆狀態為 pending_payment, pending_confirmation, 或 rejected 的訂單
@@ -1123,7 +1111,7 @@ async function handleStudentCommands(event, userId) {
         },
         action: { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY }
     });
-    
+
     const flexMessage = {
         type: 'flex',
         altText: '點數管理選單',
@@ -1215,7 +1203,7 @@ async function handleStudentCommands(event, userId) {
             // --- TRANSACTION END ---
         }
     }
-    
+
     // 如果沒有找到任何待處理訂單，或者 pendingPurchase 狀態不符，則清除狀態
     if (pendingPurchase[userId]) {
       delete pendingPurchase[userId];
@@ -1332,7 +1320,7 @@ async function handleStudentCommands(event, userId) {
         altText: '可預約課程列表',
         contents: { type: 'carousel', contents: courseBubbles }
     };
-    
+
     return reply(replyToken, [
         { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' },
         flexMessage
@@ -1342,7 +1330,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要預約 ')) {
     const courseId = text.replace('我要預約 ', '').trim();
     const course = courses[courseId];
-    const now = Date.now(); 
+    const now = Date.now();
 
     if (!course) {
       return reply(replyToken, '找不到該課程，或課程已不存在。', studentMenu);
@@ -1382,11 +1370,11 @@ async function handleStudentCommands(event, userId) {
           currentUser.points -= courseInTransaction.points_cost; // Use points_cost from DB
           if (!Array.isArray(currentUser.history)) currentUser.history = [];
           currentUser.history.push({ id: courseId, action: `預約成功：${courseInTransaction.title} (扣 ${courseInTransaction.points_cost} 點)`, time: new Date().toISOString() });
-          
+
           await saveCourse(courseInTransaction, pgClient);
           await saveUser(currentUser, pgClient);
           await pgClient.query('COMMIT');
-          
+
           return reply(replyToken, `✅ 已成功預約課程：「${courseInTransaction.title}」，扣除 ${courseInTransaction.points_cost} 點。\n\n💡 請注意：課程開始前 8 小時不可退課。`, studentMenu);
         } else {
           courseInTransaction.waiting.push(userId);
@@ -1395,7 +1383,7 @@ async function handleStudentCommands(event, userId) {
           await saveCourse(courseInTransaction, pgClient);
           await saveUser(currentUser, pgClient); // Save user to record history
           await pgClient.query('COMMIT');
-          
+
           return reply(replyToken, `✅ 該課程「${courseInTransaction.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${course.pointsCost} 點。`, studentMenu);
         }
     } catch (err) {
@@ -1418,7 +1406,7 @@ async function handleStudentCommands(event, userId) {
     if (enrolledCourses.length === 0 && waitingCourses.length === 0) {
         return reply(replyToken, '您目前沒有任何已預約或候補中的未來課程。', studentMenu);
     }
-    
+
     const courseBubbles = [
         ...enrolledCourses.map(course => {
             const canCancel = new Date(course.time).getTime() - now > EIGHT_HOURS_IN_MS;
@@ -1476,7 +1464,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要取消預約 ')) {
     const id = text.replace('我要取消預約 ', '').trim();
     const course = courses[id];
-    const now = Date.now(); 
+    const now = Date.now();
 
     if (!course || !course.students.includes(userId)) {
       return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
@@ -1492,14 +1480,14 @@ async function handleStudentCommands(event, userId) {
     let replyMessage = '';
     try {
         await pgClient.query('BEGIN');
-        
+
         // 1. Refund cancelling user
         const cancellingUser = await getUser(userId, pgClient);
         cancellingUser.points += course.pointsCost;
         if (!Array.isArray(cancellingUser.history)) cancellingUser.history = [];
         cancellingUser.history.push({ id: id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
         await saveUser(cancellingUser, pgClient);
-        
+
         // 2. Update course student list
         const updatedCourse = await (await pgClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id])).rows[0];
         updatedCourse.students = updatedCourse.students.filter(sid => sid !== userId);
@@ -1515,9 +1503,9 @@ async function handleStudentCommands(event, userId) {
                 nextWaitingUser.points -= course.pointsCost;
                 if (!Array.isArray(nextWaitingUser.history)) nextWaitingUser.history = [];
                 nextWaitingUser.history.push({ id: id, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
-                
+
                 await saveUser(nextWaitingUser, pgClient);
-                
+
                 push(nextWaitingUserId, `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(updatedCourse.time)}\n系統已自動扣除 ${course.pointsCost} 點。請確認你的「我的課程」。\n\n💡 請注意：課程開始前 8 小時不可退課。`)
                     .catch(e => console.error(`❌ 向學員 ${nextWaitingUserId} 發送提醒失敗:`, e.message));
                 replyMessage += '\n有候補學生已遞補成功。';
@@ -1546,7 +1534,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要取消候補 ')) {
     const id = text.replace('我要取消候補 ', '').trim();
     const course = courses[id];
-    const now = Date.now(); // Fix: Corrected to Date.now() 
+    const now = Date.now(); // Fix: Corrected to Date.now()
 
     if (!course || !course.waiting?.includes(userId)) {
       return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
@@ -1564,7 +1552,7 @@ async function handleStudentCommands(event, userId) {
       courseInTransaction.waiting = courseInTransaction.waiting.filter(x => x !== userId);
       if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
       userInTransaction.history.push({ id: id, action: `取消候補：${course.title}`, time: new Date().toISOString() }); // Fix: use courseId
-      
+
       await saveCourse(courseInTransaction, pgClient);
       await saveUser(userInTransaction, pgClient);
       await pgClient.query('COMMIT');
@@ -1599,7 +1587,7 @@ async function handleEvent(event) {
         console.log(`Ignored event type: ${event.type}`);
         return;
     }
-  
+
     if (event.type === 'follow') {
         console.log(`New user followed bot: ${userId}`);
         try {
@@ -1620,7 +1608,7 @@ async function handleEvent(event) {
         console.log(`User unfollowed bot: ${userId}`);
         return;
     }
-  
+
     let user = await getUser(userId);
     if (!user) {
         user = { id: userId, name: '匿名使用者', points: 0, role: 'student', history: [] };
@@ -1645,21 +1633,21 @@ async function handleEvent(event) {
         const courseId = params.get('courseId');
         const orderId = params.get('orderId');
         // 新增：用於批次取消的課程前綴
-        const coursePrefix = params.get('prefix'); 
+        const coursePrefix = params.get('prefix');
 
         const currentUser = await getUser(userId);
-        
+
         // --- Teacher Postbacks ---
         if (currentUser.role === 'teacher') {
             if (postbackAction === 'add_course_start') {
                 // 直接跳過類別選擇步驟，進入輸入課程名稱
-                pendingCourseCreation[userId] = { step: 1, data: {} }; 
+                pendingCourseCreation[userId] = { step: 1, data: {} };
                 return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             }
 
             // (新增) 處理點擊「查詢學員」按鈕後的邏輯
             if (postbackAction === 'start_student_search') {
-                pendingStudentSearch[userId] = true; 
+                pendingStudentSearch[userId] = true;
                 return reply(replyToken, '請輸入您要查詢的學員姓名或 ID：', [
                     { type: 'message', label: '❌ 取消查詢', text: COMMANDS.TEACHER.MAIN_MENU } // 提供一個取消選項
                 ]);
@@ -1669,7 +1657,7 @@ async function handleEvent(event) {
             if (postbackAction === 'cancel_course_group_confirm') {
                 // 這裡傳遞的是前綴，而不是單一 courseId
                 if (!coursePrefix) { return reply(replyToken, '找不到課程前綴，取消失敗。', teacherMenu); }
-                
+
                 // 查詢有哪些課程會被影響
                 const coursesToCancelRes = await pgClient.query('SELECT id, title FROM courses WHERE id LIKE $1', [`${coursePrefix}%`]);
                 const coursesToCancel = coursesToCancelRes.rows;
@@ -1692,7 +1680,7 @@ async function handleEvent(event) {
                 // --- TRANSACTION START ---
                 try {
                     await pgClient.query('BEGIN');
-                    
+
                     // 調用新的批次刪除函數，它會返回被刪除的課程列表
                     const cancelledCourses = await deleteCoursesByPrefix(coursePrefix, pgClient);
 
@@ -1700,7 +1688,7 @@ async function handleEvent(event) {
                         await pgClient.query('ROLLBACK');
                         return reply(replyToken, `找不到任何以「${coursePrefix}」開頭的課程可供取消。`, teacherMenu);
                     }
-                    
+
                     // 遍歷所有被取消的課程，處理學員退點和通知
                     for (const course of cancelledCourses) {
                         // Notify and refund enrolled students
@@ -1727,7 +1715,7 @@ async function handleEvent(event) {
                     }
 
                     await pgClient.query('COMMIT');
-                    
+
                     console.log(`✅ 所有以 ${coursePrefix} 開頭的課程 (共 ${cancelledCourses.length} 堂) 已成功批次取消。`);
                     return reply(replyToken, `✅ 已成功批次取消所有以「${coursePrefix}」開頭的 ${cancelledCourses.length} 堂課程，並已通知所有相關學員。`, teacherMenu);
                 } catch(err) {
@@ -1737,11 +1725,11 @@ async function handleEvent(event) {
                 }
                 // --- TRANSACTION END ---
             }
-        
+
             if (postbackAction === 'cancel_course_abort') {
                 return reply(replyToken, '操作已取消。', teacherMenu);
             }
-        
+
             if (postbackAction === 'confirm_order') {
                 // --- TRANSACTION START ---
                 try {
@@ -1753,7 +1741,7 @@ async function handleEvent(event) {
                         await pgClient.query('ROLLBACK');
                         return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                     }
-                    
+
                     const studentUser = await getUser(order.user_id, pgClient); // Use order.user_id
                     if (!studentUser) {
                         await pgClient.query('ROLLBACK');
@@ -1764,7 +1752,7 @@ async function handleEvent(event) {
                     if (!Array.isArray(studentUser.history)) studentUser.history = [];
                     studentUser.history.push({ action: `購買點數成功：${order.points} 點`, time: new Date().toISOString(), orderId: orderId });
                     order.status = 'completed';
-                    
+
                     await saveUser(studentUser, pgClient);
                     await saveOrder(order, pgClient);
                     await pgClient.query('COMMIT');
@@ -1777,8 +1765,8 @@ async function handleEvent(event) {
                     return reply(replyToken, '訂單確認失敗，系統發生錯誤，請稍後再試。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                 }
                 // --- TRANSACTION END ---
-            } 
-            
+            }
+
             if (postbackAction === 'reject_order') { // 新增退回訂單的處理邏輯
                 // --- TRANSACTION START ---
                 try {
@@ -1790,13 +1778,13 @@ async function handleEvent(event) {
                         await pgClient.query('ROLLBACK');
                         return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                     }
-                    
+
                     order.status = 'rejected'; // 設定訂單狀態為退回
                     await saveOrder(order, pgClient);
                     await pgClient.query('COMMIT');
 
                     await reply(replyToken, `❌ 已退回訂單 ${orderId}。已通知學員 ${order.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    
+
                     // 通知學員修改匯款資訊
                     await push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
 
@@ -1808,7 +1796,7 @@ async function handleEvent(event) {
                 // --- TRANSACTION END ---
             }
         }
-        
+
         // --- Student Postbacks ---
         if (currentUser.role === 'student') {
             const courses = await getAllCourses();
@@ -1913,14 +1901,15 @@ async function handleEvent(event) {
                 ]);
             case 7: // 確認新增課程 (原步驟8，現在是7)
                 if (text === COMMANDS.STUDENT.CONFIRM_ADD_COURSE) {
+                    // --- 核心邏輯修改處 ---
                     const targetWeekdayIndex = weekdays[stepData.data.weekday];
                     const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
                     const now = new Date();
                     const taipeiOffsetHours = 8; // UTC+8
-                    
+
                     let firstCourseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
                     let dayDiff = (targetWeekdayIndex - firstCourseDate.getUTCDay() + 7) % 7;
-                    
+
                     // 如果是今天，且時間已過，則設定為下週
                     const currentHourTaipei = now.getHours();
                     const currentMinuteTaipei = now.getMinutes();
@@ -1930,11 +1919,18 @@ async function handleEvent(event) {
                     firstCourseDate.setUTCDate(firstCourseDate.getUTCDate() + dayDiff);
                     firstCourseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
 
+                    // 在迴圈外，只產生一次課程組代碼
+                    const coursePrefix = await generateUniqueCoursePrefix(pgClient);
                     const coursesToAdd = [];
+
                     for (let i = 0; i < stepData.data.totalClasses; i++) {
                         const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS)); // 每週同一天
-                        const newId = await generateUniqueCourseId(pgClient); // 調用新的隨機 ID 生成函數
                         
+                        // 產生流水號 (01, 02, ...)
+                        const sessionNumber = (i + 1).toString().padStart(2, '0');
+                        // 組成新的課程 ID
+                        const newId = `${coursePrefix}${sessionNumber}`;
+
                         coursesToAdd.push({
                             id: newId,
                             title: `${stepData.data.title} - 第 ${i + 1} 堂`, // 課程名稱加上堂數
@@ -1945,6 +1941,7 @@ async function handleEvent(event) {
                             waiting: []
                         });
                     }
+                    // --- 核心邏輯修改結束 ---
 
                     // --- TRANSACTION START ---
                     try {
@@ -1954,10 +1951,12 @@ async function handleEvent(event) {
                         }
                         await pgClient.query('COMMIT');
                         delete pendingCourseCreation[userId];
-                        return reply(replyToken, `✅ 已成功新增 ${stepData.data.totalClasses} 堂課程：「${stepData.data.title}」系列。\n首堂時間：${formatDateTime(coursesToAdd[0].time)}`, teacherMenu);
+                        // 優化成功訊息，告知老師課程組代碼
+                        return reply(replyToken, `✅ 已成功新增 ${stepData.data.totalClasses} 堂「${stepData.data.title}」系列課程。\n課程組代碼為【${coursePrefix}】。\n首堂時間：${formatDateTime(coursesToAdd[0].time)}`, teacherMenu);
                     } catch (err) {
                         await pgClient.query('ROLLBACK');
                         console.error("❌ 新增週期課程交易失敗:", err.message);
+                        delete pendingCourseCreation[userId];
                         return reply(replyToken, '新增課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
                     }
                     // --- TRANSACTION END ---
@@ -1986,7 +1985,7 @@ async function handleEvent(event) {
             return reply(event.replyToken, '請輸入老師密碼登入。', [{ type: 'message', label: '取消登入', text: '@取消登入' }]);
         }
     }
-    
+
     if (pendingTeacherLogin[userId]) {
         if (text === '@取消登入') {
              delete pendingTeacherLogin[userId];
@@ -2028,7 +2027,7 @@ async function checkAndSendReminders() {
         const course = courses[id];
         const courseTime = new Date(course.time).getTime();
         const timeUntilCourse = courseTime - now;
-        const minTimeForReminder = ONE_HOUR_IN_MS - (5 * 60 * 1000); 
+        const minTimeForReminder = ONE_HOUR_IN_MS - (5 * 60 * 1000);
 
         if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && timeUntilCourse >= minTimeForReminder && !sentReminders[id]) {
             console.log(`🔔 準備發送課程提醒：${course.title}`);
@@ -2079,7 +2078,7 @@ app.post('/webhook', (req, res) => {
     .then(() => res.status(200).send('OK'))
     .catch((err) => {
       console.error('❌ Webhook 處理失敗:', err);
-      res.status(500).end(); 
+      res.status(500).end();
     });
 });
 
@@ -2087,7 +2086,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.7.0T (Enhanced Course Management & Student Upcoming Courses)`); // 版本號已更新
+  console.log(`Bot 版本: V4.8.0 (Periodic Course Grouping & Cancellation)`); // 版本號已更新
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
