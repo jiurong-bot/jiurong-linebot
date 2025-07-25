@@ -1,4 +1,4 @@
-// index.js - V4.5.5T （隱藏身份切換）(Enhanced Push Error Logging)
+// index.js - V4.5.5T (Enhanced Push Error Logging with improved student search)
 
 // =====================================
 //                 模組載入
@@ -68,7 +68,7 @@ const COMMANDS = {
     ADD_COURSE: '@新增課程',
     CANCEL_COURSE: '@取消課程',
     COURSE_LIST: '@課程列表',
-    SEARCH_STUDENT: '@查學員',
+    SEARCH_STUDENT: '@查學員', // 這個常量仍用於內部識別，但不再直接用於按鈕 text
     REPORT: '@統計報表',
     PENDING_ORDERS: '@待確認清單',
     MANUAL_ADJUST_POINTS: '@手動調整點數',
@@ -318,7 +318,12 @@ const studentPointSubMenu = [
 const teacherMenu = [
     { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
     { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
-    { type: 'message', label: '查詢學員', text: COMMANDS.TEACHER.SEARCH_STUDENT },
+    { 
+        type: 'postback', // 從 'message' 改為 'postback'
+        label: '查詢學員', 
+        data: 'action=start_student_search', // 新增 postback data
+        displayText: '準備查詢學員...' // 點擊後顯示在聊天視窗的文字
+    },
     { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
     // 已隱藏切換身份選項，但功能仍可透過指令使用
 ];
@@ -332,6 +337,7 @@ const pendingCourseCreation = {};
 const pendingPurchase = {};
 const pendingManualAdjust = {};
 const sentReminders = {};
+const pendingStudentSearch = {}; // 新增：用於追蹤老師查詢學員的狀態
 
 // =====================================
 //          👨‍🏫 老師指令處理函式
@@ -342,6 +348,46 @@ async function handleTeacherCommands(event, userId) {
   console.log(`DEBUG: handleTeacherCommands - 處理指令: "${text}", 用戶ID: ${userId}`);
 
   const courses = await getAllCourses();
+
+  // **(新增) 處理處於「查詢學員」狀態時的文字輸入**
+  if (pendingStudentSearch[userId]) {
+      if (text === COMMANDS.TEACHER.MAIN_MENU) { // 如果老師輸入了取消指令
+          delete pendingStudentSearch[userId];
+          return reply(replyToken, '已取消學員查詢。', teacherMenu);
+      }
+      
+      // 處理查詢邏輯
+      const query = text; // 直接將用戶輸入的文字作為查詢內容
+      let foundUser = null;
+      const userById = await getUser(query);
+      if (userById && userById.role === 'student') {
+          foundUser = userById;
+      }
+      if (!foundUser) {
+          const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
+          if (res.rows.length > 0) {
+              foundUser = res.rows[0];
+          }
+      }
+      
+      delete pendingStudentSearch[userId]; // 完成查詢或找不到後清除狀態
+
+      if (!foundUser) {
+        return reply(replyToken, `找不到學員「${query}」。`, teacherMenu);
+      }
+      let studentInfo = `學員姓名：${foundUser.name}\n`;
+      studentInfo += `學員 ID：${foundUser.id}\n`;
+      studentInfo += `剩餘點數：${foundUser.points} 點\n`;
+      studentInfo += `歷史記錄 (近5筆)：\n`;
+      if (foundUser.history && foundUser.history.length > 0) {
+        foundUser.history.slice(-5).reverse().forEach(record => {
+          studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
+        });
+      } else {
+        studentInfo += `無歷史記錄。\n`;
+      }
+      return reply(replyToken, studentInfo.trim(), teacherMenu);
+  }
 
   // 處理手動調整點數的輸入 (如果還處於這個狀態且不是其他指令)
   if (pendingManualAdjust[userId]) {
@@ -422,6 +468,9 @@ async function handleTeacherCommands(event, userId) {
   // 以下是其他指令的處理邏輯
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
     console.log(`DEBUG: handleTeacherCommands - 處理 MAIN_MENU`);
+    // 在返回主選單時，也確保清除所有相關的 pending 狀態
+    delete pendingManualAdjust[userId];
+    delete pendingStudentSearch[userId];
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
   
@@ -580,40 +629,41 @@ async function handleTeacherCommands(event, userId) {
 
     return reply(replyToken, flexMessage, menuOptions);
   }
-
-  if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
-    console.log(`DEBUG: handleTeacherCommands - 處理 SEARCH_STUDENT`);
-    const query = text.replace(COMMANDS.TEACHER.SEARCH_STUDENT + ' ', '').trim();
-    if (!query) {
-      return reply(replyToken, '請輸入要查詢的學員名稱或 ID。', teacherMenu);
-    }
-    let foundUser = null;
-    const userById = await getUser(query);
-    if (userById && userById.role === 'student') {
-        foundUser = userById;
-    }
-    if (!foundUser) {
-        const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
-        if (res.rows.length > 0) {
-            foundUser = res.rows[0];
-        }
-    }
-    if (!foundUser) {
-      return reply(replyToken, `找不到學員「${query}」。`, teacherMenu);
-    }
-    let studentInfo = `學員姓名：${foundUser.name}\n`;
-    studentInfo += `學員 ID：${foundUser.id}\n`;
-    studentInfo += `剩餘點數：${foundUser.points} 點\n`;
-    studentInfo += `歷史記錄 (近5筆)：\n`;
-    if (foundUser.history && foundUser.history.length > 0) {
-      foundUser.history.slice(-5).reverse().forEach(record => {
-        studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
-      });
-    } else {
-      studentInfo += `無歷史記錄。\n`;
-    }
-    return reply(replyToken, studentInfo.trim(), teacherMenu);
-  }
+  
+  // 移除舊的直接處理 @查學員 的邏輯
+  // if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
+  //   console.log(`DEBUG: handleTeacherCommands - 處理 SEARCH_STUDENT`);
+  //   const query = text.replace(COMMANDS.TEACHER.SEARCH_STUDENT + ' ', '').trim();
+  //   if (!query) {
+  //     return reply(replyToken, '請輸入要查詢的學員名稱或 ID。', teacherMenu);
+  //   }
+  //   let foundUser = null;
+  //   const userById = await getUser(query);
+  //   if (userById && userById.role === 'student') {
+  //       foundUser = userById;
+  //   }
+  //   if (!foundUser) {
+  //       const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
+  //       if (res.rows.length > 0) {
+  //           foundUser = res.rows[0];
+  //       }
+  //   }
+  //   if (!foundUser) {
+  //     return reply(replyToken, `找不到學員「${query}」。`, teacherMenu);
+  //   }
+  //   let studentInfo = `學員姓名：${foundUser.name}\n`;
+  //   studentInfo += `學員 ID：${foundUser.id}\n`;
+  //   studentInfo += `剩餘點數：${foundUser.points} 點\n`;
+  //   studentInfo += `歷史記錄 (近5筆)：\n`;
+  //   if (foundUser.history && foundUser.history.length > 0) {
+  //     foundUser.history.slice(-5).reverse().forEach(record => {
+  //       studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
+  //     });
+  //   } else {
+  //     studentInfo += `無歷史記錄。\n`;
+  //   }
+  //   return reply(replyToken, studentInfo.trim(), teacherMenu);
+  // }
 
   if (text === COMMANDS.TEACHER.REPORT) {
     console.log(`DEBUG: handleTeacherCommands - 處理 REPORT`);
@@ -1259,7 +1309,7 @@ async function handleStudentCommands(event, userId) {
           await saveUser(currentUser, pgClient); // Save user to record history
           await pgClient.query('COMMIT');
           
-          return reply(replyToken, `✅ 該課程「${courseInTransaction.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${courseInTransaction.points_cost} 點。`, studentMenu);
+          return reply(replyToken, `✅ 該課程「${courseInTransaction.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${course.pointsCost} 點。`, studentMenu);
         }
     } catch (err) {
         await pgClient.query('ROLLBACK');
@@ -1360,7 +1410,7 @@ async function handleStudentCommands(event, userId) {
         const cancellingUser = await getUser(userId, pgClient);
         cancellingUser.points += course.pointsCost;
         if (!Array.isArray(cancellingUser.history)) cancellingUser.history = [];
-        cancellingUser.history.push({ id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
+        cancellingUser.history.push({ id: courseId, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
         await saveUser(cancellingUser, pgClient);
         
         // 2. Update course student list
@@ -1377,7 +1427,7 @@ async function handleStudentCommands(event, userId) {
                 updatedCourse.students.push(nextWaitingUserId);
                 nextWaitingUser.points -= course.pointsCost;
                 if (!Array.isArray(nextWaitingUser.history)) nextWaitingUser.history = [];
-                nextWaitingUser.history.push({ id, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() });
+                nextWaitingUser.history.push({ id: courseId, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
                 
                 await saveUser(nextWaitingUser, pgClient);
                 
@@ -1426,8 +1476,8 @@ async function handleStudentCommands(event, userId) {
 
       courseInTransaction.waiting = courseInTransaction.waiting.filter(x => x !== userId);
       if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
-      userInTransaction.history.push({ id, action: `取消候補：${course.title}`, time: new Date().toISOString() });
-
+      userInTransaction.history.push({ id: courseId, action: `取消候補：${course.title}`, time: new Date().toISOString() }); // Fix: use courseId
+      
       await saveCourse(courseInTransaction, pgClient);
       await saveUser(userInTransaction, pgClient);
       await pgClient.query('COMMIT');
@@ -1517,6 +1567,14 @@ async function handleEvent(event) {
                 return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             }
 
+            // (新增) 處理點擊「查詢學員」按鈕後的邏輯
+            if (postbackAction === 'start_student_search') {
+                pendingStudentSearch[userId] = true; 
+                return reply(replyToken, '請輸入您要查詢的學員姓名或 ID：', [
+                    { type: 'message', label: '❌ 取消查詢', text: COMMANDS.TEACHER.MAIN_MENU } // 提供一個取消選項
+                ]);
+            }
+
             if (postbackAction === 'cancel_course_confirm') {
                 const courses = await getAllCourses();
                 const course = courses[courseId];
@@ -1549,7 +1607,7 @@ async function handleEvent(event) {
                             if (!Array.isArray(studentUser.history)) studentUser.history = [];
                             studentUser.history.push({ id: courseId, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
                             await saveUser(studentUser, pgClient);
-                            push(stuId, `【課程取消通知】\n您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消，系統已自動退還 ${course.pointsCost} 點。`).catch(e => console.error(`❌ 通知學員 ${stuId} 課程取消失敗:`, e.message));
+                            push(stuId, `【課程取消通知】\n您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消，系統已自動退還 ${course.pointsCost} 點。`).catch(e => console.error(`❌ 向學員 ${stuId} 發送提醒失敗:`, e.message));
                         }
                     }
                     // Notify waiting students
@@ -1774,6 +1832,10 @@ async function handleEvent(event) {
         if (currentUser.role === 'teacher') {
             currentUser.role = 'student';
             await saveUser(currentUser);
+            // 清除老師相關的 pending 狀態，避免切換身份後還在某些老師流程中
+            delete pendingManualAdjust[userId];
+            delete pendingStudentSearch[userId];
+            delete pendingCourseCreation[userId];
             return reply(event.replyToken, '已切換為學員身份。', studentMenu);
         } else {
             pendingTeacherLogin[userId] = true;
@@ -1881,7 +1943,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.5T (Enhanced Push Error Logging)`);
+  console.log(`Bot 版本: V4.5.5T (Enhanced Push Error Logging with improved student search)`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
