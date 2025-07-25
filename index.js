@@ -1,4 +1,4 @@
-// index.js - V4.5.4T (Transactional update, bug fixes, refactoring, async pending orders - Follow Message for Teacher Pending Orders - Enhanced Push Error Logging)
+// index.js - V4.5.5T (Transactional update, bug fixes, refactoring, async pending orders - Follow Message for Teacher Pending Orders - Enhanced Push Error Logging - Postback Processing Refinement)
 
 // =====================================
 //                 模組載入
@@ -1445,6 +1445,123 @@ async function handleStudentCommands(event, userId) {
   return reply(replyToken, '指令無效，請使用下方選單或輸入正確指令。', studentMenu);
 }
 
+// =====================================
+//      模擬資料庫服務 (請替換為你的實際資料庫操作)
+// =====================================
+const yourDatabaseService = {
+    // 模擬保存訂單（或更新其狀態）
+    async saveOrder: async (order) => {
+        console.log(`模擬：保存訂單 ${order.orderId} (狀態: ${order.status}) 到資料庫...`);
+        return new Promise(resolve => setTimeout(() => {
+            // 這裡可以加入實際的資料庫操作，例如：
+            // await pgClient.query('INSERT/UPDATE orders ...', [order.orderId, ...]);
+            console.log(`模擬：訂單 ${order.orderId} 已保存/更新。`);
+            resolve(true);
+        }, 1000)); // 模擬延遲
+    },
+    // 模擬更新訂單狀態
+    async updateOrderStatus: async (orderId, newStatus) => {
+        console.log(`模擬：更新訂單 ${orderId} 狀態為 ${newStatus}...`);
+        return new Promise(resolve => setTimeout(() => {
+            // 這裡可以加入實際的資料庫操作，例如：
+            // await pgClient.query('UPDATE orders SET status = $1 WHERE order_id = $2', [newStatus, orderId]);
+            console.log(`模擬：訂單 ${orderId} 狀態已更新為 ${newStatus}。`);
+            resolve(true);
+        }, 1000)); // 模擬延遲
+    },
+    // 模擬獲取待確認訂單
+    async getPendingOrders: async () => {
+        console.log(`模擬：從資料庫獲取待確認訂單...`);
+        return new Promise(resolve => setTimeout(async () => {
+            const res = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
+            const pendingOrders = res.rows.map(row => ({
+                orderId: row.order_id, userId: row.user_id, userName: row.user_name,
+                points: row.points, amount: row.amount, last5Digits: row.last_5_digits,
+                timestamp: row.timestamp.toISOString()
+            }));
+            console.log(`模擬：已獲取 ${pendingOrders.length} 筆待確認訂單。`);
+            resolve(pendingOrders);
+        }, 500)); // 模擬延遲
+    }
+};
+
+// =====================================
+//           訂單確認與退回處理函式
+// =====================================
+
+async function handleConfirmOrder(replyToken, teacherId, orderId) {
+    // 立即回覆「處理中...」
+    await reply(replyToken, '正在處理訂單確認，請稍候...');
+    console.log(`DEBUG: handleConfirmOrder - 老師 ${teacherId} 確認訂單 ${orderId}`);
+
+    try {
+        await pgClient.query('BEGIN');
+        const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
+        const order = ordersRes.rows[0];
+
+        if (!order || order.status !== 'pending_confirmation') {
+            await pgClient.query('ROLLBACK');
+            return push(teacherId, '找不到此筆待確認訂單或訂單狀態不正確，請刷新後再試。');
+        }
+        
+        const studentUser = await getUser(order.user_id, pgClient); 
+        if (!studentUser) {
+            await pgClient.query('ROLLBACK');
+            return push(teacherId, `找不到購點學員 (ID: ${order.user_id}) 的資料，訂單確認失敗。`);
+        }
+
+        studentUser.points += order.points;
+        if (!Array.isArray(studentUser.history)) studentUser.history = [];
+        studentUser.history.push({ action: `購買點數成功：${order.points} 點`, time: new Date().toISOString(), orderId: orderId });
+        order.status = 'completed';
+        
+        await saveUser(studentUser, pgClient);
+        await saveOrder(order, pgClient);
+        await pgClient.query('COMMIT');
+
+        console.log(`✅ 訂單 ${orderId} 已成功確認，為學員 ${order.user_name} 加點 ${order.points}。`);
+        await push(teacherId, `✅ 已為學員 ${order.user_name} 加點 ${order.points} 點，訂單 ${orderId} 已完成。`);
+        await push(order.user_id, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 購點成功失敗:`, e.message));
+
+    } catch (err) {
+        await pgClient.query('ROLLBACK');
+        console.error("❌ 訂單確認交易失敗:", err.message);
+        await push(teacherId, '訂單確認失敗，系統發生錯誤，請稍後再試。');
+    }
+}
+
+async function handleRejectOrder(replyToken, teacherId, orderId) {
+    // 立即回覆「處理中...」
+    await reply(replyToken, '正在處理訂單退回，請稍候...');
+    console.log(`DEBUG: handleRejectOrder - 老師 ${teacherId} 退回訂單 ${orderId}`);
+
+    try {
+        await pgClient.query('BEGIN');
+        const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
+        const order = ordersRes.rows[0];
+
+        if (!order || order.status !== 'pending_confirmation') {
+            await pgClient.query('ROLLBACK');
+            return push(teacherId, '找不到此筆待確認訂單或訂單狀態不正確，請刷新後再試。');
+        }
+        
+        order.status = 'rejected'; 
+        await saveOrder(order, pgClient);
+        await pgClient.query('COMMIT');
+
+        console.log(`❌ 訂單 ${orderId} 已成功退回。`);
+        await push(teacherId, `❌ 已退回訂單 ${orderId}。已通知學員 ${order.user_name} 匯款資訊有誤。`);
+        
+        // 通知學員修改匯款資訊
+        await push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數功能」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
+
+    } catch (err) {
+        await pgClient.query('ROLLBACK');
+        console.error("❌ 訂單退回交易失敗:", err.message);
+        await push(teacherId, '訂單退回失敗，系統發生錯誤，請稍後再試。');
+    }
+}
+
 
 // =====================================
 //      🎯 主事件處理函式
@@ -1580,69 +1697,13 @@ async function handleEvent(event) {
             }
         
             if (postbackAction === 'confirm_order') {
-                // --- TRANSACTION START ---
-                try {
-                    await pgClient.query('BEGIN');
-                    const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
-                    const order = ordersRes.rows[0];
-
-                    if (!order || order.status !== 'pending_confirmation') {
-                        await pgClient.query('ROLLBACK');
-                        return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    }
-                    
-                    const studentUser = await getUser(order.user_id, pgClient); // Use order.user_id
-                    if (!studentUser) {
-                        await pgClient.query('ROLLBACK');
-                        return reply(replyToken, `找不到購點學員 (ID: ${order.user_id}) 的資料。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    }
-
-                    studentUser.points += order.points;
-                    if (!Array.isArray(studentUser.history)) studentUser.history = [];
-                    studentUser.history.push({ action: `購買點數成功：${order.points} 點`, time: new Date().toISOString(), orderId: orderId });
-                    order.status = 'completed';
-                    
-                    await saveUser(studentUser, pgClient);
-                    await saveOrder(order, pgClient);
-                    await pgClient.query('COMMIT');
-
-                    await reply(replyToken, `✅ 已為學員 ${order.user_name} 加點 ${order.points} 點，訂單 ${orderId} 已完成。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    await push(order.user_id, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 購點成功失敗:`, e.message));
-                } catch (err) {
-                    await pgClient.query('ROLLBACK');
-                    console.error("❌ 訂單確認交易失敗:", err.message);
-                    return reply(replyToken, '訂單確認失敗，系統發生錯誤，請稍後再試。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                }
-                // --- TRANSACTION END ---
+                await handleConfirmOrder(replyToken, userId, orderId); // 調用新函式
+                return; // 立即返回，因為 replyToken 已被使用
             } 
             
-            if (postbackAction === 'reject_order') { // 新增退回訂單的處理邏輯
-                // --- TRANSACTION START ---
-                try {
-                    await pgClient.query('BEGIN');
-                    const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
-                    const order = ordersRes.rows[0];
-
-                    if (!order || order.status !== 'pending_confirmation') {
-                        await pgClient.query('ROLLBACK');
-                        return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    }
-                    
-                    order.status = 'rejected'; // 設定訂單狀態為退回
-                    await saveOrder(order, pgClient);
-                    await pgClient.query('COMMIT');
-
-                    await reply(replyToken, `❌ 已退回訂單 ${orderId}。已通知學員 ${order.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    
-                    // 通知學員修改匯款資訊
-                    await push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數功能」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
-
-                } catch (err) {
-                    await pgClient.query('ROLLBACK');
-                    console.error("❌ 訂單退回交易失敗:", err.message);
-                    return reply(replyToken, '訂單退回失敗，系統發生錯誤，請稍後再試。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                }
-                // --- TRANSACTION END ---
+            if (postbackAction === 'reject_order') { 
+                await handleRejectOrder(replyToken, userId, orderId); // 調用新函式
+                return; // 立即返回，因為 replyToken 已被使用
             }
         }
         
@@ -1881,7 +1942,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.4T (Enhanced Push Error Logging)`); // 更新版本號
+  console.log(`Bot 版本: V4.5.5T (Postback Processing Refinement)`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
@@ -1897,3 +1958,4 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。');
   }
 });
+
