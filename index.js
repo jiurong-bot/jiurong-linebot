@@ -1,4 +1,4 @@
-// index.js - V4.6.0T (Enhanced Course Management & Student Upcoming Courses)
+// index.js - V4.6.1T (Enhanced Course Management & Student Upcoming Courses) - 已根據要求修改
 
 // =====================================
 //                 模組載入
@@ -110,7 +110,10 @@ const COMMANDS = {
 //        資料庫初始化與工具函式
 // =====================================
 // 全局課程 ID 計數器，現在是一個物件，按前綴分類
-global.courseIdCounters = {};
+// 課程 ID 生成邏輯變更後，這個計數器可以不再需要全局維護，ID 將完全隨機
+// 但為了確保 ID 不重複，我們需要一種方式來檢查新生成的隨機 ID 是否已存在
+// 這裡將修改 ID 生成策略，改為隨機生成，並在新增課程時檢查唯一性
+// global.courseIdCounters = {}; // 不再需要這個全局計數器
 
 async function initializeDatabase() {
   try {
@@ -128,13 +131,13 @@ async function initializeDatabase() {
     await pgClient.query(`CREATE TABLE IF NOT EXISTS orders (order_id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, points INTEGER NOT NULL, amount INTEGER NOT NULL, last_5_digits VARCHAR(5), status VARCHAR(50) NOT NULL, timestamp TIMESTAMPTZ NOT NULL)`);
     console.log('✅ 檢查並建立 orders 表完成');
 
-    // 初始化所有課程類別的計數器
-    for (const categoryName in courseCategories) {
-        const prefix = courseCategories[categoryName];
-        const res = await pgClient.query(`SELECT MAX(SUBSTRING(id FROM 2)::INTEGER) AS max_id FROM courses WHERE id LIKE $1`, [`${prefix}%`]);
-        global.courseIdCounters[prefix] = (res.rows[0].max_id || 0) + 1;
-        console.log(`ℹ️ 課程 ID 計數器 ${prefix} 初始化為: ${global.courseIdCounters[prefix]}`);
-    }
+    // 初始化所有課程類別的計數器 (現在不再需要，因為 ID 隨機生成)
+    // for (const categoryName in courseCategories) {
+    //     const prefix = courseCategories[categoryName];
+    //     const res = await pgClient.query(`SELECT MAX(SUBSTRING(id FROM 2)::INTEGER) AS max_id FROM courses WHERE id LIKE $1`, [`${prefix}%`]);
+    //     global.courseIdCounters[prefix] = (res.rows[0].max_id || 0) + 1;
+    //     console.log(`ℹ️ 課程 ID 計數器 ${prefix} 初始化為: ${global.courseIdCounters[prefix]}`);
+    // }
     
     await cleanCoursesDB();
     console.log('✅ 首次資料庫清理完成。');
@@ -145,6 +148,32 @@ async function initializeDatabase() {
 }
 
 initializeDatabase();
+
+// --- 新增: 隨機課程 ID 生成器 ---
+async function generateUniqueCourseId(prefix, dbClient = pgClient) {
+    let newId;
+    let isUnique = false;
+    while (!isUnique) {
+        // 隨機生成一個大寫字母
+        const randomChar1 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+        // 隨機生成另一個大寫字母
+        const randomChar2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+        // 隨機生成兩個數字
+        const randomNumber1 = Math.floor(Math.random() * 10);
+        const randomNumber2 = Math.floor(Math.random() * 10);
+        
+        newId = `${randomChar1}${randomChar2}${randomNumber1}${randomNumber2}`;
+        
+        // 檢查這個 ID 是否已存在於資料庫
+        const res = await dbClient.query('SELECT id FROM courses WHERE id = $1', [newId]);
+        if (res.rows.length === 0) {
+            isUnique = true;
+        } else {
+            console.log(`DEBUG: 生成的課程 ID ${newId} 已存在，重新生成。`);
+        }
+    }
+    return newId;
+}
 
 async function getUser(userId, dbClient = pgClient) { // Add optional client for transactions
   const res = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
@@ -211,23 +240,31 @@ async function deleteCourse(courseId, dbClient = pgClient) { // Add optional cli
 /**
  * 批次刪除特定前綴的課程。
  * 注意：這是一個新的輔助函數，需要一個新的老師指令或介面來觸發。
- * @param {string} prefix - 要刪除的課程 ID 前綴 (例如 'Y' 代表陰瑜伽)。
+ * @param {string} prefix - 要刪除的課程 ID 前綴 (例如 'Y', 'UT', 'UY')。
  * @param {Client} dbClient - PostgreSQL 客戶端。
+ * @returns {Array<Object>} 被刪除的課程列表，包含其 ID 和標題。
  */
 async function deleteCoursesByPrefix(prefix, dbClient = pgClient) {
-    // 找出所有符合前綴的課程 ID
-    const res = await dbClient.query('SELECT id FROM courses WHERE id LIKE $1', [`${prefix}%`]);
-    const courseIdsToDelete = res.rows.map(row => row.id);
+    // 找出所有符合前綴的課程 ID，以便之後通知學生
+    const coursesToDeleteRes = await dbClient.query('SELECT id, title, time, points_cost, students, waiting FROM courses WHERE id LIKE $1', [`${prefix}%`]);
+    const coursesToDelete = coursesToDeleteRes.rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        time: row.time.toISOString(),
+        pointsCost: row.points_cost,
+        students: row.students || [],
+        waiting: row.waiting || []
+    }));
 
-    if (courseIdsToDelete.length === 0) {
+    if (coursesToDelete.length === 0) {
         console.log(`ℹ️ 沒有找到以 ${prefix} 開頭的課程可供刪除。`);
-        return 0; // 返回刪除的數量
+        return [];
     }
 
     // 實際執行批次刪除
     await dbClient.query('DELETE FROM courses WHERE id LIKE $1', [`${prefix}%`]);
-    console.log(`✅ 已批次刪除 ${courseIdsToDelete.length} 堂以 ${prefix} 開頭的課程。`);
-    return courseIdsToDelete.length;
+    console.log(`✅ 已批次刪除 ${coursesToDelete.length} 堂以 ${prefix} 開頭的課程。`);
+    return coursesToDelete;
 }
 
 
@@ -514,6 +551,7 @@ async function handleTeacherCommands(event, userId) {
     // 在返回主選單時，也確保清除所有相關的 pending 狀態
     delete pendingManualAdjust[userId];
     delete pendingStudentSearch[userId];
+    delete pendingCourseCreation[userId]; // 新增：確保清除課程新增狀態
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
   
@@ -581,15 +619,40 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, flexMessage, menuOptions);
   }
 
+  // --- 修改：課程管理介面顯示邏輯 ---
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT || text === COMMANDS.TEACHER.CANCEL_COURSE || text === COMMANDS.TEACHER.COURSE_LIST || text === COMMANDS.TEACHER.ADD_COURSE) {
     console.log(`DEBUG: handleTeacherCommands - 處理 COURSE_MANAGEMENT 相關指令`);
     const now = Date.now();
-    const upcomingCourses = Object.values(courses)
-      .filter(c => new Date(c.time).getTime() > now)
-      .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+    const sevenDaysLater = now + (ONE_DAY_IN_MS * 7); // 未來七天
 
-    const courseBubbles = upcomingCourses.slice(0, 9).map(course => {
-      return {
+    // 過濾出未來7天內有課的課程，並找出最早的一堂
+    let earliestUpcomingCourse = null;
+    let earliestCourseTime = Infinity;
+
+    // 從資料庫獲取所有課程
+    const allCourses = Object.values(await getAllCourses());
+
+    allCourses.forEach(course => {
+        const courseTime = new Date(course.time).getTime();
+        // 檢查課程是否在未來7天內 (含今天到第7天結束)
+        if (courseTime > now && courseTime <= sevenDaysLater) {
+            // 找出最早的那一堂課
+            if (courseTime < earliestCourseTime) {
+                earliestCourseTime = courseTime;
+                earliestUpcomingCourse = course;
+            }
+        }
+    });
+
+    const courseBubbles = [];
+
+    // 只顯示一張卡片：未來7天內最早的課程
+    if (earliestUpcomingCourse) {
+      // 獲取這張卡片代表的課程的前綴 (例如 'UT', 'UY')
+      // 假設課程ID是 AB12 格式，前綴就是 AB
+      const coursePrefix = earliestUpcomingCourse.id.substring(0, 2);
+
+      courseBubbles.push({
         type: 'bubble',
         header: {
           type: 'box', layout: 'vertical',
@@ -599,26 +662,26 @@ async function handleTeacherCommands(event, userId) {
         body: {
           type: 'box', layout: 'vertical', spacing: 'md',
           contents: [
-            { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
+            { type: 'text', text: earliestUpcomingCourse.title, weight: 'bold', size: 'xl', wrap: true },
             {
               type: 'box', layout: 'baseline', spacing: 'sm',
               contents: [
-                { type: 'text', text: '課程ID', color: '#aaaaaa', size: 'sm', flex: 2 },
-                { type: 'text', text: course.id, wrap: true, color: '#666666', size: 'sm', flex: 5 }, // 顯示課程ID
+                { type: 'text', text: '課程組代碼', color: '#aaaaaa', size: 'sm', flex: 2 },
+                { type: 'text', text: coursePrefix, wrap: true, color: '#666666', size: 'sm', flex: 5 }, // 顯示課程組代碼 (前綴)
               ],
             },
             {
               type: 'box', layout: 'baseline', spacing: 'sm',
               contents: [
-                { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
-                { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                { type: 'text', text: '未來最近堂數', color: '#aaaaaa', size: 'sm', flex: 2 },
+                { type: 'text', text: formatDateTime(earliestUpcomingCourse.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
               ],
             },
             {
               type: 'box', layout: 'baseline', spacing: 'sm',
               contents: [
-                { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 },
-                { type: 'text', text: `報名 ${course.students.length}/${course.capacity} (候補 ${course.waiting.length})`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 },
+                { type: 'text', text: `${earliestUpcomingCourse.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
               ],
             },
           ],
@@ -630,15 +693,16 @@ async function handleTeacherCommands(event, userId) {
               type: 'button', style: 'primary', color: '#de5246', height: 'sm',
               action: {
                 type: 'postback',
-                label: '取消此課程',
-                data: `action=cancel_course_confirm&courseId=${course.id}`,
-                displayText: `準備取消課程：${course.title}`
+                // 將要取消的「前綴」傳遞給 Postback
+                label: '取消此課程組', 
+                data: `action=cancel_course_group_confirm&prefix=${coursePrefix}`, 
+                displayText: `準備取消 ${coursePrefix} 系列課程`
               },
             },
           ],
         },
-      };
-    });
+      });
+    }
 
     const addCourseBubble = {
       type: 'bubble',
@@ -663,16 +727,19 @@ async function handleTeacherCommands(event, userId) {
         body: { separator: false, separatorColor: '#EEEEEE' }
       }
     };
+    
+    // 將「新增課程」氣泡總是放在最後一個
+    courseBubbles.push(addCourseBubble);
 
     let introText = '課程管理面板';
-    if (upcomingCourses.length === 0) {
-        introText = '目前沒有任何未來課程，點擊「+」可新增。';
+    if (!earliestUpcomingCourse) { // 如果沒有找到任何未來7天內的課程
+        introText = '目前未來7天內沒有課程，點擊「+」可新增。';
     }
 
     const flexMessage = {
       type: 'flex',
       altText: introText, 
-      contents: { type: 'carousel', contents: [...courseBubbles, addCourseBubble] },
+      contents: { type: 'carousel', contents: courseBubbles },
     };
     
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
@@ -1604,6 +1671,8 @@ async function handleEvent(event) {
         const postbackAction = params.get('action');
         const courseId = params.get('courseId');
         const orderId = params.get('orderId');
+        // 新增：用於批次取消的課程前綴
+        const coursePrefix = params.get('prefix'); 
 
         const currentUser = await getUser(userId);
         
@@ -1626,60 +1695,75 @@ async function handleEvent(event) {
                 ]);
             }
 
-            if (postbackAction === 'cancel_course_confirm') {
-                const courses = await getAllCourses();
-                const course = courses[courseId];
-                if (!course) { return reply(replyToken, '找不到該課程，可能已被取消。', teacherMenu); }
+            // --- 修改：取消課程組的 Postback 處理 ---
+            if (postbackAction === 'cancel_course_group_confirm') {
+                // 這裡傳遞的是前綴，而不是單一 courseId
+                if (!coursePrefix) { return reply(replyToken, '找不到課程前綴，取消失敗。', teacherMenu); }
+                
+                // 查詢有哪些課程會被影響
+                const coursesToCancelRes = await pgClient.query('SELECT id, title FROM courses WHERE id LIKE $1', [`${coursePrefix}%`]);
+                const coursesToCancel = coursesToCancelRes.rows;
+
+                if (coursesToCancel.length === 0) {
+                    return reply(replyToken, `找不到任何以「${coursePrefix}」開頭的課程可供取消。`, teacherMenu);
+                }
+
+                const courseTitles = coursesToCancel.map(c => `・${c.title}`).join('\n');
                 return reply(replyToken, {
-                    type: 'text', text: `⚠️ 最終確認 ⚠️\n\n您確定要取消課程「${course.title}」嗎？\n\n此操作將會刪除課程、自動退點並通知所有相關學生，且無法復原！`,
+                    type: 'text', text: `⚠️ 最終確認 ⚠️\n\n您確定要批次取消所有以「${coursePrefix}」開頭的 ${coursesToCancel.length} 堂課程嗎？\n\n受影響課程：\n${courseTitles}\n\n此操作將會刪除這些課程、自動退點並通知所有相關學生，且無法復原！`,
                     quickReply: { items: [
-                        { type: 'action', action: { type: 'postback', label: '✅ 是，確認取消', data: `action=cancel_course_execute&courseId=${course.id}`, displayText: `正在取消課程：${course.title}` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 是，確認批次取消', data: `action=cancel_course_group_execute&prefix=${coursePrefix}`, displayText: `正在批次取消 ${coursePrefix} 系列課程` } },
                         { type: 'action', action: { type: 'postback', label: '❌ 否，返回', data: 'action=cancel_course_abort', displayText: '取消操作' } }
                     ]}
                 });
             }
 
-            if (postbackAction === 'cancel_course_execute') {
+            if (postbackAction === 'cancel_course_group_execute') {
                 // --- TRANSACTION START ---
                 try {
                     await pgClient.query('BEGIN');
-                    const courses = await getAllCourses(pgClient);
-                    const course = courses[courseId];
-                    if (!course) { 
+                    
+                    // 調用新的批次刪除函數，它會返回被刪除的課程列表
+                    const cancelledCourses = await deleteCoursesByPrefix(coursePrefix, pgClient);
+
+                    if (cancelledCourses.length === 0) {
                         await pgClient.query('ROLLBACK');
-                        return reply(replyToken, '找不到該課程，取消失敗。', teacherMenu); 
+                        return reply(replyToken, `找不到任何以「${coursePrefix}」開頭的課程可供取消。`, teacherMenu);
                     }
                     
-                    // Notify and refund enrolled students
-                    for (const stuId of course.students) {
-                        const studentUser = await getUser(stuId, pgClient);
-                        if (studentUser) {
-                            studentUser.points += course.pointsCost;
-                            if (!Array.isArray(studentUser.history)) studentUser.history = [];
-                            studentUser.history.push({ id: courseId, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
-                            await saveUser(studentUser, pgClient);
-                            push(stuId, `【課程取消通知】\n您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消，系統已自動退還 ${course.pointsCost} 點。`).catch(e => console.error(`❌ 向學員 ${stuId} 發送提醒失敗:`, e.message));
+                    // 遍歷所有被取消的課程，處理學員退點和通知
+                    for (const course of cancelledCourses) {
+                        // Notify and refund enrolled students
+                        for (const stuId of course.students) {
+                            const studentUser = await getUser(stuId, pgClient);
+                            if (studentUser) {
+                                studentUser.points += course.pointsCost;
+                                if (!Array.isArray(studentUser.history)) studentUser.history = [];
+                                studentUser.history.push({ id: course.id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
+                                await saveUser(studentUser, pgClient);
+                                push(stuId, `【課程取消通知】\n您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師批次取消，系統已自動退還 ${course.pointsCost} 點。`).catch(e => console.error(`❌ 向學員 ${stuId} 發送提醒失敗:`, e.message));
+                            }
+                        }
+                        // Notify waiting students
+                        for (const waitId of course.waiting) {
+                            const waitingUser = await getUser(waitId, pgClient);
+                            if (waitingUser) {
+                                if (!Array.isArray(waitingUser.history)) waitingUser.history = [];
+                                waitingUser.history.push({ id: course.id, action: `候補課程取消：${course.title}`, time: new Date().toISOString() });
+                                await saveUser(waitingUser, pgClient);
+                                push(waitId, `【候補取消通知】\n您候補的課程「${course.title}」（${formatDateTime(course.time)}）已被老師批次取消。`).catch(e => console.error(`❌ 通知候補者 ${waitId} 課程取消失敗:`, e.message));
+                            }
                         }
                     }
-                    // Notify waiting students
-                    for (const waitId of course.waiting) {
-                        const waitingUser = await getUser(waitId, pgClient);
-                        if (waitingUser) {
-                            if (!Array.isArray(waitingUser.history)) waitingUser.history = [];
-                            waitingUser.history.push({ id: courseId, action: `候補課程取消：${course.title}`, time: new Date().toISOString() });
-                            await saveUser(waitingUser, pgClient);
-                            push(waitId, `【候補取消通知】\n您候補的課程「${course.title}」（${formatDateTime(course.time)}）已被老師取消。`).catch(e => console.error(`❌ 通知候補者 ${waitId} 課程取消失敗:`, e.message));
-                        }
-                    }
-                    await deleteCourse(courseId, pgClient);
+
                     await pgClient.query('COMMIT');
                     
-                    console.log(`✅ 課程 ${courseId} (${course.title}) 已成功取消。`);
-                    return reply(replyToken, `✅ 課程「${course.title}」已成功取消，並已通知所有相關學員。`, teacherMenu);
+                    console.log(`✅ 所有以 ${coursePrefix} 開頭的課程 (共 ${cancelledCourses.length} 堂) 已成功批次取消。`);
+                    return reply(replyToken, `✅ 已成功批次取消所有以「${coursePrefix}」開頭的 ${cancelledCourses.length} 堂課程，並已通知所有相關學員。`, teacherMenu);
                 } catch(err) {
                     await pgClient.query('ROLLBACK');
-                    console.error("❌ 課程取消交易失敗:", err.message);
-                    return reply(replyToken, '取消課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
+                    console.error("❌ 批次取消課程交易失敗:", err.message);
+                    return reply(replyToken, '批次取消課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
                 }
                 // --- TRANSACTION END ---
             }
@@ -1824,7 +1908,7 @@ async function handleEvent(event) {
             case 2: // 輸入課程名稱
                 stepData.data.title = text;
                 stepData.step = 3; // **修改：下一步驟為輸入總堂數**
-                return reply(replyToken, '請輸入此週期課程的總堂數（例如：5，表示 Y01 到 Y05）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                return reply(replyToken, '請輸入此週期課程的總堂數（例如：5）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             case 3: // **新增的步驟：輸入總堂數**
                 const totalClasses = parseInt(text);
                 if (isNaN(totalClasses) || totalClasses <= 0) {
@@ -1889,11 +1973,11 @@ async function handleEvent(event) {
                     firstCourseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
 
                     const coursesToAdd = [];
+                    // --- 修改：課程 ID 生成方式 ---
                     for (let i = 0; i < stepData.data.totalClasses; i++) {
                         const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS)); // 每週同一天
-                        const prefix = stepData.data.categoryPrefix;
-                        const classNumber = global.courseIdCounters[prefix]++;
-                        const newId = `${prefix}${String(classNumber).padStart(2, '0')}`; // 編碼為兩位數字
+                        // 這裡不再使用 categoryPrefix 作為 ID 的單一前綴，而是隨機生成兩位字母
+                        const newId = await generateUniqueCourseId(stepData.data.categoryPrefix, pgClient); // 調用新的隨機 ID 生成函數
                         
                         coursesToAdd.push({
                             id: newId,
@@ -2047,7 +2131,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.6.0T (Enhanced Course Management & Student Upcoming Courses)`); // 版本號已更新
+  console.log(`Bot 版本: V4.6.1T (Enhanced Course Management & Student Upcoming Courses)`); // 版本號已更新
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
