@@ -1,4 +1,4 @@
-// index.js - V4.5.5T (Enhanced Push Error Logging with improved student search)
+// index.js - V4.6.0T (Enhanced Course Management & Student Upcoming Courses)
 
 // =====================================
 //                 模組載入
@@ -58,6 +58,16 @@ const BANK_INFO = {
   accountNumber: '012540278393',
 };
 
+// 課程類別定義
+// 這個物件定義了課程的類別及其對應的英文字母前綴
+const courseCategories = {
+    '陰瑜伽': 'Y',
+    '有氧拳擊': 'B',
+    '健身訓練': 'F',
+    '其他課程': 'O', // 新增一個通用類別，如果課程不屬於上述任何一種
+    // 可以根據需求在這裡新增更多課程類別和對應的前綴
+};
+
 // 指令常數
 const COMMANDS = {
   SWITCH_ROLE: '@切換身份',
@@ -68,7 +78,7 @@ const COMMANDS = {
     ADD_COURSE: '@新增課程',
     CANCEL_COURSE: '@取消課程',
     COURSE_LIST: '@課程列表',
-    SEARCH_STUDENT: '@查學員', // 這個常量仍用於內部識別，但不再直接用於按鈕 text
+    SEARCH_STUDENT: '@查學員', 
     REPORT: '@統計報表',
     PENDING_ORDERS: '@待確認清單',
     MANUAL_ADJUST_POINTS: '@手動調整點數',
@@ -84,6 +94,7 @@ const COMMANDS = {
     CANCEL_INPUT_LAST5: '❌ 取消輸入後五碼',
     BOOK_COURSE: '@預約課程',
     MY_COURSES: '@我的課程',
+    VIEW_UPCOMING_COURSES: '@查看未來7天課程', // 新增學員查詢未來7天課程指令
     CANCEL_BOOKING: '@取消預約',
     CANCEL_WAITING: '@取消候補',
     CONFIRM_ADD_COURSE: '確認新增課程',
@@ -98,6 +109,9 @@ const COMMANDS = {
 // =====================================
 //        資料庫初始化與工具函式
 // =====================================
+// 全局課程 ID 計數器，現在是一個物件，按前綴分類
+global.courseIdCounters = {};
+
 async function initializeDatabase() {
   try {
     await pgClient.connect();
@@ -106,17 +120,22 @@ async function initializeDatabase() {
     await pgClient.query(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, points INTEGER DEFAULT 0, role VARCHAR(50) DEFAULT 'student', history JSONB DEFAULT '[]')`);
     console.log('✅ 檢查並建立 users 表完成');
 
+    // 修改 courses 表，新增 course_category_prefix 欄位 (可選，但有助於資料結構清晰)
+    // 這裡假設新的課程ID (例如 Y01) 已經包含前綴，所以可以從ID中解析
     await pgClient.query(`CREATE TABLE IF NOT EXISTS courses (id VARCHAR(255) PRIMARY KEY, title VARCHAR(255) NOT NULL, time TIMESTAMPTZ NOT NULL, capacity INTEGER NOT NULL, points_cost INTEGER NOT NULL, students TEXT[] DEFAULT '{}', waiting TEXT[] DEFAULT '{}')`);
     console.log('✅ 檢查並建立 courses 表完成');
 
     await pgClient.query(`CREATE TABLE IF NOT EXISTS orders (order_id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, points INTEGER NOT NULL, amount INTEGER NOT NULL, last_5_digits VARCHAR(5), status VARCHAR(50) NOT NULL, timestamp TIMESTAMPTZ NOT NULL)`);
     console.log('✅ 檢查並建立 orders 表完成');
 
-    const result = await pgClient.query("SELECT MAX(SUBSTRING(id FROM 2)::INTEGER) AS max_id FROM courses WHERE id LIKE 'C%'");
-    let maxId = result.rows[0].max_id || 0;
-    global.courseIdCounter = maxId + 1;
-    console.log(`ℹ️ 課程 ID 計數器初始化為: ${global.courseIdCounter}`);
-
+    // 初始化所有課程類別的計數器
+    for (const categoryName in courseCategories) {
+        const prefix = courseCategories[categoryName];
+        const res = await pgClient.query(`SELECT MAX(SUBSTRING(id FROM 2)::INTEGER) AS max_id FROM courses WHERE id LIKE $1`, [`${prefix}%`]);
+        global.courseIdCounters[prefix] = (res.rows[0].max_id || 0) + 1;
+        console.log(`ℹ️ 課程 ID 計數器 ${prefix} 初始化為: ${global.courseIdCounters[prefix]}`);
+    }
+    
     await cleanCoursesDB();
     console.log('✅ 首次資料庫清理完成。');
 
@@ -188,6 +207,29 @@ async function saveCourse(course, dbClient = pgClient) { // Add optional client 
 async function deleteCourse(courseId, dbClient = pgClient) { // Add optional client for transactions
   await dbClient.query('DELETE FROM courses WHERE id = $1', [courseId]);
 }
+
+/**
+ * 批次刪除特定前綴的課程。
+ * 注意：這是一個新的輔助函數，需要一個新的老師指令或介面來觸發。
+ * @param {string} prefix - 要刪除的課程 ID 前綴 (例如 'Y' 代表陰瑜伽)。
+ * @param {Client} dbClient - PostgreSQL 客戶端。
+ */
+async function deleteCoursesByPrefix(prefix, dbClient = pgClient) {
+    // 找出所有符合前綴的課程 ID
+    const res = await dbClient.query('SELECT id FROM courses WHERE id LIKE $1', [`${prefix}%`]);
+    const courseIdsToDelete = res.rows.map(row => row.id);
+
+    if (courseIdsToDelete.length === 0) {
+        console.log(`ℹ️ 沒有找到以 ${prefix} 開頭的課程可供刪除。`);
+        return 0; // 返回刪除的數量
+    }
+
+    // 實際執行批次刪除
+    await dbClient.query('DELETE FROM courses WHERE id LIKE $1', [`${prefix}%`]);
+    console.log(`✅ 已批次刪除 ${courseIdsToDelete.length} 堂以 ${prefix} 開頭的課程。`);
+    return courseIdsToDelete.length;
+}
+
 
 async function getAllOrders(dbClient = pgClient) { // Add optional client for transactions
   const res = await dbClient.query('SELECT * FROM orders');
@@ -305,6 +347,7 @@ const studentMenu = [
     { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
     { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
     { type: 'message', label: '點數管理', text: COMMANDS.STUDENT.POINTS },
+    { type: 'message', label: '未來7天課程', text: COMMANDS.STUDENT.VIEW_UPCOMING_COURSES }, // 新增學員查詢未來7天課程選項
     // 已隱藏切換身份選項，但功能仍可透過指令使用
 ];
 
@@ -319,10 +362,10 @@ const teacherMenu = [
     { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
     { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
     { 
-        type: 'postback', // 從 'message' 改為 'postback'
+        type: 'postback', 
         label: '查詢學員', 
-        data: 'action=start_student_search', // 新增 postback data
-        displayText: '準備查詢學員...' // 點擊後顯示在聊天視窗的文字
+        data: 'action=start_student_search', 
+        displayText: '準備查詢學員...' 
     },
     { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
     // 已隱藏切換身份選項，但功能仍可透過指令使用
@@ -337,7 +380,7 @@ const pendingCourseCreation = {};
 const pendingPurchase = {};
 const pendingManualAdjust = {};
 const sentReminders = {};
-const pendingStudentSearch = {}; // 新增：用於追蹤老師查詢學員的狀態
+const pendingStudentSearch = {}; 
 
 // =====================================
 //          👨‍🏫 老師指令處理函式
@@ -560,6 +603,13 @@ async function handleTeacherCommands(event, userId) {
             {
               type: 'box', layout: 'baseline', spacing: 'sm',
               contents: [
+                { type: 'text', text: '課程ID', color: '#aaaaaa', size: 'sm', flex: 2 },
+                { type: 'text', text: course.id, wrap: true, color: '#666666', size: 'sm', flex: 5 }, // 顯示課程ID
+              ],
+            },
+            {
+              type: 'box', layout: 'baseline', spacing: 'sm',
+              contents: [
                 { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
                 { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
               ],
@@ -630,41 +680,6 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, flexMessage, menuOptions);
   }
   
-  // 移除舊的直接處理 @查學員 的邏輯
-  // if (text.startsWith(COMMANDS.TEACHER.SEARCH_STUDENT + ' ')) {
-  //   console.log(`DEBUG: handleTeacherCommands - 處理 SEARCH_STUDENT`);
-  //   const query = text.replace(COMMANDS.TEACHER.SEARCH_STUDENT + ' ', '').trim();
-  //   if (!query) {
-  //     return reply(replyToken, '請輸入要查詢的學員名稱或 ID。', teacherMenu);
-  //   }
-  //   let foundUser = null;
-  //   const userById = await getUser(query);
-  //   if (userById && userById.role === 'student') {
-  //       foundUser = userById;
-  //   }
-  //   if (!foundUser) {
-  //       const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
-  //       if (res.rows.length > 0) {
-  //           foundUser = res.rows[0];
-  //       }
-  //   }
-  //   if (!foundUser) {
-  //     return reply(replyToken, `找不到學員「${query}」。`, teacherMenu);
-  //   }
-  //   let studentInfo = `學員姓名：${foundUser.name}\n`;
-  //   studentInfo += `學員 ID：${foundUser.id}\n`;
-  //   studentInfo += `剩餘點數：${foundUser.points} 點\n`;
-  //   studentInfo += `歷史記錄 (近5筆)：\n`;
-  //   if (foundUser.history && foundUser.history.length > 0) {
-  //     foundUser.history.slice(-5).reverse().forEach(record => {
-  //       studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
-  //     });
-  //   } else {
-  //     studentInfo += `無歷史記錄。\n`;
-  //   }
-  //   return reply(replyToken, studentInfo.trim(), teacherMenu);
-  // }
-
   if (text === COMMANDS.TEACHER.REPORT) {
     console.log(`DEBUG: handleTeacherCommands - 處理 REPORT`);
     const usersRes = await pgClient.query(`SELECT * FROM users WHERE role = 'student'`);
@@ -1252,6 +1267,103 @@ async function handleStudentCommands(event, userId) {
     ], [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
 
+  // 新增 學員查詢未來 7 天課程 功能
+  if (text === COMMANDS.STUDENT.VIEW_UPCOMING_COURSES) {
+    const now = Date.now();
+    const sevenDaysLater = now + (ONE_DAY_IN_MS * 7); // 未來七天
+
+    const upcomingCourses = Object.values(courses)
+        .filter(c => new Date(c.time).getTime() > now && new Date(c.time).getTime() <= sevenDaysLater)
+        .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
+
+    if (upcomingCourses.length === 0) {
+        return reply(replyToken, '未來七天內沒有課程。', studentMenu);
+    }
+
+    const courseBubbles = upcomingCourses.slice(0, 10).map(course => {
+        const isEnrolled = course.students.includes(userId);
+        const isWaiting = course.waiting.includes(userId);
+        const isFull = course.students.length >= course.capacity;
+
+        let statusText = `報名 ${course.students.length}/${course.capacity}`;
+        let actionButton = null;
+        let headerColor = '#34a0a4'; // 默認顏色
+
+        if (isEnrolled) {
+            statusText = `✅ 已預約`;
+            headerColor = '#52b69a'; // 綠色
+        } else if (isWaiting) {
+            statusText = `⏳ 候補中 (${course.waiting.indexOf(userId) + 1} 位)`;
+            headerColor = '#ff9e00'; // 黃色
+        } else if (isFull) {
+            actionButton = {
+                type: 'message',
+                label: '加入候補',
+                text: `我要預約 ${course.id}` // 仍用預約指令觸發候補
+            };
+            headerColor = '#ff9e00'; // 黃色
+        } else {
+            actionButton = {
+                type: 'message',
+                label: '立即預約',
+                text: `我要預約 ${course.id}`
+            };
+        }
+
+        return {
+            type: 'bubble',
+            header: {
+                type: 'box', layout: 'vertical',
+                contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }],
+                backgroundColor: headerColor, paddingAll: 'lg'
+            },
+            body: {
+                type: 'box', layout: 'vertical', spacing: 'md',
+                contents: [
+                    { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
+                    { type: 'separator' },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md',
+                        contents: [
+                            { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 }
+                        ]
+                    },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm',
+                        contents: [
+                            { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: `${course.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 }
+                        ]
+                    },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm',
+                        contents: [
+                            { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: statusText, wrap: true, color: '#666666', size: 'sm', flex: 5 }
+                        ]
+                    },
+                ]
+            },
+            footer: actionButton ? {
+                type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
+                contents: [{
+                    type: 'button', style: 'primary', height: 'sm',
+                    color: isFull ? '#ff9e00' : '#1a759f', // 候補按鈕顏色
+                    action: actionButton
+                }]
+            } : undefined
+        };
+    });
+
+    const flexMessage = {
+        type: 'flex',
+        altText: '未來7天課程列表',
+        contents: { type: 'carousel', contents: courseBubbles }
+    };
+    return reply(replyToken, flexMessage, [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
+  }
+
   if (text.startsWith('我要預約 ')) {
     const courseId = text.replace('我要預約 ', '').trim();
     const course = courses[courseId];
@@ -1410,7 +1522,7 @@ async function handleStudentCommands(event, userId) {
         const cancellingUser = await getUser(userId, pgClient);
         cancellingUser.points += course.pointsCost;
         if (!Array.isArray(cancellingUser.history)) cancellingUser.history = [];
-        cancellingUser.history.push({ id: courseId, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
+        cancellingUser.history.push({ id: id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
         await saveUser(cancellingUser, pgClient);
         
         // 2. Update course student list
@@ -1427,7 +1539,7 @@ async function handleStudentCommands(event, userId) {
                 updatedCourse.students.push(nextWaitingUserId);
                 nextWaitingUser.points -= course.pointsCost;
                 if (!Array.isArray(nextWaitingUser.history)) nextWaitingUser.history = [];
-                nextWaitingUser.history.push({ id: courseId, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
+                nextWaitingUser.history.push({ id: id, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
                 
                 await saveUser(nextWaitingUser, pgClient);
                 
@@ -1476,7 +1588,7 @@ async function handleStudentCommands(event, userId) {
 
       courseInTransaction.waiting = courseInTransaction.waiting.filter(x => x !== userId);
       if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
-      userInTransaction.history.push({ id: courseId, action: `取消候補：${course.title}`, time: new Date().toISOString() }); // Fix: use courseId
+      userInTransaction.history.push({ id: id, action: `取消候補：${course.title}`, time: new Date().toISOString() }); // Fix: use courseId
       
       await saveCourse(courseInTransaction, pgClient);
       await saveUser(userInTransaction, pgClient);
@@ -1564,7 +1676,11 @@ async function handleEvent(event) {
         if (currentUser.role === 'teacher') {
             if (postbackAction === 'add_course_start') {
                 pendingCourseCreation[userId] = { step: 1, data: {} };
-                return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                const categoryOptions = Object.keys(courseCategories).map(categoryName => ({
+                    type: 'message', label: categoryName, text: categoryName
+                }));
+                categoryOptions.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
+                return reply(replyToken, '請選擇課程類別：', categoryOptions);
             }
 
             // (新增) 處理點擊「查詢學員」按鈕後的邏輯
@@ -1758,66 +1874,117 @@ async function handleEvent(event) {
         const stepData = pendingCourseCreation[userId];
         const weekdays = { '星期日': 0, '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, '星期五': 5, '星期六': 6 };
         switch (stepData.step) {
-            case 1:
-                stepData.data.title = text;
+            case 1: // 選擇課程類別
+                const selectedCategoryPrefix = courseCategories[text];
+                if (!selectedCategoryPrefix) {
+                    const availableCategories = Object.keys(courseCategories).map(cat => ({ type: 'message', label: cat, text: cat }));
+                    availableCategories.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
+                    return reply(replyToken, '請從列表中選擇有效的課程類別。', availableCategories);
+                }
+                stepData.data.categoryPrefix = selectedCategoryPrefix;
+                stepData.data.categoryName = text; // 儲存類別名稱以供確認訊息使用
                 stepData.step = 2;
+                return reply(replyToken, '請輸入課程名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+            case 2: // 輸入課程名稱
+                stepData.data.title = text;
+                stepData.step = 3;
                 const weekdayOptions = Object.keys(weekdays).map(day => ({ type: 'message', label: day, text: day }));
                 weekdayOptions.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
                 return reply(replyToken, '請選擇課程日期（星期幾）：', weekdayOptions);
-            case 2:
+            case 3: // 選擇星期幾
                 if (!weekdays.hasOwnProperty(text)) {
                     return reply(replyToken, '請選擇正確的星期。');
                 }
                 stepData.data.weekday = text;
-                stepData.step = 3;
+                stepData.step = 4;
                 return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 3:
+            case 4: // 輸入時間
                 if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
                     return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
                 }
                 stepData.data.time = text;
-                stepData.step = 4;
+                stepData.step = 5;
                 return reply(replyToken, '請輸入人員上限（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 4:
+            case 5: // 輸入人數上限
                 const capacity = parseInt(text);
                 if (isNaN(capacity) || capacity <= 0) {
                     return reply(replyToken, '人數上限必須是正整數。');
                 }
                 stepData.data.capacity = capacity;
-                stepData.step = 5;
+                stepData.step = 6;
                 return reply(replyToken, '請輸入課程所需扣除的點數（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-            case 5:
+            case 6: // 輸入點數
                 const pointsCost = parseInt(text);
                 if (isNaN(pointsCost) || pointsCost <= 0) {
                     return reply(replyToken, '扣除點數必須是正整數。');
                 }
                 stepData.data.pointsCost = pointsCost;
-                stepData.step = 6;
-                return reply(replyToken, `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點`, [
+                stepData.step = 7; // 新增一步驟來詢問總堂數
+                return reply(replyToken, '請輸入此週期課程的總堂數（例如：5，表示 Y01 到 Y05）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+            case 7: // 輸入總堂數
+                const totalClasses = parseInt(text);
+                if (isNaN(totalClasses) || totalClasses <= 0) {
+                    return reply(replyToken, '總堂數必須是正整數。');
+                }
+                stepData.data.totalClasses = totalClasses;
+                stepData.step = 8; // 跳到確認步驟
+                return reply(replyToken, `請確認是否建立課程：\n課程類別：${stepData.data.categoryName}\n課程名稱：${stepData.data.title}\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點\n總堂數：${stepData.data.totalClasses} 堂`, [
                     { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE },
                     { type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE },
                 ]);
-            case 6:
+            case 8: // 確認新增課程
                 if (text === COMMANDS.STUDENT.CONFIRM_ADD_COURSE) {
                     const targetWeekdayIndex = weekdays[stepData.data.weekday];
                     const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
                     const now = new Date();
-                    const taipeiOffsetHours = 8;
-                    let courseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-                    let dayDiff = (targetWeekdayIndex - courseDate.getUTCDay() + 7) % 7;
+                    const taipeiOffsetHours = 8; // UTC+8
+                    
+                    let firstCourseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+                    let dayDiff = (targetWeekdayIndex - firstCourseDate.getUTCDay() + 7) % 7;
+                    
+                    // 如果是今天，且時間已過，則設定為下週
                     const currentHourTaipei = now.getHours();
                     const currentMinuteTaipei = now.getMinutes();
                     if (dayDiff === 0 && (currentHourTaipei > targetHour || (currentHourTaipei === targetHour && currentMinuteTaipei >= targetMin))) {
                         dayDiff = 7;
                     }
-                    courseDate.setUTCDate(courseDate.getUTCDate() + dayDiff);
-                    courseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
-                    const isoTime = courseDate.toISOString();
-                    const newId = `C${String(global.courseIdCounter++).padStart(3, '0')}`;
-                    const newCourse = { id: newId, title: stepData.data.title, time: isoTime, capacity: stepData.data.capacity, pointsCost: stepData.data.pointsCost, students: [], waiting: [] };
-                    await saveCourse(newCourse);
-                    delete pendingCourseCreation[userId];
-                    return reply(replyToken, `課程已新增：${stepData.data.title}\n時間：${formatDateTime(isoTime)}`, teacherMenu);
+                    firstCourseDate.setUTCDate(firstCourseDate.getUTCDate() + dayDiff);
+                    firstCourseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
+
+                    const coursesToAdd = [];
+                    for (let i = 0; i < stepData.data.totalClasses; i++) {
+                        const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS)); // 每週同一天
+                        const prefix = stepData.data.categoryPrefix;
+                        const classNumber = global.courseIdCounters[prefix]++;
+                        const newId = `${prefix}${String(classNumber).padStart(2, '0')}`; // 編碼為兩位數字
+                        
+                        coursesToAdd.push({
+                            id: newId,
+                            title: `${stepData.data.title} - 第 ${i + 1} 堂`, // 課程名稱加上堂數
+                            time: courseDateTime.toISOString(),
+                            capacity: stepData.data.capacity,
+                            pointsCost: stepData.data.pointsCost,
+                            students: [],
+                            waiting: []
+                        });
+                    }
+
+                    // --- TRANSACTION START ---
+                    try {
+                        await pgClient.query('BEGIN');
+                        for (const course of coursesToAdd) {
+                            await saveCourse(course, pgClient); // 在事務中儲存所有課程
+                        }
+                        await pgClient.query('COMMIT');
+                        delete pendingCourseCreation[userId];
+                        return reply(replyToken, `✅ 已成功新增 ${stepData.data.totalClasses} 堂課程：「${stepData.data.title}」系列。\n首堂時間：${formatDateTime(coursesToAdd[0].time)}`, teacherMenu);
+                    } catch (err) {
+                        await pgClient.query('ROLLBACK');
+                        console.error("❌ 新增週期課程交易失敗:", err.message);
+                        return reply(replyToken, '新增課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
+                    }
+                    // --- TRANSACTION END ---
+
                 } else if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE) {
                     delete pendingCourseCreation[userId];
                     return reply(replyToken, '已取消新增課程。', teacherMenu);
@@ -1943,7 +2110,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.5T (Enhanced Push Error Logging with improved student search)`);
+  console.log(`Bot 版本: V4.6.0T (Enhanced Course Management & Student Upcoming Courses)`); // 版本號已更新
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
@@ -1959,3 +2126,4 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。');
   }
 });
+
