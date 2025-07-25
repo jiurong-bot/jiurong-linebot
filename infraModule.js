@@ -84,7 +84,8 @@ const infraModule = {
 
     // === 資料庫初始化 ===
     console.log('INFO: 正在初始化資料庫...');
-    await infraModule.initializeDatabase(); //
+    // 修正: 確保在物件內部調用方法時使用正確的上下文或模組名稱
+    await infraModule.initializeDatabase(); 
 
     // === 啟動伺服器和定時任務 ===
     app.listen(PORT, () => {
