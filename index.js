@@ -1,4 +1,4 @@
-// index.js - V4.6.1T (Enhanced Course Management & Student Upcoming Courses) - 已根據要求修改
+// index.js - V4.7.0T (Enhanced Course Management & Student Upcoming Courses) - 已根據要求修改
 
 // =====================================
 //                 模組載入
@@ -449,7 +449,7 @@ async function handleTeacherCommands(event, userId) {
 
   // 處理手動調整點數的輸入 (如果還處於這個狀態且不是其他指令)
   if (pendingManualAdjust[userId]) {
-      console.log(`DEBUG: handleTeacherCommands - 進入手動調整點數流程，當前狀態: ${pendingManualAdjust[userId].step}`);
+      console.log(`DEBUG: 手動調整點數流程，當前狀態: ${pendingManualAdjust[userId].step}`);
       if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
           delete pendingManualAdjust[userId];
           return reply(replyToken, '已取消手動調整點數。', teacherMenu);
@@ -517,7 +517,7 @@ async function handleTeacherCommands(event, userId) {
       // 如果不是手動調整點數相關的指令，則清除 pendingManualAdjust 狀態
       // 這個 else if 確保只在不是手動調整點數的文字輸入時才清除
       if (pendingManualAdjust[userId]) {
-          console.log(`DEBUG: handleTeacherCommands - 清除 pendingManualAdjust 狀態，因為收到新指令: "${text}"`);
+          console.log(`DEBUG: 清除 pendingManualAdjust 狀態，因為收到新指令: "${text}"`);
           delete pendingManualAdjust[userId];
       }
   }
@@ -525,7 +525,7 @@ async function handleTeacherCommands(event, userId) {
 
   // 以下是其他指令的處理邏輯
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
-    console.log(`DEBUG: handleTeacherCommands - 處理 MAIN_MENU`);
+    console.log(`DEBUG: 處理 MAIN_MENU`);
     // 在返回主選單時，也確保清除所有相關的 pending 狀態
     delete pendingManualAdjust[userId];
     delete pendingStudentSearch[userId];
@@ -534,7 +534,7 @@ async function handleTeacherCommands(event, userId) {
   }
   
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
-    console.log(`DEBUG: handleTeacherCommands - 處理 POINT_MANAGEMENT`);
+    console.log(`DEBUG: 處理 POINT_MANAGEMENT`);
     const pendingOrdersCount = (await pgClient.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
 
     const pointManagementBubbles = [
@@ -599,7 +599,7 @@ async function handleTeacherCommands(event, userId) {
 
   // --- 修改：課程管理介面顯示邏輯 ---
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT || text === COMMANDS.TEACHER.CANCEL_COURSE || text === COMMANDS.TEACHER.COURSE_LIST || text === COMMANDS.TEACHER.ADD_COURSE) {
-    console.log(`DEBUG: handleTeacherCommands - 處理 COURSE_MANAGEMENT 相關指令`);
+    console.log(`DEBUG: 處理 COURSE_MANAGEMENT 相關指令`);
     const now = Date.now();
     const sevenDaysLater = now + (ONE_DAY_IN_MS * 7); // 未來七天
 
@@ -726,7 +726,7 @@ async function handleTeacherCommands(event, userId) {
   }
   
   if (text === COMMANDS.TEACHER.REPORT) {
-    console.log(`DEBUG: handleTeacherCommands - 處理 REPORT`);
+    console.log(`DEBUG: 處理 REPORT`);
     const usersRes = await pgClient.query(`SELECT * FROM users WHERE role = 'student'`);
     const students = usersRes.rows;
     const totalPoints = students.reduce((sum, student) => sum + student.points, 0);
@@ -765,7 +765,7 @@ async function handleTeacherCommands(event, userId) {
   
   // 處理點擊「查看待確認清單」按鈕後的文字指令
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
-    console.log(`DEBUG: handleTeacherCommands - 處理 PENDING_ORDERS`);
+    console.log(`DEBUG: 處理 PENDING_ORDERS`);
 
     // 1. 立即回覆，避免 reply token 超時
     // 這裡只回覆一個提示訊息，不包含 Quick Reply
@@ -854,14 +854,14 @@ async function handleTeacherCommands(event, userId) {
   }
 
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
-    console.log(`DEBUG: handleTeacherCommands - 處理 MANUAL_ADJUST_POINTS，設定 pendingManualAdjust 狀態。`);
+    console.log(`DEBUG: 處理 MANUAL_ADJUST_POINTS，設定 pendingManualAdjust 狀態。`);
     pendingManualAdjust[userId] = { step: 1 };
     return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回老師主選單 取消。', [ // 修改這裡的取消指令
       { type: 'message', label: '返回老師主選單', text: COMMANDS.TEACHER.MAIN_MENU } // 修改這裡的按鈕
     ]);
   }
 
-  console.log(`DEBUG: handleTeacherCommands - 未匹配任何已知指令。`);
+  console.log(`DEBUG: 未匹配任何已知指令。`);
   return reply(replyToken, '指令無效，請使用下方老師選單或輸入正確指令。', teacherMenu);
 }
 
@@ -1001,7 +1001,7 @@ async function handlePurchaseFlow(event, userId) {
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
-  console.log(`DEBUG: handleStudentCommands - 處理指令: "${text}", 用戶ID: ${userId}`);
+  console.log(`DEBUG: 處理學生指令: "${text}", 用戶ID: ${userId}`);
 
   // Refactored: Handle purchase flow first
   // 如果事件被購點流程處理掉了，就直接結束
@@ -1032,7 +1032,7 @@ async function handleStudentCommands(event, userId) {
 
     // 如果有待確認或待付款訂單，則新增提示卡片
     if (pendingOrder) {
-        console.log(`DEBUG: POINTS - 發現待處理訂單 ${pendingOrder.order_id}，新增提示卡片。`);
+        console.log(`DEBUG: 點數管理 - 發現待處理訂單 ${pendingOrder.order_id}，新增提示卡片。`);
         let actionButtonLabel;
         let actionButtonCommand;
         let cardTitle;
@@ -1140,7 +1140,7 @@ async function handleStudentCommands(event, userId) {
     const pendingOrder = ordersRes.rows[0];
 
     if (pendingOrder) {
-      console.log(`DEBUG: INPUT/EDIT_LAST5_CARD_TRIGGER - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶輸入/修改後五碼。`);
+      console.log(`DEBUG: 輸入/修改後五碼觸發 - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶輸入/修改後五碼。`);
       pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.order_id } }; // 設定狀態，準備接收後五碼
       let promptText = `請輸入您的訂單 ${pendingOrder.order_id} 的匯款帳號後五碼：`;
       if (pendingOrder.status === 'rejected') {
@@ -1169,7 +1169,7 @@ async function handleStudentCommands(event, userId) {
 
     if (pendingOrder) {
       // 如果有待處理訂單，引導用戶去處理它
-      console.log(`DEBUG: BUY_POINTS - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶處理。`);
+      console.log(`DEBUG: 購買點數 - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶處理。`);
       // 直接回到點數功能主畫面，因為卡片已經顯示了
       return reply(replyToken,
         `您有一筆待完成的購點訂單 (ID: ${pendingOrder.order_id})，請在「點數管理」主頁面輸入後五碼，或選擇「❌ 取消購買」。`,
@@ -1180,7 +1180,7 @@ async function handleStudentCommands(event, userId) {
       );
     } else {
       // 沒有待處理訂單，正常啟動購買流程
-      console.log(`DEBUG: BUY_POINTS - 無待處理訂單，啟動新購買流程。`);
+      console.log(`DEBUG: 購買點數 - 無待處理訂單，啟動新購買流程。`);
       pendingPurchase[userId] = { step: 'select_plan', data: {} };
       const planOptions = PURCHASE_PLANS.map(plan => ({
         type: 'message', label: plan.label, text: plan.label
@@ -1226,7 +1226,7 @@ async function handleStudentCommands(event, userId) {
   // 修改 PURCHASE_HISTORY 處理邏輯
   if (text === COMMANDS.STUDENT.PURCHASE_HISTORY) {
     // 這裡只顯示歷史記錄，因為待確認訂單已經顯示在主頁面了
-    console.log(`DEBUG: PURCHASE_HISTORY - 顯示歷史記錄。`);
+    console.log(`DEBUG: 顯示購點歷史記錄。`);
     if (!user.history || user.history.length === 0) {
       return reply(replyToken, '你目前沒有點數相關記錄。', studentMenu);
     }
@@ -1590,9 +1590,9 @@ async function handleEvent(event) {
     const userId = event.source.userId;
     const replyToken = event.replyToken;
 
-    console.log(`DEBUG: handleEvent - 收到事件類型: ${event.type}, 用戶ID: ${userId}`);
+    console.log(`DEBUG: 收到事件類型: ${event.type}, 用戶ID: ${userId}`);
     if (event.type === 'message' && event.message.type === 'text') {
-        console.log(`DEBUG: handleEvent - 收到文字訊息: "${event.message.text}"`);
+        console.log(`DEBUG: 收到文字訊息: "${event.message.text}"`);
     }
 
     if (event.type !== 'message' && event.type !== 'postback' && event.type !== 'follow' && event.type !== 'unfollow') {
@@ -1638,7 +1638,7 @@ async function handleEvent(event) {
 
     // --- Postback 事件處理 ---
     if (event.type === 'postback') {
-        console.log(`DEBUG: handleEvent - 處理 Postback 事件: ${event.postback.data}`);
+        console.log(`DEBUG: 處理 Postback 事件: ${event.postback.data}`);
         const data = event.postback.data;
         const params = new URLSearchParams(data);
         const postbackAction = params.get('action');
@@ -2005,12 +2005,12 @@ async function handleEvent(event) {
     }
 
     const finalUser = await getUser(userId);
-    console.log(`DEBUG: handleEvent - 用戶 ${userId} 角色: ${finalUser.role}`);
+    console.log(`DEBUG: 用戶 ${userId} 角色: ${finalUser.role}`);
     if (finalUser.role === 'teacher') {
-        console.log(`DEBUG: handleEvent - 呼叫 handleTeacherCommands`);
+        console.log(`DEBUG: 呼叫 handleTeacherCommands`);
         return handleTeacherCommands(event, userId);
     } else {
-        console.log(`DEBUG: handleEvent - 呼叫 handleStudentCommands`);
+        console.log(`DEBUG: 呼叫 handleStudentCommands`);
         return handleStudentCommands(event, userId);
     }
 }
@@ -2087,7 +2087,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.6.1T (Enhanced Course Management & Student Upcoming Courses)`); // 版本號已更新
+  console.log(`Bot 版本: V4.7.0T (Enhanced Course Management & Student Upcoming Courses)`); // 版本號已更新
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
