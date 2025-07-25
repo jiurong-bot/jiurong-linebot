@@ -746,8 +746,8 @@ async function handleTeacherCommands(event, userId) {
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
     console.log(`DEBUG: handleTeacherCommands - 處理 MANUAL_ADJUST_POINTS，設定 pendingManualAdjust 狀態。`);
     pendingManualAdjust[userId] = { step: 1 };
-    return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回點數管理 取消。', [
-      { type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
+    return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回老師主選單 取消。', [ // 修改這裡的取消指令
+      { type: 'message', label: '返回老師主選單', text: COMMANDS.TEACHER.MAIN_MENU } // 修改這裡的按鈕
     ]);
   }
 
