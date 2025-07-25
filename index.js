@@ -4,10 +4,10 @@
 //                 模組載入
 // =====================================
 // 從 infraModule 導入基礎設施相關的依賴和初始化函數
-const { pgClient, lineClient, constants, init: initInfra, reply, push } = require('./infraModule');
+const infraModule = require('./infraModule');
+const { pgClient, lineClient, constants, reply, push } = infraModule; // 直接從 infraModule 解構出所需的方法和常數
 
-// 主程式專屬的模組
-// 如果有其他業務邏輯需要的模組，請在此處引入
+// 其他主程式專屬的模組
 // const someUtility = require('./utils/someUtility');
 
 
@@ -207,12 +207,17 @@ async function getAllOrders(dbClient = pgClient) {
 async function saveOrder(order, dbClient = pgClient) {
   try {
     const { order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp } = order;
+    // 再次檢查 order_id 是否為空，以避免資料庫約束錯誤
+    if (!order_id) {
+        throw new Error('嘗試保存訂單時 order_id 為空值。');
+    }
     await dbClient.query(
       'INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (order_id) DO UPDATE SET user_id = $2, user_name = $3, points = $4, amount = $5, last_5_digits = $6, status = $7, timestamp = $8',
       [order_id, user_id, user_name, points, amount, last_5_digits, status, new Date(timestamp)]
     );
   } catch (err) {
-    console.error(`❌ 保存訂單 ${order.order_id} 失敗:`, err.message);
+    console.error(`❌ 保存訂單 ${order.order_id || '未知ID'} 失敗:`, err.message);
+    throw err; // 拋出錯誤以便上層調用者處理事務回滾
   }
 }
 
@@ -729,7 +734,15 @@ async function handleTeacherCommands(event, user) {
   // 處理確認訂單 Postback
   if (event.type === 'postback' && event.postback.data.startsWith('action=confirm_order')) {
     const params = new URLSearchParams(event.postback.data);
-    const orderId = params.get('orderId');
+    const orderId = params.get('orderId'); // 確保這裡能正確獲取到值
+    console.log(`DEBUG: 處理確認訂單 - 收到 orderId: ${orderId}`); //
+
+    if (!orderId) { // 新增檢查，防止 orderId 為 null
+        console.error('❌ 錯誤：確認訂單時 orderId 為空。Postback data:', event.postback.data); //
+        await reply(replyToken, '❌ 訂單 ID 遺失，無法確認訂單。請通知開發者。', teacherPointManagementMenu); //
+        return true;
+    }
+
     const targetUserId = params.get('userId');
     const points = parseInt(params.get('points'));
 
@@ -738,6 +751,10 @@ async function handleTeacherCommands(event, user) {
       await reply(replyToken, '該訂單不存在或已被處理。', teacherPointManagementMenu);
       return true;
     }
+    
+    // 再次確認 order 對象中的 order_id 屬性是存在的，理論上 Postback 傳來的 orderId 應該與查詢到的 order 匹配
+    // 這個額外的賦值可以作為一個防禦性編程，確保 `saveOrder` 收到正確的 ID
+    order.order_id = orderId; 
 
     const targetUser = await getUser(targetUserId);
     if (!targetUser) {
@@ -751,7 +768,7 @@ async function handleTeacherCommands(event, user) {
     await pgClient.query('BEGIN'); // 開始事務
     try {
       await saveUser(targetUser, pgClient);
-      await saveOrder(order, pgClient);
+      await saveOrder(order, pgClient); // 這裡的 order 應該包含正確的 order_id
       await pgClient.query('COMMIT'); // 提交事務
 
       await reply(replyToken, `✅ 訂單 ${orderId} 已確認，已為學員 ${targetUser.name} 增加 ${points} 點。`, teacherPointManagementMenu);
@@ -760,7 +777,7 @@ async function handleTeacherCommands(event, user) {
     } catch (e) {
       await pgClient.query('ROLLBACK'); // 回滾事務
       console.error(`❌ 確認訂單 ${orderId} 失敗:`, e.message);
-      await reply(replyToken, `❌ 確認訂單失敗，請稍後再試。錯誤: ${e.message}`, teacherPointManagementMenu);
+      await reply(replyToken, `❌ 確認訂單失敗，系統發生錯誤，請稍後再試。`, teacherPointManagementMenu); //
     }
     return true;
   }
@@ -779,7 +796,7 @@ async function handleTeacherCommands(event, user) {
     await deleteOrder(orderId);
     await reply(replyToken, `✅ 訂單 ${orderId} 已取消。`, teacherPointManagementMenu);
     // 通知學員訂單被取消
-    await push(order.user_id, `❌ 您的購點訂單 ${orderId} 因故被老師取消。如有疑問請聯繫老師。`);
+    await push(order.user_id, `❌ 您的購點訂單 ${order.order_id} 因故被老師取消。如有疑問請聯繫老師。`);
     return true;
   }
 
@@ -1659,7 +1676,6 @@ async function handleEvent(event) {
 // =====================================
 //           伺服器啟動
 // =====================================
-// 將 handleEvent 函數傳遞給 infraModule 進行初始化
-// 同時將資料庫互動函數也傳入，以便 infraModule 的定時任務可以獲取資料
-initInfra(PORT, handleEvent, getAllCourses, getUser, saveUser);
-
+// 將 handleEvent 函數以及資料庫互動函數傳遞給 infraModule 進行初始化
+// infraModule 的 init 函數現在需要這些函數來執行其內部邏輯 (例如定時提醒)
+infraModule.init(PORT, handleEvent, getAllCourses, getUser);
