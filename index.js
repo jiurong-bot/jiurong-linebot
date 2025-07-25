@@ -1,4 +1,4 @@
-// index.js - V4.5.5T (Enhanced Push Error Logging)
+// index.js - V4.5.5T （隱藏身份切換）(Enhanced Push Error Logging)
 
 // =====================================
 //                 模組載入
@@ -305,7 +305,7 @@ const studentMenu = [
     { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
     { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
     { type: 'message', label: '點數管理', text: COMMANDS.STUDENT.POINTS },
-    { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE },
+    // 已隱藏切換身份選項，但功能仍可透過指令使用
 ];
 
 const studentPointSubMenu = [
@@ -320,7 +320,7 @@ const teacherMenu = [
     { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
     { type: 'message', label: '查詢學員', text: COMMANDS.TEACHER.SEARCH_STUDENT },
     { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
-    { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE },
+    // 已隱藏切換身份選項，但功能仍可透過指令使用
 ];
 
 
