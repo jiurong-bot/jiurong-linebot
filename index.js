@@ -94,7 +94,7 @@ const COMMANDS = {
     CANCEL_INPUT_LAST5: '❌ 取消輸入後五碼',
     BOOK_COURSE: '@預約課程',
     MY_COURSES: '@我的課程',
-    VIEW_UPCOMING_COURSES: '@查看未來7天課程', // 新增學員查詢未來7天課程指令
+    // VIEW_UPCOMING_COURSES: '@查看未來7天課程', // 已移除此指令
     CANCEL_BOOKING: '@取消預約',
     CANCEL_WAITING: '@取消候補',
     CONFIRM_ADD_COURSE: '確認新增課程',
@@ -347,7 +347,7 @@ const studentMenu = [
     { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
     { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
     { type: 'message', label: '點數管理', text: COMMANDS.STUDENT.POINTS },
-    { type: 'message', label: '未來7天課程', text: COMMANDS.STUDENT.VIEW_UPCOMING_COURSES }, // 新增學員查詢未來7天課程選項
+    // { type: 'message', label: '未來7天課程', text: COMMANDS.STUDENT.VIEW_UPCOMING_COURSES }, // 已移除此選項
     // 已隱藏切換身份選項，但功能仍可透過指令使用
 ];
 
@@ -1193,91 +1193,17 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, historyMessage.trim(), studentMenu);
   }
 
+  // 學員預約課程，直接顯示未來7天的課程
   if (text === COMMANDS.STUDENT.BOOK_COURSE) {
-    const now = Date.now();
-    const upcoming = Object.values(courses)
-      .filter(c => new Date(c.time).getTime() > now && !c.students.includes(userId) && !c.waiting.includes(userId))
-      .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
-    if (upcoming.length === 0) {
-      return reply(replyToken, '目前沒有您可以預約的新課程。', studentMenu);
-    }
-
-    const courseBubbles = upcoming.slice(0, 10).map(course => {
-        const isFull = course.students.length >= course.capacity;
-        return {
-            type: 'bubble',
-            header: {
-                type: 'box', layout: 'vertical',
-                contents: [{ type: 'text', text: '開放預約中', color: '#ffffff', weight: 'bold', size: 'md' }],
-                backgroundColor: '#34a0a4', paddingAll: 'lg'
-            },
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'md',
-                contents: [
-                    { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
-                    { type: 'separator' },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md',
-                        contents: [
-                            { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 }
-                        ]
-                    },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: `${course.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 }
-                        ]
-                    },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: `報名 ${course.students.length}/${course.capacity}`, wrap: true, color: '#666666', size: 'sm', flex: 5 }
-                        ]
-                    },
-                ]
-            },
-            footer: {
-                type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
-                contents: [{
-                    type: 'button', style: 'primary', height: 'sm',
-                    color: isFull ? '#ff9e00' : '#1a759f',
-                    action: {
-                        type: 'message',
-                        label: isFull ? '加入候補' : '立即預約',
-                        text: `我要預約 ${course.id}`
-                    },
-                }]
-            }
-        };
-    });
-
-    const flexMessage = {
-        type: 'flex',
-        altText: '可預約課程列表',
-        contents: { type: 'carousel', contents: courseBubbles }
-    };
-    
-    return reply(replyToken, [
-        { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' },
-        flexMessage
-    ], [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
-  }
-
-  // 新增 學員查詢未來 7 天課程 功能
-  if (text === COMMANDS.STUDENT.VIEW_UPCOMING_COURSES) {
     const now = Date.now();
     const sevenDaysLater = now + (ONE_DAY_IN_MS * 7); // 未來七天
 
     const upcomingCourses = Object.values(courses)
-        .filter(c => new Date(c.time).getTime() > now && new Date(c.time).getTime() <= sevenDaysLater)
+        .filter(c => new Date(c.time).getTime() > now && new Date(c.time).getTime() <= sevenDaysLater && !c.students.includes(userId) && !c.waiting.includes(userId))
         .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
 
     if (upcomingCourses.length === 0) {
-        return reply(replyToken, '未來七天內沒有課程。', studentMenu);
+        return reply(replyToken, '未來七天內沒有您可以預約的新課程。', studentMenu);
     }
 
     const courseBubbles = upcomingCourses.slice(0, 10).map(course => {
@@ -1358,11 +1284,20 @@ async function handleStudentCommands(event, userId) {
 
     const flexMessage = {
         type: 'flex',
-        altText: '未來7天課程列表',
+        altText: '可預約課程列表',
         contents: { type: 'carousel', contents: courseBubbles }
     };
-    return reply(replyToken, flexMessage, [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
+    
+    return reply(replyToken, [
+        { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' },
+        flexMessage
+    ], [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
+
+  // 新增 學員查詢未來 7 天課程 功能 (此段已移除，功能整合至 BOOK_COURSE)
+  // if (text === COMMANDS.STUDENT.VIEW_UPCOMING_COURSES) {
+  //   ... (原來的邏輯) ...
+  // }
 
   if (text.startsWith('我要預約 ')) {
     const courseId = text.replace('我要預約 ', '').trim();
@@ -2126,4 +2061,3 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。');
   }
 });
-
