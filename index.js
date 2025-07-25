@@ -1,4 +1,4 @@
-// index.js - V4.5.3T (Transactional update, bug fixes, refactoring, async pending orders - Follow Message for Teacher Pending Orders)
+// index.js - V4.5.4T (Transactional update, bug fixes, refactoring, async pending orders - Follow Message for Teacher Pending Orders - Enhanced Push Error Logging)
 
 // =====================================
 //                 模組載入
@@ -245,7 +245,7 @@ async function reply(replyToken, content, menu = null) {
   }
 }
 
-// 修正後的 push 函式
+// 修正後的 push 函式，增強錯誤記錄
 async function push(to, content) {
   let messages;
   if (Array.isArray(content)) {
@@ -267,8 +267,18 @@ async function push(to, content) {
     await client.pushMessage(to, messages);
     console.log(`DEBUG: push - 成功推播訊息給 ${to}`);
   } catch (error) {
-    console.error(`❌ push 函式發送失敗給 ${to}:`, error.originalError ? error.originalError.response : error.message);
-    // 您也可以在這裡向老師推播一個錯誤訊息，或者記錄更詳細的錯誤日誌
+    // --- 增強錯誤日誌 ---
+    if (error.originalError && error.originalError.response) {
+        console.error(`❌ push 函式發送失敗給 ${to}:`, 
+                      `狀態碼: ${error.originalError.response.status},`,
+                      `訊息: ${error.originalError.response.statusText},`);
+        // 嘗試打印響應數據，這通常包含詳細的 LINE API 錯誤信息
+        if (error.originalError.response.data) {
+            console.error(`響應數據:`, error.originalError.response.data);
+        }
+    } else {
+        console.error(`❌ push 函式發送失敗給 ${to}:`, error.message);
+    }
   }
 }
 
@@ -1350,7 +1360,7 @@ async function handleStudentCommands(event, userId) {
         const cancellingUser = await getUser(userId, pgClient);
         cancellingUser.points += course.pointsCost;
         if (!Array.isArray(cancellingUser.history)) cancellingUser.history = [];
-        cancellingUser.history.push({ id, action: `取消預約退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
+        cancellingUser.history.push({ id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
         await saveUser(cancellingUser, pgClient);
         
         // 2. Update course student list
@@ -1375,7 +1385,7 @@ async function handleStudentCommands(event, userId) {
                     .catch(e => console.error(`❌ 通知候補者 ${nextWaitingUserId} 失敗:`, e.message));
                 replyMessage += '\n有候補學生已遞補成功。';
             } else if (nextWaitingUser) {
-                const studentName = nextWaitingUser.name || `未知學員(${nextWaitingUserId.substring(0, 4)}...)`;
+                const studentName = nextWaitingUser.name || `未知學員(${nextWaitingUser.id.substring(0, 4)}...)`; // Fix: Use nextWaitingUser.id
                 replyMessage += `\n候補學生 ${studentName} 點數不足 (需要 ${course.pointsCost} 點)，未能遞補。已將其從候補名單移除。`;
                 if (TEACHER_ID) {
                   push(TEACHER_ID, `課程「${course.title}」（${formatDateTime(course.time)}）有學生取消，但候補學生 ${studentName} 點數不足 (需要 ${course.pointsCost} 點)，未能遞補。已自動從候補名單移除該學生。`)
@@ -1399,7 +1409,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要取消候補 ')) {
     const id = text.replace('我要取消候補 ', '').trim();
     const course = courses[id];
-    const now = Date.Now(); 
+    const now = Date.now(); // Fix: Corrected to Date.now() 
 
     if (!course || !course.waiting?.includes(userId)) {
       return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
@@ -1871,7 +1881,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.3T (Follow Message for Teacher Pending Orders)`); // 更新版本號
+  console.log(`Bot 版本: V4.5.4T (Enhanced Push Error Logging)`); // 更新版本號
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
