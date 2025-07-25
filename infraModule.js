@@ -30,8 +30,8 @@ const pgClient = new Client({
 // 用於追蹤已發送的提醒，避免重複發送
 const sentReminders = {};
 
-// 導出一個初始化函數，接收主程式的依賴和設定
-module.exports = {
+// 將所有導出內容封裝在一個物件裡，這樣在內部調用方法時 `this` 指向這個物件本身會更明確
+const infraModule = {
   // 導出所有必要的客戶端實例和常數
   lineClient,
   pgClient,
@@ -45,9 +45,8 @@ module.exports = {
    * @param {Function} handleEvent - 主程式的事件處理函式，用於 Line Webhook
    * @param {Function} getAllCourses - 從主程式獲取課程數據的函數
    * @param {Function} getUser - 從主程式獲取用戶數據的函數
-   * @param {Function} saveUser - 從主程式保存用戶數據的函數
    */
-  async init(PORT, handleEvent, getAllCourses, getUser, saveUser) {
+  async init(PORT, handleEvent, getAllCourses, getUser) {
     const app = express();
 
     // === Express 中間件和 Webhook 設置 ===
@@ -84,7 +83,9 @@ module.exports = {
     app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
     // === 資料庫初始化 ===
-    await this.initializeDatabase();
+    // 這裡使用 infraModule.initializeDatabase() 明確引用，避免 this 上下文問題
+    console.log('INFO: 正在初始化資料庫...');
+    await infraModule.initializeDatabase(); 
 
     // === 啟動伺服器和定時任務 ===
     app.listen(PORT, () => {
@@ -92,9 +93,11 @@ module.exports = {
       console.log(`Bot 版本: V4.5.4T (基礎設施模組化)`); // 更新版本號
 
       // 定時清理過期課程 (假設 cleanCoursesDB 依賴 pgClient)
-      setInterval(() => this.cleanCoursesDB(), ONE_DAY_IN_MS);
+      setInterval(() => infraModule.cleanCoursesDB(), ONE_DAY_IN_MS);
       // 定時檢查並發送提醒 (依賴 getAllCourses, getUser, push, formatDateTime)
-      setInterval(() => this.checkAndSendReminders(getAllCourses, getUser, this.push), REMINDER_CHECK_INTERVAL_MS);
+      // 注意：formatDateTime 需要被正確地傳遞或引用
+      // 這裡假設 formatDateTime 會在主程式中提供，或者在 infraModule 中有自己的版本
+      setInterval(() => infraModule.checkAndSendReminders(getAllCourses, getUser, infraModule.push), REMINDER_CHECK_INTERVAL_MS);
 
       // Keep-alive 功能
       if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -130,7 +133,7 @@ module.exports = {
       global.courseIdCounter = maxId + 1; // 課程 ID 計數器放在 global 方便主程式存取
       console.log(`ℹ️ 課程 ID 計數器初始化為: ${global.courseIdCounter}`);
 
-      await this.cleanCoursesDB(); // 首次資料庫清理
+      await infraModule.cleanCoursesDB(); // 首次資料庫清理，使用 infraModule.cleanCoursesDB()
       console.log('✅ 首次資料庫清理完成。');
 
     } catch (err) {
@@ -216,7 +219,7 @@ module.exports = {
     const usersRes = await pgClient.query('SELECT id, name FROM users');
     const dbUsersMap = new Map(usersRes.rows.map(u => [u.id, u]));
 
-    // 時間格式化函數 (通常放在共用工具裡，這裡為了模組自洽暫時放這)
+    // 時間格式化函數 (為了模組自洽，這裡也定義一份，但也可以從主程式傳入)
     const formatDateTime = (isoString) => {
         if (!isoString) return '無效時間';
         const date = new Date(isoString);
@@ -263,3 +266,5 @@ module.exports = {
     }
   },
 };
+
+module.exports = infraModule; // 導出這個完整的模組物件
