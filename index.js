@@ -1,7 +1,7 @@
 // index.js - V4.8.1 (Fixed Order Confirmation Error Handling)
 
 // =====================================
-//                 模듈載入
+//                 模組載入
 // =====================================
 const express = require('express');
 const { Client } = require('pg');
@@ -708,8 +708,11 @@ async function handleTeacherCommands(event, userId) {
 
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
 
-    return reply(replyToken, flexMessage, menuOptions);
-  }
+    return reply(replyToken, [
+        { type: 'text', text: introText },
+        flexMessage
+    ], menuOptions); // 修改這裡，將 introText 和 flexMessage 分開傳遞
+}
 
   if (text === COMMANDS.TEACHER.REPORT) {
     console.log(`DEBUG: 處理 REPORT`);
@@ -868,7 +871,8 @@ async function handlePurchaseFlow(event, userId) {
   // 通用取消和返回邏輯
   if (text === COMMANDS.STUDENT.CANCEL_INPUT_LAST5) {
       delete pendingPurchase[userId];
-      await reply(replyToken, '已取消輸入匯款帳號後五碼。', studentMenu);
+      // 修改這裡，取消輸入後五碼後返回點數管理介面
+      await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
       return true; // Flow handled
   }
   if (text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
@@ -921,9 +925,9 @@ async function handlePurchaseFlow(event, userId) {
 
         delete pendingPurchase[userId]; // 完成後清除狀態
 
-        await reply(replyToken, `✅ 已收到您的匯款帳號後五碼：${last5Digits}。\n感謝您的配合！我們將盡快為您核對並加點。\n\n目前訂單狀態：等待老師確認。`);
+        await reply(replyToken, `✅ 已收到您的匯款帳號後五碼：**${last5Digits}**。\n感謝您的配合！我們將盡快為您核對並加點。\n\n目前訂單狀態：等待老師確認。`);
 
-        // 完成後，模擬用戶點擊「點數管理」按鈕，返回主介面
+        // 完成後，模擬用戶點擊「點數管理」按鈕，返回點數管理介面
         await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
         return true; // Flow handled
       } catch (err) {
