@@ -284,41 +284,41 @@ function isFlexMessage(message) {
 
 // 學員主選單
 const studentMenu = [
-  { label: '我的點數', text: COMMANDS.STUDENT.CHECK_POINTS },
-  { label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
-  { label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
-  { label: '點數功能', text: COMMANDS.STUDENT.POINTS },
+  { type: 'message', label: '我的點數', text: COMMANDS.STUDENT.CHECK_POINTS },
+  { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
+  { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
+  { type: 'message', label: '點數功能', text: COMMANDS.STUDENT.POINTS },
 ];
 
 // 學員點數功能子選單
 const studentPointSubMenu = [
-  { label: '查看點數', text: COMMANDS.STUDENT.CHECK_POINTS },
-  { label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS },
-  { label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY },
-  { label: '主選單', text: COMMANDS.STUDENT.MAIN_MENU },
+  { type: 'message', label: '查看點數', text: COMMANDS.STUDENT.CHECK_POINTS },
+  { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS },
+  { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY },
+  { type: 'message', label: '主選單', text: COMMANDS.STUDENT.MAIN_MENU },
 ];
 
 // 老師主選單
 const teacherMenu = [
-  { label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
-  { label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
-  { label: '統計報表', text: COMMANDS.TEACHER.REPORT },
+  { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
+  { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
+  { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
 ];
 
 // 老師課程管理選單
 const teacherCourseManagementMenu = [
-  { label: '新增課程', text: COMMANDS.TEACHER.ADD_COURSE },
-  { label: '取消課程', text: COMMANDS.TEACHER.CANCEL_COURSE },
-  { label: '課程列表', text: COMMANDS.TEACHER.COURSE_LIST },
-  { label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU },
+  { type: 'message', label: '新增課程', text: COMMANDS.TEACHER.ADD_COURSE },
+  { type: 'message', label: '取消課程', text: COMMANDS.TEACHER.CANCEL_COURSE },
+  { type: 'message', label: '課程列表', text: COMMANDS.TEACHER.COURSE_LIST },
+  { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU },
 ];
 
 // 老師點數管理選單
 const teacherPointManagementMenu = [
-  { label: '待確認清單', text: COMMANDS.TEACHER.PENDING_ORDERS },
-  { label: '手動調整點數', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS },
-  { label: '查學員', text: COMMANDS.TEACHER.SEARCH_STUDENT },
-  { label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU },
+  { type: 'message', label: '待確認清單', text: COMMANDS.TEACHER.PENDING_ORDERS },
+  { type: 'message', label: '手動調整點數', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS },
+  { type: 'message', label: '查學員', text: COMMANDS.TEACHER.SEARCH_STUDENT },
+  { type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU },
 ];
 
 
@@ -437,8 +437,8 @@ async function handleTeacherCommands(event, user) {
                            `費用：${courseData.points_cost} 點\n\n` +
                            `確認新增嗎？`;
     await reply(replyToken, confirmMessage, [
-      { label: COMMANDS.TEACHER.CONFIRM_ADD_COURSE, text: COMMANDS.TEACHER.CONFIRM_ADD_COURSE },
-      { label: COMMANDS.TEACHER.CANCEL_ADD_COURSE, text: COMMANDS.TEACHER.CANCEL_ADD_COURSE },
+      { type: 'message', label: COMMANDS.TEACHER.CONFIRM_ADD_COURSE, text: COMMANDS.TEACHER.CONFIRM_ADD_COURSE },
+      { type: 'message', label: COMMANDS.TEACHER.CANCEL_ADD_COURSE, text: COMMANDS.TEACHER.CANCEL_ADD_COURSE },
     ]);
     return true;
   }
@@ -523,7 +523,7 @@ async function handleTeacherCommands(event, user) {
       await reply(replyToken, courseListMsg); // 如果沒有課程列表，只發送文字
     }
 
-    await reply(replyToken, '或輸入 @返回老師主選單 取消操作。');
+    await push(userId, { type: 'text', text: '或輸入 @返回老師主選單 取消操作。', quickReply: { items: teacherMenu.map(i => ({ type: 'action', action: i })) } });
     return true;
   }
 
@@ -540,8 +540,8 @@ async function handleTeacherCommands(event, user) {
 
     pendingCancelCourse[userId] = courseId;
     await reply(replyToken, `確定要取消課程「${courseToCancel.title} (${formatDateTime(courseToCancel.time)})」嗎？這將通知所有已預約和候補學員。\n請輸入「確認取消」以完成。`, [
-      { label: '確認取消', text: '確認取消' },
-      { label: '返回課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }
+      { type: 'message', label: '確認取消', text: '確認取消' },
+      { type: 'message', label: '返回課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }
     ]);
     return true;
   }
@@ -726,7 +726,7 @@ async function handleTeacherCommands(event, user) {
     await push(userId, {
         type: 'text',
         text: '請點擊上方按鈕執行操作。',
-        quickReply: { items: teacherPointManagementMenu.map(i => ({ type: 'action', action: i })) }
+        quickReply: { items: teacherPointManagementMenu.map(i => ({ type: 'action', action: i })) })
     });
     return true;
   }
@@ -840,8 +840,8 @@ async function handleTeacherCommands(event, user) {
     pendingManualAdjust[userId].points = pointsToAdjust;
 
     await reply(replyToken, `確認為學員 ${pendingManualAdjust[userId].targetUserName} ${pointsToAdjust > 0 ? '增加' : '減少'} ${Math.abs(pointsToAdjust)} 點嗎？\n請輸入「確認調整」以完成。`, [
-      { label: '確認調整', text: '確認調整' },
-      { label: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST, text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
+      { type: 'message', label: '確認調整', text: '確認調整' },
+      { type: 'message', label: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST, text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }
     ]);
     pendingManualAdjust[userId].action = 'confirmAdjust';
     return true;
@@ -961,8 +961,8 @@ async function handlePurchaseFlow(event, user) {
                                 `戶名: ${BANK_INFO.accountName}\n\n` +
                                 `匯款完成後，請點擊下方按鈕或輸入「@輸入匯款後五碼」填寫您的匯款帳號後五碼，以便老師為您撥點。\n` +
                                 `(點數將在老師確認後入帳)`, [
-        { label: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER, text: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER },
-        { label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
+        { type: 'message', label: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER, text: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER },
+        { type: 'message', label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
       ], studentPointSubMenu);
       return true;
     }
@@ -973,7 +973,7 @@ async function handlePurchaseFlow(event, user) {
     if (pendingPurchase[userId] && pendingPurchase[userId].plan) {
       pendingPurchase[userId].action = 'inputLast5'; // 設置狀態
       await reply(replyToken, `請輸入您的匯款帳號後五碼：`, [
-        { label: COMMANDS.STUDENT.CANCEL_INPUT_LAST5, text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }
+        { type: 'message', label: COMMANDS.STUDENT.CANCEL_INPUT_LAST5, text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }
       ]);
     } else {
       await reply(replyToken, '您目前沒有待確認的購點訂單，請先選擇購點方案。', studentPointSubMenu);
@@ -986,7 +986,7 @@ async function handlePurchaseFlow(event, user) {
     const last5Digits = messageText.trim();
     if (!/^\d{5}$/.test(last5Digits)) {
       await reply(replyToken, '後五碼格式不正確，請輸入 5 位數字。', [
-        { label: COMMANDS.STUDENT.CANCEL_INPUT_LAST5, text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }
+        { type: 'message', label: COMMANDS.STUDENT.CANCEL_INPUT_LAST5, text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }
       ]);
       return true;
     }
@@ -998,8 +998,8 @@ async function handlePurchaseFlow(event, user) {
                        `匯款帳號後五碼：${purchase.last5}\n\n` +
                        `確認提交訂單嗎？`;
     await reply(replyToken, confirmMsg, [
-      { label: COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: COMMANDS.STUDENT.CONFIRM_BUY_POINTS },
-      { label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
+      { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: COMMANDS.STUDENT.CONFIRM_BUY_POINTS },
+      { type: 'message', label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
     ]);
     return true;
   }
@@ -1008,8 +1008,8 @@ async function handlePurchaseFlow(event, user) {
   if (messageText === COMMANDS.STUDENT.CANCEL_INPUT_LAST5 && pendingPurchase[userId]) {
     delete pendingPurchase[userId].action; // 清除輸入後五碼的狀態
     await reply(replyToken, '已取消輸入後五碼。您仍然可以稍後再次輸入。\n請點選下方「@輸入匯款後五碼」以重新輸入。', [
-        { label: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER, text: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER },
-        { label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
+        { type: 'message', label: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER, text: COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER },
+        { type: 'message', label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE },
     ]);
     return true;
   }
@@ -1130,11 +1130,13 @@ async function handleStudentCommands(event, user) {
       let statusText = '';
       let buttonLabel = '';
       let buttonData = '';
+      let buttonType = 'postback'; // 預設為 postback
 
       if (isBooked) {
         statusText = '已預約';
         buttonLabel = '您已預約'; // 不提供按鈕或禁用
         buttonData = 'action=none';
+        buttonType = 'message'; // 為了顯示按鈕但不觸發動作，設為message
       } else if (isFull && !isWaiting) {
         statusText = '已額滿，可候補';
         buttonLabel = `候補 ${course.title}`;
@@ -1143,6 +1145,7 @@ async function handleStudentCommands(event, user) {
         statusText = '已候補';
         buttonLabel = '您已候補'; // 不提供按鈕或禁用
         buttonData = 'action=none';
+        buttonType = 'message'; // 為了顯示按鈕但不觸發動作，設為message
       } else {
         statusText = '可預約';
         buttonLabel = `預約 ${course.title}`;
@@ -1156,9 +1159,10 @@ async function handleStudentCommands(event, user) {
                        `費用: ${course.points_cost} 點\n` +
                        `狀態: ${statusText}\n\n`;
 
-      if (buttonLabel !== '您已預約' && buttonLabel !== '您已候補') { // 如果不是已預約/候補，才顯示按鈕
+      // 只有當按鈕會觸發實際動作時才加入 actions 陣列
+      if (buttonData !== 'action=none') { 
         actions.push({
-          type: 'postback',
+          type: buttonType, // 使用實際的按鈕類型
           label: buttonLabel,
           data: buttonData,
           displayText: `${buttonLabel} (${course.id})`
@@ -1406,8 +1410,8 @@ async function handleStudentCommands(event, user) {
     pendingCancelBooking[userId] = courseId; // 暫存要取消的課程ID
 
     await reply(replyToken, `確定要取消預約課程「${course.title} (${formatDateTime(course.time)})」嗎？\n點數將會退還。請輸入「確認取消預約」以完成。`, [
-      { label: '確認取消預約', text: '確認取消預約' },
-      { label: COMMANDS.STUDENT.MAIN_MENU, text: COMMANDS.STUDENT.MAIN_MENU }
+      { type: 'message', label: '確認取消預約', text: '確認取消預約' },
+      { type: 'message', label: COMMANDS.STUDENT.MAIN_MENU, text: COMMANDS.STUDENT.MAIN_MENU }
     ]);
     return true;
   }
@@ -1543,8 +1547,8 @@ async function handleStudentCommands(event, user) {
     pendingCancelWaiting[userId] = courseId; // 暫存要取消的課程ID
 
     await reply(replyToken, `確定要取消候補課程「${course.title} (${formatDateTime(course.time)})」嗎？`, [
-      { label: '確認取消候補', text: '確認取消候補' },
-      { label: COMMANDS.STUDENT.MAIN_MENU, text: COMMANDS.STUDENT.MAIN_MENU }
+      { type: 'message', label: '確認取消候補', text: '確認取消候補' },
+      { type: 'message', label: COMMANDS.STUDENT.MAIN_MENU, text: COMMANDS.STUDENT.MAIN_MENU }
     ]);
     return true;
   }
