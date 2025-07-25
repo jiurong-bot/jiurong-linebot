@@ -245,13 +245,30 @@ async function reply(replyToken, content, menu = null) {
   }
 }
 
+// 修正後的 push 函式
 async function push(to, content) {
-  const messages = Array.isArray(content) ? content : [{ type: 'text', text: content }];
+  let messages;
+  if (Array.isArray(content)) {
+    // 如果 content 已經是一個陣列，直接使用
+    messages = content;
+  } else if (typeof content === 'string') {
+    // 如果是字串，包裝成文字訊息物件
+    messages = [{ type: 'text', text: content }];
+  } else if (typeof content === 'object' && content !== null && content.type) {
+    // 如果是單個 Line Message Object (包括 Flex Message)，直接放入陣列
+    messages = [content];
+  } else {
+    // 預防性措施，如果收到不明內容，發送錯誤提示或忽略
+    console.error(`WARN: push 函式收到不明內容，將發送預設錯誤訊息。`, content);
+    messages = [{ type: 'text', text: '系統發生錯誤，無法顯示完整資訊。' }];
+  }
+
   try {
     await client.pushMessage(to, messages);
     console.log(`DEBUG: push - 成功推播訊息給 ${to}`);
   } catch (error) {
     console.error(`❌ push 函式發送失敗給 ${to}:`, error.originalError ? error.originalError.response : error.message);
+    // 您也可以在這裡向老師推播一個錯誤訊息，或者記錄更詳細的錯誤日誌
   }
 }
 
@@ -777,7 +794,7 @@ async function handlePurchaseFlow(event, userId) {
       // --- TRANSACTION START ---
       try {
         await pgClient.query('BEGIN');
-        // Re-fetch order within transaction
+        // Re-fetch order inside transaction
         const orderInTransaction = (await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])).rows[0];
         if (!orderInTransaction) {
           await pgClient.query('ROLLBACK');
