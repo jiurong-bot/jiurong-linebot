@@ -1,4 +1,4 @@
-// index.js - V4.8.0 (Periodic Course Grouping & Cancellation) - 已根據要求修改
+// index.js - V4.8.1 (Fixed Order Confirmation Error Handling)
 
 // =====================================
 //                 模듈載入
@@ -291,6 +291,8 @@ async function reply(replyToken, content, menu = null) {
     console.log(`DEBUG: reply - 成功回覆訊息給 ${replyToken}`);
   } catch (error) {
     console.error(`❌ reply 函式發送失敗:`, error.originalError ? error.originalError.response : error.message);
+    // 拋出錯誤，讓上層的 catch 區塊可以捕獲
+    throw error;
   }
 }
 
@@ -298,16 +300,12 @@ async function reply(replyToken, content, menu = null) {
 async function push(to, content) {
   let messages;
   if (Array.isArray(content)) {
-    // 如果 content 已經是一個陣列，直接使用
     messages = content;
   } else if (typeof content === 'string') {
-    // 如果是字串，包裝成文字訊息物件
     messages = [{ type: 'text', text: content }];
   } else if (typeof content === 'object' && content !== null && content.type) {
-    // 如果是單個 Line Message Object (包括 Flex Message)，直接放入陣列
     messages = [content];
   } else {
-    // 預防性措施，如果收到不明內容，發送錯誤提示或忽略
     console.error(`WARN: push 函式收到不明內容，將發送預設錯誤訊息。`, content);
     messages = [{ type: 'text', text: '系統發生錯誤，無法顯示完整資訊。' }];
   }
@@ -316,18 +314,18 @@ async function push(to, content) {
     await client.pushMessage(to, messages);
     console.log(`DEBUG: push - 成功推播訊息給 ${to}`);
   } catch (error) {
-    // --- 增強錯誤日誌 ---
     if (error.originalError && error.originalError.response) {
         console.error(`❌ push 函式發送失敗給 ${to}:`,
                       `狀態碼: ${error.originalError.response.status},`,
                       `訊息: ${error.originalError.response.statusText},`);
-        // 嘗試打印響應數據，這通常包含詳細的 LINE API 錯誤信息
         if (error.originalError.response.data) {
             console.error(`響應數據:`, error.originalError.response.data);
         }
     } else {
         console.error(`❌ push 函式發送失敗給 ${to}:`, error.message);
     }
+     // 拋出錯誤，讓上層的 catch 區塊可以捕獲
+    throw error;
   }
 }
 
@@ -1721,7 +1719,8 @@ async function handleEvent(event) {
                 } catch(err) {
                     await pgClient.query('ROLLBACK');
                     console.error("❌ 批次取消課程交易失敗:", err.message);
-                    return reply(replyToken, '批次取消課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
+                    await push(userId, '批次取消課程失敗，系統發生錯誤，請稍後再試。');
+                    return;
                 }
                 // --- TRANSACTION END ---
             }
@@ -1729,46 +1728,55 @@ async function handleEvent(event) {
             if (postbackAction === 'cancel_course_abort') {
                 return reply(replyToken, '操作已取消。', teacherMenu);
             }
+            
+            // ===================================
+            //     【【【 錯誤修正區塊 START 】】】
+            // ===================================
 
             if (postbackAction === 'confirm_order') {
-                // --- TRANSACTION START ---
                 try {
+                    // 使用 reply 會消耗 token，所以在任何可能長時間的操作前先回覆一個「處理中」
+                    // 這樣可以避免 token 超時，但會讓老師看到兩次訊息。
+                    // 更好的做法是將所有錯誤處理都改用 push
                     await pgClient.query('BEGIN');
                     const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
                     const order = ordersRes.rows[0];
 
                     if (!order || order.status !== 'pending_confirmation') {
                         await pgClient.query('ROLLBACK');
-                        return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
+                        await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
+                        return;
                     }
-
-                    const studentUser = await getUser(order.user_id, pgClient); // Use order.user_id
+                    
+                    const studentUser = await getUser(order.user_id, pgClient);
                     if (!studentUser) {
                         await pgClient.query('ROLLBACK');
-                        return reply(replyToken, `找不到購點學員 (ID: ${order.user_id}) 的資料。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
+                        await push(userId, `找不到購點學員 (ID: ${order.user_id}) 的資料。`);
+                        return;
                     }
 
                     studentUser.points += order.points;
                     if (!Array.isArray(studentUser.history)) studentUser.history = [];
                     studentUser.history.push({ action: `購買點數成功：${order.points} 點`, time: new Date().toISOString(), orderId: orderId });
                     order.status = 'completed';
-
+                    
                     await saveUser(studentUser, pgClient);
                     await saveOrder(order, pgClient);
                     await pgClient.query('COMMIT');
 
                     await reply(replyToken, `✅ 已為學員 ${order.user_name} 加點 ${order.points} 點，訂單 ${orderId} 已完成。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    await push(order.user_id, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 購點成功失敗:`, e.message));
+                    push(order.user_id, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 購點成功失敗:`, e.message));
+
                 } catch (err) {
                     await pgClient.query('ROLLBACK');
                     console.error("❌ 訂單確認交易失敗:", err.message);
-                    return reply(replyToken, '訂單確認失敗，系統發生錯誤，請稍後再試。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
+                    // 【修改處】將 reply 改為 push
+                    await push(userId, '訂單確認失敗，系統發生錯誤，請稍後再試。');
+                    return;
                 }
-                // --- TRANSACTION END ---
-            }
-
-            if (postbackAction === 'reject_order') { // 新增退回訂單的處理邏輯
-                // --- TRANSACTION START ---
+            } 
+            
+            if (postbackAction === 'reject_order') {
                 try {
                     await pgClient.query('BEGIN');
                     const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
@@ -1776,27 +1784,31 @@ async function handleEvent(event) {
 
                     if (!order || order.status !== 'pending_confirmation') {
                         await pgClient.query('ROLLBACK');
-                        return reply(replyToken, '找不到此筆待確認訂單或訂單狀態不正確。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
+                        await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
+                        return;
                     }
-
-                    order.status = 'rejected'; // 設定訂單狀態為退回
+                    
+                    order.status = 'rejected';
                     await saveOrder(order, pgClient);
                     await pgClient.query('COMMIT');
 
                     await reply(replyToken, `❌ 已退回訂單 ${orderId}。已通知學員 ${order.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-
-                    // 通知學員修改匯款資訊
-                    await push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
+                    push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
 
                 } catch (err) {
                     await pgClient.query('ROLLBACK');
                     console.error("❌ 訂單退回交易失敗:", err.message);
-                    return reply(replyToken, '訂單退回失敗，系統發生錯誤，請稍後再試。', [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
+                    // 【修改處】將 reply 改為 push
+                    await push(userId, '訂單退回失敗，系統發生錯誤，請稍後再試。');
+                    return;
                 }
-                // --- TRANSACTION END ---
             }
+            
+            // ===================================
+            //     【【【 錯誤修正區塊 END 】】】
+            // ===================================
         }
-
+        
         // --- Student Postbacks ---
         if (currentUser.role === 'student') {
             const courses = await getAllCourses();
@@ -1901,7 +1913,6 @@ async function handleEvent(event) {
                 ]);
             case 7: // 確認新增課程 (原步驟8，現在是7)
                 if (text === COMMANDS.STUDENT.CONFIRM_ADD_COURSE) {
-                    // --- 核心邏輯修改處 ---
                     const targetWeekdayIndex = weekdays[stepData.data.weekday];
                     const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
                     const now = new Date();
@@ -1910,7 +1921,6 @@ async function handleEvent(event) {
                     let firstCourseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
                     let dayDiff = (targetWeekdayIndex - firstCourseDate.getUTCDay() + 7) % 7;
 
-                    // 如果是今天，且時間已過，則設定為下週
                     const currentHourTaipei = now.getHours();
                     const currentMinuteTaipei = now.getMinutes();
                     if (dayDiff === 0 && (currentHourTaipei > targetHour || (currentHourTaipei === targetHour && currentMinuteTaipei >= targetMin))) {
@@ -1919,21 +1929,17 @@ async function handleEvent(event) {
                     firstCourseDate.setUTCDate(firstCourseDate.getUTCDate() + dayDiff);
                     firstCourseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
 
-                    // 在迴圈外，只產生一次課程組代碼
                     const coursePrefix = await generateUniqueCoursePrefix(pgClient);
                     const coursesToAdd = [];
 
                     for (let i = 0; i < stepData.data.totalClasses; i++) {
-                        const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS)); // 每週同一天
-                        
-                        // 產生流水號 (01, 02, ...)
+                        const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS));
                         const sessionNumber = (i + 1).toString().padStart(2, '0');
-                        // 組成新的課程 ID
                         const newId = `${coursePrefix}${sessionNumber}`;
 
                         coursesToAdd.push({
                             id: newId,
-                            title: `${stepData.data.title} - 第 ${i + 1} 堂`, // 課程名稱加上堂數
+                            title: `${stepData.data.title} - 第 ${i + 1} 堂`,
                             time: courseDateTime.toISOString(),
                             capacity: stepData.data.capacity,
                             pointsCost: stepData.data.pointsCost,
@@ -1941,17 +1947,14 @@ async function handleEvent(event) {
                             waiting: []
                         });
                     }
-                    // --- 核心邏輯修改結束 ---
 
-                    // --- TRANSACTION START ---
                     try {
                         await pgClient.query('BEGIN');
                         for (const course of coursesToAdd) {
-                            await saveCourse(course, pgClient); // 在事務中儲存所有課程
+                            await saveCourse(course, pgClient);
                         }
                         await pgClient.query('COMMIT');
                         delete pendingCourseCreation[userId];
-                        // 優化成功訊息，告知老師課程組代碼
                         return reply(replyToken, `✅ 已成功新增 ${stepData.data.totalClasses} 堂「${stepData.data.title}」系列課程。\n課程組代碼為【${coursePrefix}】。\n首堂時間：${formatDateTime(coursesToAdd[0].time)}`, teacherMenu);
                     } catch (err) {
                         await pgClient.query('ROLLBACK');
@@ -1959,7 +1962,6 @@ async function handleEvent(event) {
                         delete pendingCourseCreation[userId];
                         return reply(replyToken, '新增課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
                     }
-                    // --- TRANSACTION END ---
 
                 } else if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE) {
                     delete pendingCourseCreation[userId];
@@ -1975,7 +1977,6 @@ async function handleEvent(event) {
         if (currentUser.role === 'teacher') {
             currentUser.role = 'student';
             await saveUser(currentUser);
-            // 清除老師相關的 pending 狀態，避免切換身份後還在某些老師流程中
             delete pendingManualAdjust[userId];
             delete pendingStudentSearch[userId];
             delete pendingCourseCreation[userId];
@@ -2019,36 +2020,38 @@ async function handleEvent(event) {
 // =====================================
 async function checkAndSendReminders() {
     const now = Date.now();
-    const courses = await getAllCourses();
-    const usersRes = await pgClient.query('SELECT id, name FROM users');
-    const dbUsersMap = new Map(usersRes.rows.map(u => [u.id, u]));
+    try {
+        const courses = await getAllCourses();
+        const usersRes = await pgClient.query('SELECT id, name FROM users');
+        const dbUsersMap = new Map(usersRes.rows.map(u => [u.id, u]));
 
-    for (const id in courses) {
-        const course = courses[id];
-        const courseTime = new Date(course.time).getTime();
-        const timeUntilCourse = courseTime - now;
-        const minTimeForReminder = ONE_HOUR_IN_MS - (5 * 60 * 1000);
+        for (const id in courses) {
+            const course = courses[id];
+            const courseTime = new Date(course.time).getTime();
+            const timeUntilCourse = courseTime - now;
+            const minTimeForReminder = ONE_HOUR_IN_MS - (5 * 60 * 1000);
 
-        if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && timeUntilCourse >= minTimeForReminder && !sentReminders[id]) {
-            console.log(`🔔 準備發送課程提醒：${course.title}`);
-            for (const studentId of course.students) {
-                const student = dbUsersMap.get(studentId);
-                if (student) {
-                    try {
-                        await push(studentId, `🔔 提醒：您預約的課程「${course.title}」將於 1 小時內開始！\n時間：${formatDateTime(course.time)}`);
-                    } catch (e) {
-                        console.error(`   ❌ 向學員 ${studentId} 發送提醒失敗:`, e.message);
+            if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && timeUntilCourse >= minTimeForReminder && !sentReminders[id]) {
+                console.log(`🔔 準備發送課程提醒：${course.title}`);
+                for (const studentId of course.students) {
+                    const student = dbUsersMap.get(studentId);
+                    if (student) {
+                        push(studentId, `🔔 提醒：您預約的課程「${course.title}」將於 1 小時內開始！\n時間：${formatDateTime(course.time)}`).catch(e => {
+                            console.error(`   ❌ 向學員 ${studentId} 發送提醒失敗:`, e.message);
+                        });
                     }
                 }
+                sentReminders[id] = true;
             }
-            sentReminders[id] = true;
         }
-    }
-    for (const id in sentReminders) {
-        const course = courses[id];
-        if (!course || (new Date(course.time).getTime() < (now - ONE_DAY_IN_MS))) {
-            delete sentReminders[id];
+        for (const id in sentReminders) {
+            const course = courses[id];
+            if (!course || (new Date(course.time).getTime() < (now - ONE_DAY_IN_MS))) {
+                delete sentReminders[id];
+            }
         }
+    } catch (err) {
+        console.error('❌ 自動提醒功能發生錯誤:', err.message);
     }
 }
 
@@ -2086,7 +2089,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.8.0 (Periodic Course Grouping & Cancellation)`); // 版本號已更新
+  console.log(`Bot 版本: V4.8.1 (Fixed Order Confirmation Error Handling)`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
@@ -2102,3 +2105,4 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。');
   }
 });
+
