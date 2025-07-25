@@ -1,4 +1,4 @@
-// index.js - V4.5.4T (Transactional update, bug fixes, refactoring, async pending orders - Follow Message for Teacher Pending Orders - Enhanced Push Error Logging)
+// index.js - V4.5.5T (Enhanced Push Error Logging)
 
 // =====================================
 //                 模組載入
@@ -76,7 +76,7 @@ const COMMANDS = {
   },
   STUDENT: {
     MAIN_MENU: '@返回學員主選單',
-    POINTS: '@點數功能', // 更改為點數功能
+    POINTS: '@點數管理', 
     CHECK_POINTS: '@剩餘點數',
     BUY_POINTS: '@購買點數',
     PURCHASE_HISTORY: '@購點紀錄',
@@ -88,10 +88,10 @@ const COMMANDS = {
     CANCEL_WAITING: '@取消候補',
     CONFIRM_ADD_COURSE: '確認新增課程',
     CANCEL_ADD_COURSE: '取消新增課程',
-    RETURN_POINTS_MENU: '返回點數功能',
+    RETURN_POINTS_MENU: '返回點數管理',
     CONFIRM_BUY_POINTS: '✅ 確認購買',
-    INPUT_LAST5_CARD_TRIGGER: '@輸入匯款後五碼', // 新增的隱藏指令，用於觸發輸入輸入後五碼流程
-    EDIT_LAST5_CARD_TRIGGER: '@修改匯款後五碼', // 新增的隱藏指令，用於觸發修改後五碼流程
+    INPUT_LAST5_CARD_TRIGGER: '@輸入匯款後五碼',
+    EDIT_LAST5_CARD_TRIGGER: '@修改匯款後五碼',
   }
 };
 
@@ -304,7 +304,7 @@ function formatDateTime(isoString) {
 const studentMenu = [
     { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE },
     { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES },
-    { type: 'message', label: '點數功能', text: COMMANDS.STUDENT.POINTS },
+    { type: 'message', label: '點數管理', text: COMMANDS.STUDENT.POINTS },
     { type: 'message', label: '切換身份', text: COMMANDS.SWITCH_ROLE },
 ];
 
@@ -777,7 +777,7 @@ async function handlePurchaseFlow(event, userId) {
   }
   if (text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
       delete pendingPurchase[userId];
-      // 模擬點擊「點數功能」回到該選單
+      // 模擬點擊「點數管理」回到該選單
       await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
       return true; // Flow handled
   }
@@ -827,7 +827,7 @@ async function handlePurchaseFlow(event, userId) {
 
         await reply(replyToken, `✅ 已收到您的匯款帳號後五碼：${last5Digits}。\n感謝您的配合！我們將盡快為您核對並加點。\n\n目前訂單狀態：等待老師確認。`);
         
-        // 完成後，模擬用戶點擊「點數功能」按鈕，返回主介面
+        // 完成後，模擬用戶點擊「點數管理」按鈕，返回主介面
         await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
         return true; // Flow handled
       } catch (err) {
@@ -864,7 +864,7 @@ async function handlePurchaseFlow(event, userId) {
           await pgClient.query('COMMIT');
 
           delete pendingPurchase[userId]; // 完成後清除狀態
-          await reply(replyToken, `✅ 已確認購買 ${newOrder.points} 點，請先完成轉帳。\n\n` + `戶名：${BANK_INFO.accountName}\n` + `銀行：${BANK_INFO.bankName}\n` + `帳號：${BANK_INFO.accountNumber}\n\n` + `完成轉帳後，請再次進入「點數功能」查看新的匯款提示卡片，並輸入您的匯款帳號後五碼。\n\n` + `您的訂單編號為：${orderId}`, studentMenu);
+          await reply(replyToken, `✅ 已確認購買 ${newOrder.points} 點，請先完成轉帳。\n\n` + `戶名：${BANK_INFO.accountName}\n` + `銀行：${BANK_INFO.bankName}\n` + `帳號：${BANK_INFO.accountNumber}\n\n` + `完成轉帳後，請再次進入「點數管理」查看新的匯款提示卡片，並輸入您的匯款帳號後五碼。\n\n` + `您的訂單編號為：${orderId}`, studentMenu);
         } catch (err) {
           await pgClient.query('ROLLBACK');
           console.error('❌ 確認購買交易失敗:', err.message);
@@ -1016,7 +1016,7 @@ async function handleStudentCommands(event, userId) {
     
     const flexMessage = {
         type: 'flex',
-        altText: '點數功能選單',
+        altText: '點數管理選單',
         contents: { type: 'carousel', contents: pointBubbles }
     };
 
@@ -1038,7 +1038,7 @@ async function handleStudentCommands(event, userId) {
       }
       return reply(replyToken, promptText, [
         { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 },
-        { type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
+        { type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
       ]);
     } else {
       // 如果沒有待處理訂單，但用戶點了這個按鈕，可能是誤觸或訂單已處理
@@ -1062,9 +1062,9 @@ async function handleStudentCommands(event, userId) {
       console.log(`DEBUG: BUY_POINTS - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶處理。`);
       // 直接回到點數功能主畫面，因為卡片已經顯示了
       return reply(replyToken,
-        `您有一筆待完成的購點訂單 (ID: ${pendingOrder.order_id})，請在「點數功能」主頁面輸入後五碼，或選擇「❌ 取消購買」。`,
+        `您有一筆待完成的購點訂單 (ID: ${pendingOrder.order_id})，請在「點數管理」主頁面輸入後五碼，或選擇「❌ 取消購買」。`,
         [
-          { type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU },
+          { type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU },
           { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE },
         ]
       );
@@ -1075,7 +1075,7 @@ async function handleStudentCommands(event, userId) {
       const planOptions = PURCHASE_PLANS.map(plan => ({
         type: 'message', label: plan.label, text: plan.label
       }));
-      planOptions.push({ type: 'message', label: '返回點數功能', text: COMMANDS.STUDENT.RETURN_POINTS_MENU });
+      planOptions.push({ type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU });
       return reply(replyToken, '請選擇要購買的點數方案：', planOptions);
     }
   }
@@ -1635,7 +1635,7 @@ async function handleEvent(event) {
                     await reply(replyToken, `❌ 已退回訂單 ${orderId}。已通知學員 ${order.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                     
                     // 通知學員修改匯款資訊
-                    await push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數功能」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
+                    await push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
 
                 } catch (err) {
                     await pgClient.query('ROLLBACK');
@@ -1881,7 +1881,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.5.4T (Enhanced Push Error Logging)`); // 更新版本號
+  console.log(`Bot 版本: V4.5.5T (Enhanced Push Error Logging)`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
