@@ -491,7 +491,7 @@ async function handleTeacherCommands(event, userId) {
 
           push(userInTransaction.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${userInTransaction.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
           delete pendingManualAdjust[userId];
-          return reply(replyToken, `✅ 已成功為學員 ${userInTransaction.name} ${operation} ${absAmount} 點，目前點數：${userInTransaction.points} 點。`, teacherMenu);
+          return reply(replyToken, `✅ 已成功為學員 ${userInTransaction.name} ${absAmount} 點，目前點數：${userInTransaction.points} 點。`, teacherMenu);
       } catch (err) {
           await pgClient.query('ROLLBACK');
           console.error('❌ 手動調整點數交易失敗:', err.message);
@@ -1740,32 +1740,43 @@ async function handleEvent(event) {
                     // 更好的做法是將所有錯誤處理都改用 push
                     await pgClient.query('BEGIN');
                     const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
-                    const order = ordersRes.rows[0];
+                    const rawOrder = ordersRes.rows[0]; // 從資料庫取出的原始資料是 snake_case
 
-                    if (!order || order.status !== 'pending_confirmation') {
+                    if (!rawOrder || rawOrder.status !== 'pending_confirmation') {
                         await pgClient.query('ROLLBACK');
                         await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
                         return;
                     }
                     
-                    const studentUser = await getUser(order.user_id, pgClient);
+                    const studentUser = await getUser(rawOrder.user_id, pgClient); // 使用 rawOrder.user_id
                     if (!studentUser) {
                         await pgClient.query('ROLLBACK');
-                        await push(userId, `找不到購點學員 (ID: ${order.user_id}) 的資料。`);
+                        await push(userId, `找不到購點學員 (ID: ${rawOrder.user_id}) 的資料。`); // 使用 rawOrder.user_id
                         return;
                     }
 
-                    studentUser.points += order.points;
+                    studentUser.points += rawOrder.points; // 使用 rawOrder.points
                     if (!Array.isArray(studentUser.history)) studentUser.history = [];
-                    studentUser.history.push({ action: `購買點數成功：${order.points} 點`, time: new Date().toISOString(), orderId: orderId });
-                    order.status = 'completed';
+                    studentUser.history.push({ action: `購買點數成功：${rawOrder.points} 點`, time: new Date().toISOString(), orderId: rawOrder.order_id }); // 使用 rawOrder.points, rawOrder.order_id
+                    
+                    // 將 rawOrder 轉換為 camelCase 格式以便 saveOrder 函式使用
+                    const orderToSave = {
+                        orderId: rawOrder.order_id,
+                        userId: rawOrder.user_id,
+                        userName: rawOrder.user_name,
+                        points: rawOrder.points,
+                        amount: rawOrder.amount,
+                        last5Digits: rawOrder.last_5_digits,
+                        status: 'completed', // 直接設定為 completed
+                        timestamp: rawOrder.timestamp.toISOString() // 轉換為 ISO 格式
+                    };
                     
                     await saveUser(studentUser, pgClient);
-                    await saveOrder(order, pgClient);
+                    await saveOrder(orderToSave, pgClient); // 傳遞 camelCase 格式的物件
                     await pgClient.query('COMMIT');
 
-                    await reply(replyToken, `✅ 已為學員 ${order.user_name} 加點 ${order.points} 點，訂單 ${orderId} 已完成。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    push(order.user_id, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 購點成功失敗:`, e.message));
+                    await reply(replyToken, `✅ 已為學員 ${rawOrder.user_name} 加點 ${rawOrder.points} 點，訂單 ${rawOrder.order_id} 已完成。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
+                    push(rawOrder.user_id, `🎉 您購買的 ${rawOrder.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${rawOrder.user_id} 購點成功失敗:`, e.message));
 
                 } catch (err) {
                     await pgClient.query('ROLLBACK');
@@ -1780,20 +1791,31 @@ async function handleEvent(event) {
                 try {
                     await pgClient.query('BEGIN');
                     const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
-                    const order = ordersRes.rows[0];
+                    const rawOrder = ordersRes.rows[0]; // 從資料庫取出的原始資料是 snake_case
 
-                    if (!order || order.status !== 'pending_confirmation') {
+                    if (!rawOrder || rawOrder.status !== 'pending_confirmation') {
                         await pgClient.query('ROLLBACK');
                         await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
                         return;
                     }
                     
-                    order.status = 'rejected';
-                    await saveOrder(order, pgClient);
+                    // 將 rawOrder 轉換為 camelCase 格式以便 saveOrder 函式使用
+                    const orderToSave = {
+                        orderId: rawOrder.order_id,
+                        userId: rawOrder.user_id,
+                        userName: rawOrder.user_name,
+                        points: rawOrder.points,
+                        amount: rawOrder.amount,
+                        last5Digits: rawOrder.last_5_digits,
+                        status: 'rejected', // 直接設定為 rejected
+                        timestamp: rawOrder.timestamp.toISOString() // 轉換為 ISO 格式
+                    };
+
+                    await saveOrder(orderToSave, pgClient); // 傳遞 camelCase 格式的物件
                     await pgClient.query('COMMIT');
 
-                    await reply(replyToken, `❌ 已退回訂單 ${orderId}。已通知學員 ${order.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    push(order.user_id, `⚠️ 您的購點訂單 ${orderId} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${order.user_id} 訂單退回失敗:`, e.message));
+                    await reply(replyToken, `❌ 已退回訂單 ${rawOrder.order_id}。已通知學員 ${rawOrder.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
+                    push(rawOrder.user_id, `⚠️ 您的購點訂單 ${rawOrder.order_id} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${rawOrder.user_id} 訂單退回失敗:`, e.message));
 
                 } catch (err) {
                     await pgClient.query('ROLLBACK');
@@ -2105,4 +2127,3 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。');
   }
 });
-
