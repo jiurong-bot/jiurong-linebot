@@ -83,14 +83,13 @@ const infraModule = {
     app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
     // === 資料庫初始化 ===
-    // 這裡使用 infraModule.initializeDatabase() 明確引用，避免 this 上下文問題
     console.log('INFO: 正在初始化資料庫...');
-    await infraModule.initializeDatabase(); 
+    await infraModule.initializeDatabase(); //
 
     // === 啟動伺服器和定時任務 ===
     app.listen(PORT, () => {
       console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-      console.log(`Bot 版本: V4.5.4T (基礎設施模組化)`); // 更新版本號
+      console.log(`Bot 版本: V4.5.4T (基礎設施模組化)`);
 
       // 定時清理過期課程 (假設 cleanCoursesDB 依賴 pgClient)
       setInterval(() => infraModule.cleanCoursesDB(), ONE_DAY_IN_MS);
@@ -165,7 +164,20 @@ const infraModule = {
     }
 
     if (menu && messages.length > 0) {
-      messages[0].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
+      // 確保 quickReply.items 中的 action 格式正確
+      messages[0].quickReply = {
+        items: menu.slice(0, 13).map(item => ({
+          type: 'action', // 這是 quickReply item 的 type
+          action: { // 這是實際的 action 物件
+            type: item.type || 'message', // 如果 menu item 沒有指定 type，預設為 'message'
+            label: item.label,
+            // 如果 action type 是 'message'，則需要指定 text 屬性
+            ...(item.type === 'message' && { text: item.text }),
+            // 如果 action type 是 'postback'，則需要指定 data 屬性
+            ...(item.type === 'postback' && { data: item.data, displayText: item.displayText }),
+          }
+        }))
+      };
     }
 
     try {
