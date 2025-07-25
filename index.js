@@ -523,6 +523,7 @@ async function handleTeacherCommands(event, user) {
       await reply(replyToken, courseListMsg); // 如果沒有課程列表，只發送文字
     }
 
+    // 修正: 移除多餘的括號
     await push(userId, { type: 'text', text: '或輸入 @返回老師主選單 取消操作。', quickReply: { items: teacherMenu.map(i => ({ type: 'action', action: i })) } });
     return true;
   }
@@ -723,10 +724,11 @@ async function handleTeacherCommands(event, user) {
     for (const flexMsg of flexMessages) {
       await push(userId, flexMsg); // 逐一發送 Flex Message
     }
+    // 修正: 移除多餘的括號
     await push(userId, {
         type: 'text',
         text: '請點擊上方按鈕執行操作。',
-        quickReply: { items: teacherPointManagementMenu.map(i => ({ type: 'action', action: i })) })
+        quickReply: { items: teacherPointManagementMenu.map(i => ({ type: 'action', action: i })) }
     });
     return true;
   }
@@ -735,11 +737,11 @@ async function handleTeacherCommands(event, user) {
   if (event.type === 'postback' && event.postback.data.startsWith('action=confirm_order')) {
     const params = new URLSearchParams(event.postback.data);
     const orderId = params.get('orderId'); // 確保這裡能正確獲取到值
-    console.log(`DEBUG: 處理確認訂單 - 收到 orderId: ${orderId}`); //
+    console.log(`DEBUG: 處理確認訂單 - 收到 orderId: ${orderId}`);
 
     if (!orderId) { // 新增檢查，防止 orderId 為 null
-        console.error('❌ 錯誤：確認訂單時 orderId 為空。Postback data:', event.postback.data); //
-        await reply(replyToken, '❌ 訂單 ID 遺失，無法確認訂單。請通知開發者。', teacherPointManagementMenu); //
+        console.error('❌ 錯誤：確認訂單時 orderId 為空。Postback data:', event.postback.data);
+        await reply(replyToken, '❌ 訂單 ID 遺失，無法確認訂單。請通知開發者。', teacherPointManagementMenu);
         return true;
     }
 
@@ -752,7 +754,6 @@ async function handleTeacherCommands(event, user) {
       return true;
     }
     
-    // 再次確認 order 對象中的 order_id 屬性是存在的，理論上 Postback 傳來的 orderId 應該與查詢到的 order 匹配
     // 這個額外的賦值可以作為一個防禦性編程，確保 `saveOrder` 收到正確的 ID
     order.order_id = orderId; 
 
@@ -777,7 +778,7 @@ async function handleTeacherCommands(event, user) {
     } catch (e) {
       await pgClient.query('ROLLBACK'); // 回滾事務
       console.error(`❌ 確認訂單 ${orderId} 失敗:`, e.message);
-      await reply(replyToken, `❌ 確認訂單失敗，系統發生錯誤，請稍後再試。`, teacherPointManagementMenu); //
+      await reply(replyToken, `❌ 確認訂單失敗，系統發生錯誤，請稍後再試。`, teacherPointManagementMenu);
     }
     return true;
   }
@@ -1200,6 +1201,7 @@ async function handleStudentCommands(event, user) {
         await push(userId, flexMessage);
       }
     }
+    // 修正: 移除多餘的括號
     await push(userId, {
         type: 'text',
         text: '請點擊上方按鈕進行預約或候補。',
@@ -1381,6 +1383,7 @@ async function handleStudentCommands(event, user) {
     } else {
       await reply(replyToken, courseListMsg);
     }
+    // 修正: 移除多餘的括號
     await push(userId, {
         type: 'text',
         text: '或輸入 @返回學員主選單 取消操作。',
@@ -1525,6 +1528,7 @@ async function handleStudentCommands(event, user) {
     } else {
       await reply(replyToken, courseListMsg);
     }
+    // 修正: 移除多餘的括號
     await push(userId, {
         type: 'text',
         text: '或輸入 @返回學員主選單 取消操作。',
