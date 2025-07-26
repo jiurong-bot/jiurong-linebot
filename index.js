@@ -1,4 +1,4 @@
-// index.js - V4.9.7 (Remove asterisks from confirmation messages)
+// index.js - V4.9.8 (Remove displayText from "立即預約" button)
 
 // =====================================
 //                 模組載入
@@ -231,7 +231,7 @@ async function saveOrder(order, dbClient = pgPool) {
 }
 
 async function deleteOrder(orderId, dbClient = pgPool) {
-  await dbPool.query('DELETE FROM orders WHERE order_id = $1', [orderId]);
+  await pgPool.query('DELETE FROM orders WHERE order_id = $1', [orderId]);
 }
 
 async function cleanCoursesDB() {
@@ -616,6 +616,7 @@ async function handleStudentCommands(event, userId) {
             currentUser.points -= courseToSave.pointsCost;
             currentUser.history.push({ id: courseId, action: `預約成功：${courseToSave.title} (扣 ${courseToSave.pointsCost} 點)`, time: new Date().toISOString() });
             await saveUser(currentUser, transactionClient);
+            await saveCourse(courseToSave, transactionClient); // Save updated course students
             await transactionClient.query('COMMIT');
             return reply(replyToken, `已成功預約課程：「${courseToSave.title}」。`);
           } else {
@@ -758,7 +759,7 @@ async function handleStudentCommands(event, userId) {
         const isFull = course.students.length >= course.capacity;
         const statusText = `報名 ${course.students.length}/${course.capacity}`;
         // 將預約操作改為 postback，以便觸發確認步驟
-        const actionButton = { type: 'postback', label: isFull ? '加入候補' : '立即預約', data: `action=confirm_booking&courseId=${course.id}&type=${isFull ? 'wait' : 'book'}`, displayText: `確認預約 ${course.title}` };
+        const actionButton = { type: 'postback', label: isFull ? '加入候補' : '立即預約', data: `action=confirm_booking&courseId=${course.id}&type=${isFull ? 'wait' : 'book'}`, displayText: '' }; // displayText: '' 移除提示詞
         const headerColor = isFull ? '#ff9e00' : '#34a0a4';
         return { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: headerColor, paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator' }, { type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md', contents: [ { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${course.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: statusText, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', flex: 0, contents: [{ type: 'button', style: 'primary', height: 'sm', color: isFull ? '#ff9e00' : '#1a759f', action: actionButton }] } };
     });
@@ -921,7 +922,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.7 (Remove asterisks from confirmation messages)`);
+  console.log(`Bot 版本: V4.9.8 (Remove displayText from "立即預約" button)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
