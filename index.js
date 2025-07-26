@@ -1,10 +1,11 @@
-// index.js - V4.9.1 (Batch Course Group Cancellation)
+// index.js - V4.9.2 (Enhanced Cancellation & DB Pool Fix)
 
 // =====================================
-//                 模듈載入
+//                 模組載入
 // =====================================
 const express = require('express');
-const { Client } = require('pg');
+// 【修正】從 'pg' 引入 Pool 而不是 Client
+const { Pool } = require('pg');
 const line = require('@line/bot-sdk');
 require('dotenv').config();
 const crypto = require('crypto');
@@ -22,8 +23,8 @@ const config = {
 };
 const client = new line.Client(config);
 
-// 資料庫連接設定
-const pgClient = new Client({
+// 【修正】資料庫連接設定，使用 Pool
+const pgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
@@ -101,39 +102,41 @@ const COMMANDS = {
 
 async function initializeDatabase() {
   try {
-    await pgClient.connect();
+    // 【修正】使用連接池測試連接，而不是保持一個長連接
+    const testClient = await pgPool.connect();
     console.log('✅ 成功連接到 PostgreSQL 資料庫');
+    testClient.release(); // 釋放測試客戶端
 
-    await pgClient.query(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, points INTEGER DEFAULT 0, role VARCHAR(50) DEFAULT 'student', history JSONB DEFAULT '[]')`);
+    // 【修正】所有後續查詢都直接在 pgPool 上執行
+    await pgPool.query(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, points INTEGER DEFAULT 0, role VARCHAR(50) DEFAULT 'student', history JSONB DEFAULT '[]')`);
     console.log('✅ 檢查並建立 users 表完成');
 
-    await pgClient.query(`CREATE TABLE IF NOT EXISTS courses (id VARCHAR(255) PRIMARY KEY, title VARCHAR(255) NOT NULL, time TIMESTAMPTZ NOT NULL, capacity INTEGER NOT NULL, points_cost INTEGER NOT NULL, students TEXT[] DEFAULT '{}', waiting TEXT[] DEFAULT '{}')`);
+    await pgPool.query(`CREATE TABLE IF NOT EXISTS courses (id VARCHAR(255) PRIMARY KEY, title VARCHAR(255) NOT NULL, time TIMESTAMPTZ NOT NULL, capacity INTEGER NOT NULL, points_cost INTEGER NOT NULL, students TEXT[] DEFAULT '{}', waiting TEXT[] DEFAULT '{}')`);
     console.log('✅ 檢查並建立 courses 表完成');
 
-    await pgClient.query(`CREATE TABLE IF NOT EXISTS orders (order_id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, points INTEGER NOT NULL, amount INTEGER NOT NULL, last_5_digits VARCHAR(5), status VARCHAR(50) NOT NULL, timestamp TIMESTAMPTZ NOT NULL)`);
+    await pgPool.query(`CREATE TABLE IF NOT EXISTS orders (order_id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, points INTEGER NOT NULL, amount INTEGER NOT NULL, last_5_digits VARCHAR(5), status VARCHAR(50) NOT NULL, timestamp TIMESTAMPTZ NOT NULL)`);
     console.log('✅ 檢查並建立 orders 表完成');
 
     await cleanCoursesDB();
     console.log('✅ 首次資料庫清理完成。');
 
   } catch (err) {
-    console.error('❌ 資料庫初始化失敗:', err.message);
+    console.error('❌ 資料庫初始化失敗:', err.stack);
+    // 在 Render/Heroku 這類平台上，如果資料庫初始化失敗，最好讓程序崩潰以觸發自動重啟
+    process.exit(1);
   }
 }
 
 initializeDatabase();
 
-// --- 新增: 課程組代碼 (Prefix) 生成器 ---
-async function generateUniqueCoursePrefix(dbClient = pgClient) {
+// --- 課程組代碼 (Prefix) 生成器 ---
+async function generateUniqueCoursePrefix(dbClient = pgPool) {
     let prefix;
     let isUnique = false;
     while (!isUnique) {
-        // 隨機生成兩個大寫字母
         const randomChar1 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
         const randomChar2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
         prefix = `${randomChar1}${randomChar2}`;
-
-        // 檢查這個前綴是否已被任何現存課程使用
         const res = await dbClient.query('SELECT id FROM courses WHERE id LIKE $1', [`${prefix}%`]);
         if (res.rows.length === 0) {
             isUnique = true;
@@ -144,8 +147,8 @@ async function generateUniqueCoursePrefix(dbClient = pgClient) {
     return prefix;
 }
 
-
-async function getUser(userId, dbClient = pgClient) { // Add optional client for transactions
+// 【修正】所有資料庫輔助函式的默認客戶端都改為 pgPool
+async function getUser(userId, dbClient = pgPool) {
   const res = await dbClient.query('SELECT * FROM users WHERE id = $1', [userId]);
   const userData = res.rows[0];
   if (userData && typeof userData.history === 'string') {
@@ -159,33 +162,24 @@ async function getUser(userId, dbClient = pgClient) { // Add optional client for
   return userData;
 }
 
-async function saveUser(user, dbClient = pgClient) { // Add optional client for transactions
+async function saveUser(user, dbClient = pgPool) {
   try {
-    const existingUser = await dbClient.query('SELECT id FROM users WHERE id = $1', [user.id]);
     const historyJson = JSON.stringify(user.history || []);
-
-    if (existingUser.rows.length > 0) {
-      await dbClient.query(
-        'UPDATE users SET name = $1, points = $2, role = $3, history = $4 WHERE id = $5',
-        [user.name, user.points, user.role, historyJson, user.id]
-      );
-    } else {
-      await dbClient.query(
-        'INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)',
+    // 使用 UPSERT 語法簡化操作
+    await dbClient.query(
+        `INSERT INTO users (id, name, points, role, history) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO UPDATE SET name = $2, points = $3, role = $4, history = $5`,
         [user.id, user.name, user.points, user.role, historyJson]
-      );
-    }
+    );
   } catch (err) {
     console.error(`FATAL ERROR: saveUser 函式捕獲到錯誤!`, {
-      message: err.message,
-      stack: err.stack,
-      userId: user.id,
+      message: err.message, stack: err.stack, userId: user.id,
     });
-    throw err; // Re-throw to be caught by transaction handler
+    throw err;
   }
 }
 
-async function getAllCourses(dbClient = pgClient) { // Add optional client for transactions
+async function getAllCourses(dbClient = pgPool) {
   const res = await dbClient.query('SELECT * FROM courses');
   const courses = {};
   res.rows.forEach(row => {
@@ -194,50 +188,46 @@ async function getAllCourses(dbClient = pgClient) { // Add optional client for t
   return courses;
 }
 
-async function saveCourse(course, dbClient = pgClient) { // Add optional client for transactions
-  const existingCourse = await dbClient.query('SELECT id FROM courses WHERE id = $1', [course.id]);
-  if (existingCourse.rows.length > 0) {
-    await dbClient.query('UPDATE courses SET title = $1, time = $2, capacity = $3, points_cost = $4, students = $5, waiting = $6 WHERE id = $7', [course.title, course.time, course.capacity, course.pointsCost, course.students, course.waiting, course.id]);
-  } else {
-    await dbClient.query('INSERT INTO courses (id, title, time, capacity, points_cost, students, waiting) VALUES ($1, $2, $3, $4, $5, $6, $7)', [course.id, course.title, course.time, course.capacity, course.pointsCost, course.students, course.waiting]);
-  }
+async function getCourse(courseId, dbClient = pgPool) {
+  const res = await dbClient.query('SELECT * FROM courses WHERE id = $1', [courseId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return { id: row.id, title: row.title, time: row.time.toISOString(), capacity: row.capacity, pointsCost: row.points_cost, students: row.students || [], waiting: row.waiting || [] };
 }
 
-async function deleteCourse(courseId, dbClient = pgClient) { // Add optional client for transactions
+
+async function saveCourse(course, dbClient = pgPool) {
+    await dbClient.query(
+        `INSERT INTO courses (id, title, time, capacity, points_cost, students, waiting) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO UPDATE SET title = $2, time = $3, capacity = $4, points_cost = $5, students = $6, waiting = $7`,
+        [course.id, course.title, course.time, course.capacity, course.pointsCost, course.students, course.waiting]
+    );
+}
+
+async function deleteCourse(courseId, dbClient = pgPool) {
   await dbClient.query('DELETE FROM courses WHERE id = $1', [courseId]);
 }
 
+
 /**
  * 批次刪除特定前綴的課程。
- * @param {string} prefix - 要刪除的課程 ID 前綴 (例如 'AB')。
- * @param {import('pg').Client} dbClient - PostgreSQL 客戶端。
- * @returns {Promise<Array<Object>>} 被刪除的課程列表，包含其詳細資訊。
+ * @param {string} prefix - 要刪除的課程 ID 前綴。
+ * @param {import('pg').PoolClient} dbClient - PostgreSQL 客戶端 (從連接池獲取)。
+ * @returns {Promise<Array<Object>>} 被刪除的課程列表。
  */
-async function deleteCoursesByPrefix(prefix, dbClient = pgClient) {
-    // 找出所有符合前綴的課程詳細資訊，以便後續處理退點和通知
+async function deleteCoursesByPrefix(prefix, dbClient = pgPool) {
     const coursesToDeleteRes = await dbClient.query('SELECT id, title, time, points_cost, students, waiting FROM courses WHERE id LIKE $1', [`${prefix}%`]);
     const coursesToDelete = coursesToDeleteRes.rows.map(row => ({
-        id: row.id,
-        title: row.title,
-        time: row.time.toISOString(),
-        pointsCost: row.points_cost,
-        students: row.students || [],
-        waiting: row.waiting || []
+        id: row.id, title: row.title, time: row.time.toISOString(), pointsCost: row.points_cost, students: row.students || [], waiting: row.waiting || []
     }));
-
-    if (coursesToDelete.length === 0) {
-        console.log(`ℹ️ 沒有找到以 ${prefix} 開頭的課程可供刪除。`);
-        return [];
+    if (coursesToDelete.length > 0) {
+        await dbClient.query('DELETE FROM courses WHERE id LIKE $1', [`${prefix}%`]);
+        console.log(`✅ 已批次刪除 ${coursesToDelete.length} 堂以 ${prefix} 開頭的課程。`);
     }
-
-    // 實際執行批次刪除
-    await dbClient.query('DELETE FROM courses WHERE id LIKE $1', [`${prefix}%`]);
-    console.log(`✅ 已批次刪除 ${coursesToDelete.length} 堂以 ${prefix} 開頭的課程。`);
     return coursesToDelete;
 }
 
-
-async function getAllOrders(dbClient = pgClient) { // Add optional client for transactions
+async function getAllOrders(dbClient = pgPool) {
   const res = await dbClient.query('SELECT * FROM orders');
   const orders = {};
   res.rows.forEach(row => {
@@ -246,28 +236,26 @@ async function getAllOrders(dbClient = pgClient) { // Add optional client for tr
   return orders;
 }
 
-async function saveOrder(order, dbClient = pgClient) { // Add optional client for transactions
+async function saveOrder(order, dbClient = pgPool) {
   try {
-    const existingOrder = await dbClient.query('SELECT order_id FROM orders WHERE order_id = $1', [order.orderId]);
-    if (existingOrder.rows.length > 0) {
-      await dbClient.query('UPDATE orders SET user_id = $1, user_name = $2, points = $3, amount = $4, last_5_digits = $5, status = $6, timestamp = $7 WHERE order_id = $8', [order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp, order.orderId]);
-    } else {
-      await dbClient.query('INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]);
-    }
+      await dbClient.query(
+        `INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (order_id) DO UPDATE SET user_id = $2, user_name = $3, points = $4, amount = $5, last_5_digits = $6, status = $7, timestamp = $8`,
+        [order.orderId, order.userId, order.userName, order.points, order.amount, order.last5Digits, order.status, order.timestamp]
+    );
   } catch (err) {
     console.error('❌ saveOrder 函式錯誤:', err.message, 'Order ID:', order.orderId);
-    throw err; // Re-throw to be caught by transaction handler
+    throw err;
   }
 }
 
-async function deleteOrder(orderId, dbClient = pgClient) { // Add optional client for transactions
+async function deleteOrder(orderId, dbClient = pgPool) {
   await dbClient.query('DELETE FROM orders WHERE order_id = $1', [orderId]);
 }
 
 async function cleanCoursesDB() {
   const now = Date.now();
-  await pgClient.query(`DELETE FROM courses WHERE time < $1`, [new Date(now - ONE_DAY_IN_MS)]);
+  await pgPool.query(`DELETE FROM courses WHERE time < $1`, [new Date(now - ONE_DAY_IN_MS)]);
   console.log('✅ 已清理過期課程。');
 }
 
@@ -287,15 +275,12 @@ async function reply(replyToken, content, menu = null) {
 
   try {
     await client.replyMessage(replyToken, messages);
-    console.log(`DEBUG: reply - 成功回覆訊息給 ${replyToken}`);
   } catch (error) {
     console.error(`❌ reply 函式發送失敗:`, error.originalError ? error.originalError.response : error.message);
-    // 拋出錯誤，讓上層的 catch 區塊可以捕獲
     throw error;
   }
 }
 
-// 修正後的 push 函式，增強錯誤記錄
 async function push(to, content) {
   let messages;
   if (Array.isArray(content)) {
@@ -305,26 +290,17 @@ async function push(to, content) {
   } else if (typeof content === 'object' && content !== null && content.type) {
     messages = [content];
   } else {
-    console.error(`WARN: push 函式收到不明內容，將發送預設錯誤訊息。`, content);
+    console.error(`WARN: push 函式收到不明內容`, content);
     messages = [{ type: 'text', text: '系統發生錯誤，無法顯示完整資訊。' }];
   }
 
   try {
     await client.pushMessage(to, messages);
-    console.log(`DEBUG: push - 成功推播訊息給 ${to}`);
   } catch (error) {
-    if (error.originalError && error.originalError.response) {
-        console.error(`❌ push 函式發送失敗給 ${to}:`,
-                      `狀態碼: ${error.originalError.response.status},`,
-                      `訊息: ${error.originalError.response.statusText},`);
-        if (error.originalError.response.data) {
-            console.error(`響應數據:`, error.originalError.response.data);
-        }
-    } else {
-        console.error(`❌ push 函式發送失敗給 ${to}:`, error.message);
-    }
-     // 拋出錯誤，讓上層的 catch 區塊可以捕獲
-    throw error;
+      const errorDetails = error.originalError ? error.originalError.response : { status: 'N/A', statusText: error.message, data: 'N/A' };
+      console.error(`❌ push 函式發送失敗給 ${to}:`, `狀態碼: ${errorDetails.status},`, `訊息: ${errorDetails.statusText}`);
+      if(errorDetails.data) console.error(`響應數據:`, errorDetails.data);
+      throw error;
   }
 }
 
@@ -363,12 +339,7 @@ const studentPointSubMenu = [
 const teacherMenu = [
     { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT },
     { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT },
-    {
-        type: 'postback',
-        label: '查詢學員',
-        data: 'action=start_student_search',
-        displayText: '準備查詢學員...'
-    },
+    { type: 'postback', label: '查詢學員', data: 'action=start_student_search', displayText: '準備查詢學員...' },
     { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT },
 ];
 
@@ -389,40 +360,29 @@ const pendingStudentSearch = {};
 async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
-  console.log(`DEBUG: handleTeacherCommands - 處理指令: "${text}", 用戶ID: ${userId}`);
 
-  const courses = await getAllCourses();
-
-  // **(新增) 處理處於「查詢學員」狀態時的文字輸入**
   if (pendingStudentSearch[userId]) {
-      if (text === COMMANDS.TEACHER.MAIN_MENU) { // 如果老師輸入了取消指令
+      if (text === COMMANDS.TEACHER.MAIN_MENU) {
           delete pendingStudentSearch[userId];
           return reply(replyToken, '已取消學員查詢。', teacherMenu);
       }
-
-      // 處理查詢邏輯
-      const query = text; // 直接將用戶輸入的文字作為查詢內容
+      const query = text;
       let foundUser = null;
       const userById = await getUser(query);
       if (userById && userById.role === 'student') {
           foundUser = userById;
       }
       if (!foundUser) {
-          const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
+          const res = await pgPool.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
           if (res.rows.length > 0) {
               foundUser = res.rows[0];
           }
       }
-
-      delete pendingStudentSearch[userId]; // 完成查詢或找不到後清除狀態
-
+      delete pendingStudentSearch[userId];
       if (!foundUser) {
         return reply(replyToken, `找不到學員「${query}」。`, teacherMenu);
       }
-      let studentInfo = `學員姓名：${foundUser.name}\n`;
-      studentInfo += `學員 ID：${foundUser.id}\n`;
-      studentInfo += `剩餘點數：${foundUser.points} 點\n`;
-      studentInfo += `歷史記錄 (近5筆)：\n`;
+      let studentInfo = `學員姓名：${foundUser.name}\n學員 ID：${foundUser.id}\n剩餘點數：${foundUser.points} 點\n歷史記錄 (近5筆)：\n`;
       if (foundUser.history && foundUser.history.length > 0) {
         foundUser.history.slice(-5).reverse().forEach(record => {
           studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
@@ -431,71 +391,49 @@ async function handleTeacherCommands(event, userId) {
       return reply(replyToken, studentInfo.trim(), teacherMenu);
   }
 
-  // 處理手動調整點數的輸入 (如果還處於這個狀態且不是其他指令)
-  if (pendingManualAdjust[userId] && text !== COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) { // 避免重複觸發
-      console.log(`DEBUG: 手動調整點數流程，當前狀態: ${pendingManualAdjust[userId].step}`);
+  if (pendingManualAdjust[userId] && text !== COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
       if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
           delete pendingManualAdjust[userId];
           return reply(replyToken, '已取消手動調整點數。', teacherMenu);
       }
-
       const parts = text.split(' ');
       if (parts.length !== 2) {
-          console.log(`DEBUG: 手動調整點數 - 格式錯誤，收到 "${text}"`);
           return reply(replyToken, '指令格式錯誤。\n請輸入：學員姓名/ID [空格] 點數\n例如：王小明 5\n或輸入 @返回點數管理 取消。');
       }
       const targetIdentifier = parts[0];
       const amount = parseInt(parts[1]);
       if (isNaN(amount) || amount === 0) {
-          console.log(`DEBUG: 手動調整點數 - 點數數量無效，收到 "${parts[1]}"`);
           return reply(replyToken, '點數數量必須是非零整數。');
       }
       let foundUser = await getUser(targetIdentifier);
       if (!foundUser) {
-          const res = await pgClient.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
+          const res = await pgPool.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
           if (res.rows.length > 0) foundUser = res.rows[0];
       }
       if (!foundUser) {
-          console.log(`DEBUG: 手動調整點數 - 找不到學員: "${targetIdentifier}"`);
-          delete pendingManualAdjust[userId]; // 找不到學員也清除狀態，避免循環
+          delete pendingManualAdjust[userId];
           return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
       }
-
-      console.log(`DEBUG: 手動調整點數 - 找到學員 ${foundUser.name} (ID: ${foundUser.id})，原始點數: ${foundUser.points}`);
-
       const operation = amount > 0 ? '加點' : '扣點';
       const absAmount = Math.abs(amount);
-
-      // --- TRANSACTION START ---
-      const transactionClient = await pgClient.connect(); // Get a client from the pool for this transaction
+      
+      // 【修正】使用 pgPool.connect() 來獲取一個用於交易的客戶端
+      const transactionClient = await pgPool.connect();
       try {
           await transactionClient.query('BEGIN');
-          // Re-fetch user inside transaction with FOR UPDATE to avoid race conditions
           const userInTransactionRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [foundUser.id]);
           const userInTransaction = userInTransactionRes.rows[0];
-
-          if (!userInTransaction) { // Should not happen given previous check, but for robustness
-              await transactionClient.query('ROLLBACK');
-              delete pendingManualAdjust[userId];
-              return reply(replyToken, '操作失敗，找不到學員資料。', teacherMenu);
+          if (!userInTransaction) {
+              throw new Error('操作失敗，找不到學員資料。');
           }
-          
           if (operation === '扣點' && userInTransaction.points < absAmount) {
-              await transactionClient.query('ROLLBACK');
-              delete pendingManualAdjust[userId];
-              return reply(replyToken, `學員 ${userInTransaction.name} 點數不足（目前 ${userInTransaction.points} 點，需扣 ${absAmount} 點）。`, teacherMenu);
+              throw new Error(`學員 ${userInTransaction.name} 點數不足（目前 ${userInTransaction.points} 點，需扣 ${absAmount} 點）。`);
           }
-
           userInTransaction.points += amount;
-
-          console.log(`DEBUG: 手動調整點數 - 學員 ${userInTransaction.name} 點數計算後: ${userInTransaction.points}`);
-
           if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
           userInTransaction.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
-
-          await saveUser(userInTransaction, transactionClient); // Pass client to use transaction
+          await saveUser(userInTransaction, transactionClient);
           await transactionClient.query('COMMIT');
-
           push(userInTransaction.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${userInTransaction.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
           delete pendingManualAdjust[userId];
           return reply(replyToken, `✅ 已成功為學員 ${userInTransaction.name} ${operation} ${absAmount} 點，目前點數：${userInTransaction.points} 點。`, teacherMenu);
@@ -503,242 +441,109 @@ async function handleTeacherCommands(event, userId) {
           await transactionClient.query('ROLLBACK');
           console.error('❌ 手動調整點數交易失敗:', err.message);
           delete pendingManualAdjust[userId];
-          return reply(replyToken, '操作失敗，資料庫發生錯誤，請稍後再試。', teacherMenu);
+          return reply(replyToken, err.message || '操作失敗，資料庫發生錯誤，請稍後再試。', teacherMenu);
       } finally {
-          transactionClient.release(); // Release the client back to the pool
+          transactionClient.release();
       }
-      // --- TRANSACTION END ---
-
   } else if (text !== COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST && !text.match(/^\S+\s+(-?\d+)$/) && pendingManualAdjust[userId]) {
-      // 如果不是手動調整點數相關的指令，並且處於手動調整狀態，則清除 pendingManualAdjust 狀態
-      // 這個 else if 確保只在不是手動調整點數的文字輸入時才清除
-      console.log(`DEBUG: 清除 pendingManualAdjust 狀態，因為收到新指令: "${text}"`);
       delete pendingManualAdjust[userId];
   }
 
-
-  // 以下是其他指令的處理邏輯
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
-    console.log(`DEBUG: 處理 MAIN_MENU`);
-    // 在返回主選單時，也確保清除所有相關的 pending 狀態
     delete pendingManualAdjust[userId];
     delete pendingStudentSearch[userId];
-    delete pendingCourseCreation[userId]; // 新增：確保清除課程新增狀態
+    delete pendingCourseCreation[userId];
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
 
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
-    console.log(`DEBUG: 處理 POINT_MANAGEMENT`);
-    const pendingOrdersCount = (await pgClient.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
-
+    const pendingOrdersCount = (await pgPool.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
     const pointManagementBubbles = [
-      {
-        type: 'bubble',
-        header: {
-          type: 'box', layout: 'vertical',
-          contents: [{ type: 'text', text: '待確認訂單', color: '#ffffff', weight: 'bold', size: 'md' }],
-          backgroundColor: '#52b69a', paddingAll: 'lg'
-        },
-        body: {
-          type: 'box', layout: 'vertical', spacing: 'md',
-          contents: [
-            { type: 'text', text: `${pendingOrdersCount} 筆`, weight: 'bold', size: 'xxl', align: 'center' },
-            { type: 'text', text: '點擊查看並處理', color: '#666666', size: 'sm', align: 'center' },
-          ],
-          justifyContent: 'center', alignItems: 'center', height: '150px'
-        },
-        action: {
-          type: 'message',
-          label: '查看待確認訂單',
-          text: COMMANDS.TEACHER.PENDING_ORDERS
-        },
-        styles: {
-          body: { separator: false, separatorColor: '#EEEEEE' }
-        }
-      },
-      {
-        type: 'bubble',
-        header: {
-          type: 'box', layout: 'vertical',
-          contents: [{ type: 'text', text: '手動調整點數', color: '#ffffff', weight: 'bold', size: 'md' }],
-          backgroundColor: '#52b69a', paddingAll: 'lg'
-        },
-        body: {
-          type: 'box', layout: 'vertical', paddingAll: 'xxl',
-          contents: [
-            { type: 'text', text: '增減學員點數', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' },
-          ],
-          justifyContent: 'center', alignItems: 'center', height: '150px'
-        },
-        action: {
-          type: 'message',
-          label: '手動調整點數',
-          text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS
-        },
-        styles: {
-          body: { separator: false, separatorColor: '#EEEEEE' }
-        }
-      }
+      { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '待確認訂單', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#52b69a', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: `${pendingOrdersCount} 筆`, weight: 'bold', size: 'xxl', align: 'center' }, { type: 'text', text: '點擊查看並處理', color: '#666666', size: 'sm', align: 'center' }, ], justifyContent: 'center', alignItems: 'center', height: '150px' }, action: { type: 'message', label: '查看待確認訂單', text: COMMANDS.TEACHER.PENDING_ORDERS } },
+      { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '手動調整點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#52b69a', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', paddingAll: 'xxl', contents: [ { type: 'text', text: '增減學員點數', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' }, ], justifyContent: 'center', alignItems: 'center', height: '150px' }, action: { type: 'message', label: '手動調整點數', text: COMMANDS.TEACHER.MANUAL_ADJUST_POINTS } }
     ];
-
-    const flexMessage = {
-      type: 'flex',
-      altText: '點數管理功能',
-      contents: { type: 'carousel', contents: pointManagementBubbles },
-    };
-
-    const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
-    return reply(replyToken, flexMessage, menuOptions);
+    const flexMessage = { type: 'flex', altText: '點數管理功能', contents: { type: 'carousel', contents: pointManagementBubbles } };
+    return reply(replyToken, flexMessage, [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }]);
   }
 
-  // --- 修改：課程管理介面顯示邏輯 ---
+  // ---【修改】課程管理介面顯示邏輯 ---
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT || text === COMMANDS.TEACHER.CANCEL_COURSE || text === COMMANDS.TEACHER.COURSE_LIST || text === COMMANDS.TEACHER.ADD_COURSE) {
-    console.log(`DEBUG: 處理 COURSE_MANAGEMENT 相關指令`);
     const now = Date.now();
-
     const allCourses = Object.values(await getAllCourses());
-
     const courseGroups = {};
     for (const course of allCourses) {
-        const courseTime = new Date(course.time).getTime();
-        // 只考慮未來的課程
-        if (courseTime > now) {
-            const prefix = course.id.substring(0, 2); // 課程組代碼是課程ID的前兩位
-            if (!courseGroups[prefix] || courseTime < new Date(courseGroups[prefix].time).getTime()) {
+        if (new Date(course.time).getTime() > now) {
+            const prefix = course.id.substring(0, 2);
+            if (!courseGroups[prefix] || new Date(course.time).getTime() < new Date(courseGroups[prefix].time).getTime()) {
                 courseGroups[prefix] = course;
             }
         }
     }
-
     const courseBubbles = [];
-    const sortedPrefixes = Object.keys(courseGroups).sort(); // 按前綴字母排序
-
+    const sortedPrefixes = Object.keys(courseGroups).sort();
     for (const prefix of sortedPrefixes) {
         const earliestUpcomingCourse = courseGroups[prefix];
         courseBubbles.push({
             type: 'bubble',
-            header: {
-                type: 'box', layout: 'vertical',
-                contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }],
-                backgroundColor: '#52b69a', paddingAll: 'lg'
-            },
+            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '課程系列資訊', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#52b69a', paddingAll: 'lg' },
             body: {
                 type: 'box', layout: 'vertical', spacing: 'md',
                 contents: [
-                    { type: 'text', text: earliestUpcomingCourse.title.replace(/ - 第 \d+ 堂$/, ''), weight: 'bold', size: 'xl', wrap: true }, // 顯示系列名稱
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: '課程組代碼', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: prefix, wrap: true, color: '#666666', size: 'sm', flex: 5 },
-                        ],
-                    },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: '最近堂數', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: formatDateTime(earliestUpcomingCourse.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
-                        ],
-                    },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: `${earliestUpcomingCourse.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
-                        ],
-                    },
+                    { type: 'text', text: earliestUpcomingCourse.title.replace(/ - 第 \d+ 堂$/, ''), weight: 'bold', size: 'xl', wrap: true },
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '系列代碼', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: prefix, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] },
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '最近堂數', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(earliestUpcomingCourse.time), wrap: true, color: '#666666', size: 'sm', flex: 5 } ] },
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${earliestUpcomingCourse.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] },
                 ],
             },
-            // 【【【 新增功能 】】】 在卡片底部加上取消按鈕
+            // 【新增/修改】提供管理單堂與批次取消的選項
             footer: {
                 type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
                 contents: [
                     {
-                        type: 'button', style: 'primary', color: '#de5246', height: 'sm',
-                        action: {
-                            type: 'postback',
-                            label: '取消此課程組',
-                            // 將要取消的「課程組前綴」傳遞給 Postback
-                            data: `action=cancel_course_group_confirm&prefix=${prefix}`,
-                            displayText: `準備取消 ${prefix} 系列課程`
-                        },
+                        type: 'button', style: 'primary', color: '#1A759F', height: 'sm',
+                        action: { type: 'postback', label: '管理單堂課程', data: `action=manage_course_group&prefix=${prefix}`, displayText: `管理 ${prefix} 系列的單堂課程` },
+                    },
+                    {
+                        type: 'button', style: 'secondary', color: '#DE5246', height: 'sm',
+                        action: { type: 'postback', label: '批次取消此系列', data: `action=cancel_course_group_confirm&prefix=${prefix}`, displayText: `準備批次取消 ${prefix} 系列課程` },
                     },
                 ],
             },
         });
     }
-
     const addCourseBubble = {
       type: 'bubble',
-      body: {
-        type: 'box', layout: 'vertical', paddingAll: 'xxl',
-        contents: [
-          {
-            type: 'box', layout: 'vertical', contents: [
-              { type: 'text', text: '+', size: 'xxl', weight: 'bold', color: '#CCCCCC', align: 'center' },
-              { type: 'text', text: '新增課程', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' },
-            ],
-            justifyContent: 'center', alignItems: 'center', height: '150px'
-          },
-        ],
-      },
-      action: {
-        type: 'postback',
-        label: '新增課程',
-        data: 'action=add_course_start'
-      },
-      styles: {
-        body: { separator: false, separatorColor: '#EEEEEE' }
-      }
+      body: { type: 'box', layout: 'vertical', paddingAll: 'xxl', contents: [ { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: '+', size: 'xxl', weight: 'bold', color: '#CCCCCC', align: 'center' }, { type: 'text', text: '新增課程系列', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' }, ], justifyContent: 'center', alignItems: 'center', height: '150px' }, ], },
+      action: { type: 'postback', label: '新增課程', data: 'action=add_course_start' }
     };
-
-    // 將「新增課程」氣泡總是放在最後一個
     courseBubbles.push(addCourseBubble);
-
     let introText = '課程管理面板';
     if (Object.keys(courseGroups).length === 0) {
-        introText = '目前沒有任何進行中的課程組，點擊「+」可新增。';
+        introText = '目前沒有任何進行中的課程系列，點擊「+」可新增。';
     } else {
-        introText = '以下為各課程組最接近的課程：';
+        introText = '以下為各課程系列的管理選項：';
     }
-
-    const flexMessage = {
-      type: 'flex',
-      altText: introText,
-      contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) }, // 最多顯示10張卡片
-    };
-
+    const flexMessage = { type: 'flex', altText: introText, contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } };
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
-
-    return reply(replyToken, [
-        { type: 'text', text: introText },
-        flexMessage
-    ], menuOptions);
+    return reply(replyToken, [{ type: 'text', text: introText }, flexMessage], menuOptions);
 }
 
-
   if (text === COMMANDS.TEACHER.REPORT) {
-    console.log(`DEBUG: 處理 REPORT`);
-    const usersRes = await pgClient.query(`SELECT * FROM users WHERE role = 'student'`);
+    const usersRes = await pgPool.query(`SELECT * FROM users WHERE role = 'student'`);
     const students = usersRes.rows;
     const totalPoints = students.reduce((sum, student) => sum + student.points, 0);
     const activeStudentsCount = students.filter(s => s.history && s.history.length > 0).length;
-
-    const coursesRes = await pgClient.query(`SELECT * FROM courses`);
+    const coursesRes = await pgPool.query(`SELECT * FROM courses`);
     const allCourses = coursesRes.rows;
     const totalCourses = allCourses.length;
     const now = Date.now();
     const upcomingCourses = allCourses.filter(c => new Date(c.time).getTime() > now).length;
     const completedCourses = totalCourses - upcomingCourses;
-
-    const ordersRes = await pgClient.query(`SELECT * FROM orders`);
+    const ordersRes = await pgPool.query(`SELECT * FROM orders`);
     const allOrders = ordersRes.rows;
     const pendingOrders = allOrders.filter(o => o.status === 'pending_confirmation').length;
     const completedOrdersCount = allOrders.filter(o => o.status === 'completed').length;
-    const totalRevenue = allOrders
-      .filter(o => o.status === 'completed')
-      .reduce((sum, order) => sum + order.amount, 0);
-
+    const totalRevenue = allOrders.filter(o => o.status === 'completed').reduce((sum, order) => sum + order.amount, 0);
     let report = '📊 營運報告 📊\n\n';
     report += `👤 學員總數：${students.length} 人\n`;
     report += `🟢 活躍學員：${activeStudentsCount} 人\n`;
@@ -751,83 +556,21 @@ async function handleTeacherCommands(event, userId) {
     report += `  待確認訂單：${pendingOrders} 筆\n`;
     report += `  已完成訂單：${completedOrdersCount} 筆\n`;
     report += `  總收入 (已完成訂單)：${totalRevenue} 元\n`;
-
     return reply(replyToken, report.trim(), teacherMenu);
   }
 
-  // 處理點擊「查看待確認清單」按鈕後的文字指令
   if (text === COMMANDS.TEACHER.PENDING_ORDERS) {
-    console.log(`DEBUG: 處理 PENDING_ORDERS`);
-
     reply(replyToken, '正在查詢待確認訂單，請稍候...').catch(e => console.error(e));
-
     (async () => {
         try {
-            const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
-            const pendingConfirmationOrders = ordersRes.rows.map(row => ({
-                orderId: row.order_id, userId: row.user_id, userName: row.user_name,
-                points: row.points, amount: row.amount, last5Digits: row.last_5_digits,
-                timestamp: row.timestamp.toISOString()
-            }));
-
+            const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
+            const pendingConfirmationOrders = ordersRes.rows.map(row => ({ orderId: row.order_id, userId: row.user_id, userName: row.user_name, points: row.points, amount: row.amount, last5Digits: row.last_5_digits, timestamp: row.timestamp.toISOString() }));
             if (pendingConfirmationOrders.length === 0) {
                 return push(userId, '目前沒有待確認的購點訂單。');
             }
-
-            const orderBubbles = pendingConfirmationOrders.slice(0, 10).map(order => {
-                return {
-                    type: 'bubble',
-                    header: {
-                        type: 'box', layout: 'vertical',
-                        contents: [{ type: 'text', text: `訂單 #${order.orderId}`, color: '#ffffff', weight: 'bold', size: 'md' }],
-                        backgroundColor: '#ff9e00',
-                        paddingAll: 'lg'
-                    },
-                    body: {
-                        type: 'box', layout: 'vertical', spacing: 'md',
-                        contents: [
-                            { type: 'text', text: `學員姓名: ${order.userName}`, wrap: true, size: 'sm' },
-                            { type: 'text', text: `學員ID: ${order.userId.substring(0, 8)}...`, wrap: true, size: 'sm' },
-                            { type: 'text', text: `購買點數: ${order.points} 點`, wrap: true, size: 'sm', weight: 'bold' },
-                            { type: 'text', text: `應付金額: $${order.amount}`, wrap: true, size: 'sm', weight: 'bold' },
-                            { type: 'text', text: `匯款後五碼: ${order.last5Digits || 'N/A'}`, wrap: true, size: 'sm', weight: 'bold' },
-                            { type: 'text', text: `提交時間: ${formatDateTime(order.timestamp)}`, wrap: true, size: 'sm', color: '#666666' }
-                        ],
-                    },
-                    footer: {
-                        type: 'box', layout: 'horizontal', spacing: 'sm', flex: 0,
-                        contents: [
-                            {
-                                type: 'button', style: 'primary', color: '#52b69a', height: 'sm',
-                                action: {
-                                    type: 'postback',
-                                    label: '✅ 確認',
-                                    data: `action=confirm_order&orderId=${order.orderId}`,
-                                    displayText: `確認訂單 ${order.orderId} 入帳`
-                                },
-                            },
-                            {
-                                type: 'button', style: 'primary', color: '#de5246', height: 'sm',
-                                action: {
-                                    type: 'postback',
-                                    label: '❌ 退回',
-                                    data: `action=reject_order&orderId=${order.orderId}`,
-                                    displayText: `退回訂單 ${order.orderId}`
-                                },
-                            },
-                        ],
-                    },
-                };
-            });
-
-            const flexMessage = {
-                type: 'flex',
-                altText: '待確認購點訂單列表',
-                contents: { type: 'carousel', contents: orderBubbles }
-            };
-
+            const orderBubbles = pendingConfirmationOrders.slice(0, 10).map(order => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `訂單 #${order.orderId}`, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: `學員姓名: ${order.userName}`, wrap: true, size: 'sm' }, { type: 'text', text: `學員ID: ${order.userId.substring(0, 8)}...`, wrap: true, size: 'sm' }, { type: 'text', text: `購買點數: ${order.points} 點`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `應付金額: $${order.amount}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `匯款後五碼: ${order.last5Digits || 'N/A'}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `提交時間: ${formatDateTime(order.timestamp)}`, wrap: true, size: 'sm', color: '#666666' } ] }, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', flex: 0, contents: [ { type: 'button', style: 'primary', color: '#52b69a', height: 'sm', action: { type: 'postback', label: '✅ 確認', data: `action=confirm_order&orderId=${order.orderId}`, displayText: `確認訂單 ${order.orderId} 入帳` } }, { type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '❌ 退回', data: `action=reject_order&orderId=${order.orderId}`, displayText: `退回訂單 ${order.orderId}` } } ] } }));
+            const flexMessage = { type: 'flex', altText: '待確認購點訂單列表', contents: { type: 'carousel', contents: orderBubbles } };
             await push(userId, flexMessage);
-
         } catch (err) {
             console.error('❌ 查詢待確認訂單時發生錯誤:', err);
             await push(userId, '查詢訂單時發生錯誤，請稍後再試。');
@@ -837,19 +580,17 @@ async function handleTeacherCommands(event, userId) {
   }
 
   if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
-    console.log(`DEBUG: 處理 MANUAL_ADJUST_POINTS，設定 pendingManualAdjust 狀態。`);
     pendingManualAdjust[userId] = { step: 1 };
-    return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回老師主選單 取消。', [
-      { type: 'message', label: '返回老師主選單', text: COMMANDS.TEACHER.MAIN_MENU }
-    ]);
+    return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回老師主選單 取消。', [ { type: 'message', label: '返回老師主選單', text: COMMANDS.TEACHER.MAIN_MENU } ]);
   }
-
-  console.log(`DEBUG: 未匹配任何已知指令。`);
+  
+  // Default response for teacher
   return reply(replyToken, '指令無效，請使用下方老師選單或輸入正確指令。', teacherMenu);
 }
 
+
 // =====================================
-//        🔄 購點流程處理函式 (重構)
+//        🔄 購點流程處理函式
 // =====================================
 async function handlePurchaseFlow(event, userId) {
   if (!pendingPurchase[userId] || event.message.type !== 'text') {
@@ -861,12 +602,7 @@ async function handlePurchaseFlow(event, userId) {
   const user = await getUser(userId);
   const stepData = pendingPurchase[userId];
 
-  if (text === COMMANDS.STUDENT.CANCEL_INPUT_LAST5) {
-      delete pendingPurchase[userId];
-      await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
-      return true;
-  }
-  if (text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
+  if (text === COMMANDS.STUDENT.CANCEL_INPUT_LAST5 || text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
       delete pendingPurchase[userId];
       await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
       return true;
@@ -882,7 +618,7 @@ async function handlePurchaseFlow(event, userId) {
         return true;
       }
 
-      const transactionClient = await pgClient.connect();
+      const transactionClient = await pgPool.connect();
       try {
         await transactionClient.query('BEGIN');
         const orderInTransactionRes = await transactionClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
@@ -936,7 +672,7 @@ async function handlePurchaseFlow(event, userId) {
 
     case 'confirm_purchase':
       if (text === COMMANDS.STUDENT.CONFIRM_BUY_POINTS) {
-        const transactionClientConfirm = await pgClient.connect();
+        const transactionClientConfirm = await pgPool.connect();
         try {
           await transactionClientConfirm.query('BEGIN');
           const orderId = `O${Date.now()}`;
@@ -973,8 +709,7 @@ async function handlePurchaseFlow(event, userId) {
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
-  console.log(`DEBUG: 處理學生指令: "${text}", 用戶ID: ${userId}`);
-
+  
   if (await handlePurchaseFlow(event, userId)) {
     return;
   }
@@ -992,169 +727,75 @@ async function handleStudentCommands(event, userId) {
       delete pendingPurchase[userId];
     }
 
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
+    const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
-
     const pointBubbles = [];
 
     if (pendingOrder) {
-        console.log(`DEBUG: 點數管理 - 發現待處理訂單 ${pendingOrder.order_id}，新增提示卡片。`);
-        let actionButtonLabel;
-        let actionButtonCommand;
-        let cardTitle;
-        let cardColor;
-        let statusText;
+        let actionButtonLabel, cardTitle, cardColor, statusText;
         let additionalInfo = '';
-
         if (pendingOrder.status === 'pending_confirmation') {
-            actionButtonLabel = '修改匯款後五碼';
-            actionButtonCommand = COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER;
-            cardTitle = '🕒 匯款已提交，等待確認';
-            cardColor = '#ff9e00';
-            statusText = '已提交五碼，等待老師確認';
+            actionButtonLabel = '修改匯款後五碼'; cardTitle = '🕒 匯款已提交，等待確認'; cardColor = '#ff9e00'; statusText = '已提交五碼，等待老師確認';
         } else if (pendingOrder.status === 'rejected') {
-            actionButtonLabel = '重新提交匯款後五碼';
-            actionButtonCommand = COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER;
-            cardTitle = '❌ 訂單被退回！';
-            cardColor = '#d90429';
-            statusText = '訂單被老師退回';
-            additionalInfo = '請檢查匯款金額或後五碼，並重新提交。';
+            actionButtonLabel = '重新提交匯款後五碼'; cardTitle = '❌ 訂單被退回！'; cardColor = '#d90429'; statusText = '訂單被老師退回'; additionalInfo = '請檢查匯款金額或後五碼，並重新提交。';
         } else { // pending_payment
-            actionButtonLabel = '輸入匯款後五碼';
-            actionButtonCommand = COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER;
-            cardTitle = '❗ 匯款待確認';
-            cardColor = '#f28482';
-            statusText = '待付款';
+            actionButtonLabel = '輸入匯款後五碼'; cardTitle = '❗ 匯款待確認'; cardColor = '#f28482'; statusText = '待付款';
         }
-
         pointBubbles.push({
             type: 'bubble',
             header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: cardTitle, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: cardColor, paddingAll: 'lg' },
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px',
-                contents: [
-                    { type: 'text', text: `訂單 ID: ${pendingOrder.order_id}`, weight: 'bold', size: 'md', align: 'center' },
-                    { type: 'text', text: `購買 ${pendingOrder.points} 點 / ${pendingOrder.amount} 元`, size: 'sm', align: 'center' },
-                    { type: 'text', text: `狀態: ${statusText}`, size: 'sm', align: 'center' },
-                    { type: 'text', text: `後五碼: ${pendingOrder.last_5_digits || '未輸入'}`, size: 'sm', align: 'center' },
-                    ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', align: 'center', color: '#B00020', wrap: true }] : []),
-                    { type: 'text', text: `提交時間: ${formatDateTime(pendingOrder.timestamp)}`, size: 'xs', align: 'center', color: '#666666' }
-                ],
-            },
-            footer: {
-                type: 'box', layout: 'vertical', spacing: 'sm',
-                contents: [{
-                    type: 'button', style: 'primary', height: 'sm', color: '#de5246',
-                    action: { type: 'message', label: actionButtonLabel, text: actionButtonCommand }
-                }, {
-                    type: 'button', style: 'secondary', height: 'sm', color: '#8d99ae',
-                    action: { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE }
-                }]
-            }
+            body: { type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [ { type: 'text', text: `訂單 ID: ${pendingOrder.order_id}`, weight: 'bold', size: 'md', align: 'center' }, { type: 'text', text: `購買 ${pendingOrder.points} 點 / ${pendingOrder.amount} 元`, size: 'sm', align: 'center' }, { type: 'text', text: `狀態: ${statusText}`, size: 'sm', align: 'center' }, { type: 'text', text: `後五碼: ${pendingOrder.last_5_digits || '未輸入'}`, size: 'sm', align: 'center' }, ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', align: 'center', color: '#B00020', wrap: true }] : []), { type: 'text', text: `提交時間: ${formatDateTime(pendingOrder.timestamp)}`, size: 'xs', align: 'center', color: '#666666' } ], },
+            footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', height: 'sm', color: '#de5246', action: { type: 'message', label: actionButtonLabel, text: actionButtonLabel.startsWith('修改') ? COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER : COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER } }, { type: 'button', style: 'secondary', height: 'sm', color: '#8d99ae', action: { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE } }] }
         });
     }
-
-    pointBubbles.push({
-        type: 'bubble',
-        header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '剩餘點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#76c893', paddingAll: 'lg' },
-        body: {
-            type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px',
-            contents: [
-                { type: 'text', text: `${user.points} 點`, weight: 'bold', size: 'xxl', align: 'center' },
-                { type: 'text', text: `上次查詢: ${new Date().toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })}`, color: '#666666', size: 'xs', align: 'center' }
-            ],
-        },
-        action: { type: 'message', label: '重新整理', text: COMMANDS.STUDENT.POINTS }
-    });
-
-    pointBubbles.push({
-        type: 'bubble',
-        header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '購買點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#34a0a4', paddingAll: 'lg' },
-        body: {
-            type: 'box', layout: 'vertical', justifyContent: 'center', alignItems: 'center', height: '150px',
-            contents: [{ type: 'text', text: '點此選購點數方案', size: 'md', color: '#AAAAAA', align: 'center', weight: 'bold' }]
-        },
-        action: { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS }
-    });
-
-    pointBubbles.push({
-        type: 'bubble',
-        header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '購點紀錄', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#1a759f', paddingAll: 'lg' },
-        body: {
-            type: 'box', layout: 'vertical', justifyContent: 'center', alignItems: 'center', height: '150px',
-            contents: [{ type: 'text', text: '查詢購買狀態與歷史', size: 'md', color: '#AAAAAA', align: 'center', weight: 'bold' }]
-        },
-        action: { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY }
-    });
-
-    const flexMessage = {
-        type: 'flex',
-        altText: '點數管理選單',
-        contents: { type: 'carousel', contents: pointBubbles }
-    };
-
+    pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '剩餘點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#76c893', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [ { type: 'text', text: `${user.points} 點`, weight: 'bold', size: 'xxl', align: 'center' }, { type: 'text', text: `上次查詢: ${new Date().toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })}`, color: '#666666', size: 'xs', align: 'center' } ], }, action: { type: 'message', label: '重新整理', text: COMMANDS.STUDENT.POINTS } });
+    pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '購買點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#34a0a4', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [{ type: 'text', text: '點此選購點數方案', size: 'md', color: '#AAAAAA', align: 'center', weight: 'bold' }] }, action: { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS } });
+    pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '購點紀錄', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#1a759f', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [{ type: 'text', text: '查詢購買狀態與歷史', size: 'md', color: '#AAAAAA', align: 'center', weight: 'bold' }] }, action: { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY } });
+    const flexMessage = { type: 'flex', altText: '點數管理選單', contents: { type: 'carousel', contents: pointBubbles } };
     return reply(replyToken, flexMessage, [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
 
   if (text === COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER || text === COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER) {
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
+    const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
-
     if (pendingOrder) {
-      console.log(`DEBUG: 輸入/修改後五碼觸發 - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶輸入/修改後五碼。`);
       pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.order_id } };
       let promptText = `請輸入您的訂單 ${pendingOrder.order_id} 的匯款帳號後五碼：`;
       if (pendingOrder.status === 'rejected') {
         promptText = `訂單 ${pendingOrder.order_id} 之前被退回。請重新輸入正確的匯款帳號後五碼：`;
       }
-      return reply(replyToken, promptText, [
-        { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 },
-        { type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }
-      ]);
+      return reply(replyToken, promptText, [ { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }, { type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU } ]);
     } else {
       delete pendingPurchase[userId];
       return reply(replyToken, '目前沒有需要輸入或修改匯款後五碼的待確認訂單。', studentPointSubMenu);
     }
   }
 
-
   if (text === COMMANDS.STUDENT.CHECK_POINTS) {
     return reply(replyToken, `你目前有 ${user.points} 點。`, studentMenu);
   }
 
   if (text === COMMANDS.STUDENT.BUY_POINTS) {
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
+    const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
-
     if (pendingOrder) {
-      console.log(`DEBUG: 購買點數 - 發現待處理訂單 ${pendingOrder.order_id}，引導用戶處理。`);
-      return reply(replyToken,
-        `您有一筆待完成的購點訂單 (ID: ${pendingOrder.order_id})，請在「點數管理」主頁面輸入後五碼，或選擇「❌ 取消購買」。`,
-        [
-          { type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU },
-          { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE },
-        ]
-      );
+      return reply(replyToken, `您有一筆待完成的購點訂單 (ID: ${pendingOrder.order_id})，請在「點數管理」主頁面輸入後五碼，或選擇「❌ 取消購買」。`, [ { type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU }, { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE }, ]);
     } else {
-      console.log(`DEBUG: 購買點數 - 無待處理訂單，啟動新購買流程。`);
       pendingPurchase[userId] = { step: 'select_plan', data: {} };
-      const planOptions = PURCHASE_PLANS.map(plan => ({
-        type: 'message', label: plan.label, text: plan.label
-      }));
+      const planOptions = PURCHASE_PLANS.map(plan => ({ type: 'message', label: plan.label, text: plan.label }));
       planOptions.push({ type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU });
       return reply(replyToken, '請選擇要購買的點數方案：', planOptions);
     }
   }
 
   if (text === COMMANDS.STUDENT.CANCEL_PURCHASE) {
-    const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
+    const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
     const pendingOrder = ordersRes.rows[0];
-
     if (pendingOrder) {
         if (pendingOrder.status === 'pending_confirmation') {
             return reply(replyToken, '您的匯款資訊已提交，訂單正在等待老師確認，目前無法自行取消。\n如有疑問請聯繫老師。', studentMenu);
         } else if (pendingOrder.status === 'pending_payment' || pendingOrder.status === 'rejected') {
-            const transactionClientCancel = await pgClient.connect();
+            const transactionClientCancel = await pgPool.connect();
             try {
               await transactionClientCancel.query('BEGIN');
               await deleteOrder(pendingOrder.order_id, transactionClientCancel);
@@ -1170,19 +811,14 @@ async function handleStudentCommands(event, userId) {
             }
         }
     }
-
-    if (pendingPurchase[userId]) {
-      delete pendingPurchase[userId];
-    }
+    if (pendingPurchase[userId]) delete pendingPurchase[userId];
     return reply(replyToken, '目前沒有待取消的購點訂單。', studentMenu);
   }
 
   if (text === COMMANDS.STUDENT.PURCHASE_HISTORY) {
-    console.log(`DEBUG: 顯示購點歷史記錄。`);
     if (!user.history || user.history.length === 0) {
       return reply(replyToken, '你目前沒有點數相關記錄。', studentMenu);
     }
-
     let historyMessage = '以下是你的點數記錄 (近5筆)：\n';
     user.history.slice(-5).reverse().forEach(record => {
       historyMessage += `・${record.action} (${formatDateTime(record.time)})\n`;
@@ -1193,174 +829,63 @@ async function handleStudentCommands(event, userId) {
   if (text === COMMANDS.STUDENT.BOOK_COURSE) {
     const now = Date.now();
     const sevenDaysLater = now + (ONE_DAY_IN_MS * 7);
-
-    const upcomingCourses = Object.values(courses)
-        .filter(c => new Date(c.time).getTime() > now && new Date(c.time).getTime() <= sevenDaysLater && !c.students.includes(userId) && !c.waiting.includes(userId))
-        .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
+    const upcomingCourses = Object.values(courses).filter(c => new Date(c.time).getTime() > now && new Date(c.time).getTime() <= sevenDaysLater && !c.students.includes(userId) && !c.waiting.includes(userId)).sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
     if (upcomingCourses.length === 0) {
         return reply(replyToken, '未來七天內沒有您可以預約的新課程。', studentMenu);
     }
-
     const courseBubbles = upcomingCourses.slice(0, 10).map(course => {
-        const isEnrolled = course.students.includes(userId);
-        const isWaiting = course.waiting.includes(userId);
         const isFull = course.students.length >= course.capacity;
-
         let statusText = `報名 ${course.students.length}/${course.capacity}`;
         let actionButton = null;
         let headerColor = '#34a0a4';
-
-        if (isEnrolled) {
-            statusText = `✅ 已預約`;
-            headerColor = '#52b69a';
-        } else if (isWaiting) {
-            statusText = `⏳ 候補中 (${course.waiting.indexOf(userId) + 1} 位)`;
-            headerColor = '#ff9e00';
-        } else if (isFull) {
-            actionButton = {
-                type: 'message',
-                label: '加入候補',
-                text: `我要預約 ${course.id}`
-            };
+        if (isFull) {
+            actionButton = { type: 'message', label: '加入候補', text: `我要預約 ${course.id}` };
             headerColor = '#ff9e00';
         } else {
-            actionButton = {
-                type: 'message',
-                label: '立即預約',
-                text: `我要預約 ${course.id}`
-            };
+            actionButton = { type: 'message', label: '立即預約', text: `我要預約 ${course.id}` };
         }
-
-        return {
-            type: 'bubble',
-            header: {
-                type: 'box', layout: 'vertical',
-                contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }],
-                backgroundColor: headerColor, paddingAll: 'lg'
-            },
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'md',
-                contents: [
-                    { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
-                    { type: 'separator' },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md',
-                        contents: [
-                            { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 }
-                        ]
-                    },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: `${course.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 }
-                        ]
-                    },
-                    {
-                        type: 'box', layout: 'baseline', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 },
-                            { type: 'text', text: statusText, wrap: true, color: '#666666', size: 'sm', flex: 5 }
-                        ]
-                    },
-                ]
-            },
-            footer: actionButton ? {
-                type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
-                contents: [{
-                    type: 'button', style: 'primary', height: 'sm',
-                    color: isFull ? '#ff9e00' : '#1a759f',
-                    action: actionButton
-                }]
-            } : undefined
-        };
+        return { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: headerColor, paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator' }, { type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md', contents: [ { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${course.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: statusText, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, ] }, footer: actionButton ? { type: 'box', layout: 'vertical', spacing: 'sm', flex: 0, contents: [{ type: 'button', style: 'primary', height: 'sm', color: isFull ? '#ff9e00' : '#1a759f', action: actionButton }] } : undefined };
     });
-
-    const flexMessage = {
-        type: 'flex',
-        altText: '可預約課程列表',
-        contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) }
-    };
-
-    return reply(replyToken, [
-        { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' },
-        flexMessage
-    ], [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
+    const flexMessage = { type: 'flex', altText: '可預約課程列表', contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } };
+    return reply(replyToken, [ { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' }, flexMessage ], [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
 
   if (text.startsWith('我要預約 ')) {
     const courseId = text.replace('我要預約 ', '').trim();
     const course = courses[courseId];
     const now = Date.now();
-
-    if (!course) {
-      return reply(replyToken, '找不到該課程，或課程已不存在。', studentMenu);
+    if (!course || new Date(course.time).getTime() < now || course.students.includes(userId) || course.waiting.includes(userId)) {
+      return reply(replyToken, '無法預約：課程不存在、已過期、或您已預約/候補。', studentMenu);
     }
-    if (new Date(course.time).getTime() < now) {
-      return reply(replyToken, '該課程已過期，無法預約。', studentMenu);
-    }
-    if (course.students.includes(userId)) {
-      return reply(replyToken, '你已經預約此課程了。', studentMenu);
-    }
-    if (course.waiting.includes(userId)) {
-      return reply(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
-    }
-
-    const transactionClient = await pgClient.connect();
+    const transactionClient = await pgPool.connect();
     try {
         await transactionClient.query('BEGIN');
-        const currentUserRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
-        const currentUser = currentUserRes.rows[0];
-
-        const courseInTransactionRes = await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [courseId]);
-        const courseInTransaction = courseInTransactionRes.rows[0];
-
-        if (!currentUser || !courseInTransaction) {
-            await transactionClient.query('ROLLBACK');
-            return reply(replyToken, '預約失敗，用戶或課程資料不存在。', studentMenu);
-        }
-
-        if (currentUser.points < courseInTransaction.points_cost) {
-            await transactionClient.query('ROLLBACK');
-            return reply(replyToken, `你的點數不足，此課程需要 ${courseInTransaction.points_cost} 點，你目前有 ${currentUser.points} 點。請先購買點數。`, studentMenu);
-        }
-        
-        if (courseInTransaction.students.includes(userId)) {
-            await transactionClient.query('ROLLBACK');
-            return reply(replyToken, '你已經預約此課程了。', studentMenu);
-        }
-        if (courseInTransaction.waiting.includes(userId)) {
-            await transactionClient.query('ROLLBACK');
-            return reply(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
-        }
+        const currentUser = (await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId])).rows[0];
+        const courseInTransaction = (await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [courseId])).rows[0];
+        if (!currentUser || !courseInTransaction) throw new Error('用戶或課程資料不存在。');
+        if (currentUser.points < courseInTransaction.points_cost) throw new Error(`點數不足，此課程需要 ${courseInTransaction.points_cost} 點。`);
+        if (courseInTransaction.students.includes(userId) || courseInTransaction.waiting.includes(userId)) throw new Error('您已預約或候補此課程。');
 
         if (courseInTransaction.students.length < courseInTransaction.capacity) {
           courseInTransaction.students.push(userId);
           currentUser.points -= courseInTransaction.points_cost;
-          if (!Array.isArray(currentUser.history)) currentUser.history = [];
           currentUser.history.push({ id: courseId, action: `預約成功：${courseInTransaction.title} (扣 ${courseInTransaction.points_cost} 點)`, time: new Date().toISOString() });
-
           await saveCourse(courseInTransaction, transactionClient);
           await saveUser(currentUser, transactionClient);
           await transactionClient.query('COMMIT');
-
-          return reply(replyToken, `✅ 已成功預約課程：「${courseInTransaction.title}」，扣除 ${courseInTransaction.points_cost} 點。\n\n💡 請注意：課程開始前 8 小時不可退課。`, studentMenu);
+          return reply(replyToken, `✅ 已成功預約課程：「${courseInTransaction.title}」。`, studentMenu);
         } else {
           courseInTransaction.waiting.push(userId);
-          if (!Array.isArray(currentUser.history)) currentUser.history = [];
           currentUser.history.push({ id: courseId, action: `加入候補：${courseInTransaction.title}`, time: new Date().toISOString() });
           await saveCourse(courseInTransaction, transactionClient);
           await saveUser(currentUser, transactionClient);
           await transactionClient.query('COMMIT');
-
-          return reply(replyToken, `✅ 該課程「${courseInTransaction.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${courseInTransaction.points_cost} 點。`, studentMenu);
+          return reply(replyToken, `✅ 課程已額滿，您已成功加入候補名單。`, studentMenu);
         }
     } catch (err) {
         await transactionClient.query('ROLLBACK');
-        console.error("❌ 預約課程交易失敗:", err.message);
-        return reply(replyToken, '預約失敗，系統發生錯誤，請稍後再試。', studentMenu);
+        console.error("❌ 預約課程交易失敗:", err.stack);
+        return reply(replyToken, `預約失敗：${err.message}`, studentMenu);
     } finally {
         transactionClient.release();
     }
@@ -1368,150 +893,64 @@ async function handleStudentCommands(event, userId) {
 
   if (text === COMMANDS.STUDENT.MY_COURSES) {
     const now = Date.now();
-    const enrolledCourses = Object.values(courses)
-        .filter(c => c.students.includes(userId) && new Date(c.time).getTime() > now)
-        .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-    const waitingCourses = Object.values(courses)
-        .filter(c => c.waiting.includes(userId) && new Date(c.time).getTime() > now)
-        .sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-
+    const enrolledCourses = Object.values(courses).filter(c => c.students.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
+    const waitingCourses = Object.values(courses).filter(c => c.waiting.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
     if (enrolledCourses.length === 0 && waitingCourses.length === 0) {
         return reply(replyToken, '您目前沒有任何已預約或候補中的未來課程。', studentMenu);
     }
-
     const courseBubbles = [
         ...enrolledCourses.map(course => {
             const canCancel = new Date(course.time).getTime() - now > EIGHT_HOURS_IN_MS;
-            return {
-                type: 'bubble',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '✅ 已預約', color: '#ffffff', weight: 'bold' }], backgroundColor: '#52b69a', paddingAll: 'lg' },
-                body: {
-                    type: 'box', layout: 'vertical', spacing: 'md',
-                    contents: [
-                        { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
-                        { type: 'separator', margin: 'md'},
-                        { type: 'text', text: `${formatDateTime(course.time)}`, size: 'md' },
-                        { type: 'text', text: `已扣除 ${course.pointsCost} 點`, size: 'sm', color: '#666666' }
-                    ]
-                },
-                footer: canCancel ? {
-                    type: 'box', layout: 'vertical', spacing: 'sm',
-                    contents: [{
-                        type: 'button', style: 'primary', color: '#de5246', height: 'sm',
-                        action: { type: 'postback', label: '取消預約', data: `action=cancel_booking_confirm&courseId=${course.id}`, displayText: `正在準備取消預約：${course.title}` }
-                    }]
-                } : undefined
-            };
+            return { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '✅ 已預約', color: '#ffffff', weight: 'bold' }], backgroundColor: '#52b69a', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator', margin: 'md'}, { type: 'text', text: `${formatDateTime(course.time)}`, size: 'md' }, { type: 'text', text: `已扣除 ${course.pointsCost} 點`, size: 'sm', color: '#666666' } ] }, footer: canCancel ? { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '取消預約', data: `action=cancel_booking_confirm&courseId=${course.id}`, displayText: `準備取消預約：${course.title}` } }] } : undefined };
         }),
-        ...waitingCourses.map(course => ({
-            type: 'bubble',
-            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '⏳ 候補中', color: '#ffffff', weight: 'bold' }], backgroundColor: '#ff9e00', paddingAll: 'lg' },
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'md',
-                contents: [
-                    { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
-                    { type: 'separator', margin: 'md'},
-                    { type: 'text', text: `${formatDateTime(course.time)}`, size: 'md' },
-                    { type: 'text', text: `目前候補第 ${course.waiting.indexOf(userId) + 1} 位`, size: 'sm', color: '#666666' }
-                ]
-            },
-            footer: {
-                type: 'box', layout: 'vertical', spacing: 'sm',
-                contents: [{
-                    type: 'button', style: 'primary', color: '#8d99ae', height: 'sm',
-                    action: { type: 'postback', label: '取消候補', data: `action=cancel_waiting_confirm&courseId=${course.id}`, displayText: `正在準備取消候補：${course.title}` }
-                }]
-            }
-        }))
+        ...waitingCourses.map(course => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '⏳ 候補中', color: '#ffffff', weight: 'bold' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator', margin: 'md'}, { type: 'text', text: `${formatDateTime(course.time)}`, size: 'md' }, { type: 'text', text: `目前候補第 ${course.waiting.indexOf(userId) + 1} 位`, size: 'sm', color: '#666666' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', color: '#8d99ae', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=cancel_waiting_confirm&courseId=${course.id}`, displayText: `準備取消候補：${course.title}` } }] } }))
     ];
-
-    const flexMessage = {
-        type: 'flex',
-        altText: '我的課程列表',
-        contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) }
-    };
+    const flexMessage = { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } };
     return reply(replyToken, flexMessage, [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
   }
 
   if (text.startsWith('我要取消預約 ')) {
     const id = text.replace('我要取消預約 ', '').trim();
-    const course = courses[id];
-    const now = Date.now();
-
-    if (!course || !course.students.includes(userId)) {
-      return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
-    }
-    if (new Date(course.time).getTime() < now) {
-      return reply(replyToken, '該課程已過期，無法取消。', studentMenu);
-    }
-    if (new Date(course.time).getTime() - now < EIGHT_HOURS_IN_MS) {
-      return reply(replyToken, `課程「${course.title}」即將開始，距離上課時間已不足 8 小時，無法取消退點。`, studentMenu);
-    }
-
-    const transactionClient = await pgClient.connect();
+    const transactionClient = await pgPool.connect();
     let replyMessage = '';
     try {
         await transactionClient.query('BEGIN');
-
-        const cancellingUserRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
-        const cancellingUser = cancellingUserRes.rows[0];
-
-        if (!cancellingUser) {
-            await transactionClient.query('ROLLBACK');
-            return reply(replyToken, '取消預約失敗，找不到您的用戶資料。', studentMenu);
-        }
-
-        cancellingUser.points += course.pointsCost;
-        if (!Array.isArray(cancellingUser.history)) cancellingUser.history = [];
-        cancellingUser.history.push({ id: id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
+        const course = (await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id])).rows[0];
+        const now = Date.now();
+        if (!course || !course.students.includes(userId)) throw new Error('找不到您的預約紀錄。');
+        if (new Date(course.time).getTime() - now < EIGHT_HOURS_IN_MS) throw new Error(`課程即將開始（不足8小時），無法取消。`);
+        
+        const cancellingUser = (await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId])).rows[0];
+        cancellingUser.points += course.points_cost;
+        cancellingUser.history.push({ id: id, action: `課程取消退點：${course.title} (退 ${course.points_cost} 點)`, time: new Date().toISOString() });
         await saveUser(cancellingUser, transactionClient);
 
-        const updatedCourseRes = await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id]);
-        const updatedCourse = updatedCourseRes.rows[0];
+        course.students = course.students.filter(sid => sid !== userId);
+        replyMessage = `課程「${course.title}」已取消，已退還 ${course.points_cost} 點。`;
 
-        if (!updatedCourse) {
-            await transactionClient.query('ROLLBACK');
-            return reply(replyToken, '取消預約失敗，課程不存在或已被移除。', studentMenu);
-        }
-
-        updatedCourse.students = updatedCourse.students.filter(sid => sid !== userId);
-        replyMessage = `課程「${course.title}」已取消，已退還 ${course.pointsCost} 點。`;
-
-        if (updatedCourse.waiting.length > 0 && updatedCourse.students.length < updatedCourse.capacity) {
-            const nextWaitingUserId = updatedCourse.waiting.shift();
-            
-            const nextWaitingUserRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [nextWaitingUserId]);
-            const nextWaitingUser = nextWaitingUserRes.rows[0];
-
-            if (nextWaitingUser && nextWaitingUser.points >= updatedCourse.points_cost) {
-                updatedCourse.students.push(nextWaitingUserId);
-                nextWaitingUser.points -= updatedCourse.points_cost;
-                if (!Array.isArray(nextWaitingUser.history)) nextWaitingUser.history = [];
-                nextWaitingUser.history.push({ id: id, action: `候補補上：${updatedCourse.title} (扣 ${updatedCourse.points_cost} 點)`, time: new Date().toISOString() });
-
+        if (course.waiting.length > 0) {
+            const nextWaitingUserId = course.waiting.shift();
+            const nextWaitingUser = (await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [nextWaitingUserId])).rows[0];
+            if (nextWaitingUser && nextWaitingUser.points >= course.points_cost) {
+                course.students.push(nextWaitingUserId);
+                nextWaitingUser.points -= course.points_cost;
+                nextWaitingUser.history.push({ id: id, action: `候補補上：${course.title} (扣 ${course.points_cost} 點)`, time: new Date().toISOString() });
                 await saveUser(nextWaitingUser, transactionClient);
-
-                push(nextWaitingUserId, `你已從候補名單補上課程「${updatedCourse.title}」！\n上課時間：${formatDateTime(updatedCourse.time)}\n系統已自動扣除 ${updatedCourse.points_cost} 點。請確認你的「我的課程」。\n\n💡 請注意：課程開始前 8 小時不可退課。`)
-                    .catch(e => console.error(`❌ 向學員 ${nextWaitingUserId} 發送提醒失敗:`, e.message));
+                push(nextWaitingUserId, `您已從候補名單補上課程「${course.title}」！系統已自動扣點。`).catch(e => console.error(e.message));
                 replyMessage += '\n有候補學生已遞補成功。';
             } else if (nextWaitingUser) {
-                const studentName = nextWaitingUser.name || `未知學員(${nextWaitingUser.id.substring(0, 4)}...)`;
-                replyMessage += `\n候補學生 ${studentName} 點數不足 (需要 ${updatedCourse.points_cost} 點)，未能遞補。已將其從候補名單移除。`;
-                if (TEACHER_ID) {
-                  push(TEACHER_ID, `課程「${updatedCourse.title}」（${formatDateTime(updatedCourse.time)}）有學生取消，但候補學生 ${studentName} 點數不足 (需要 ${updatedCourse.points_cost} 點)，未能遞補。已自動從候補名單移除該學生。`)
-                    .catch(e => console.error('❌ 通知老師失敗', e.message));
-                }
-            } else {
-                replyMessage += '\n候補名單中存在無效用戶，已移除。';
+                const studentName = nextWaitingUser.name;
+                replyMessage += `\n候補學生 ${studentName} 點數不足，未能遞補。`;
+                if (TEACHER_ID) push(TEACHER_ID, `課程「${course.title}」有學生取消，但候補者 ${studentName} 點數不足，遞補失敗。`).catch(e => console.error(e.message));
             }
         }
-        await saveCourse(updatedCourse, transactionClient);
+        await saveCourse({ ...course, pointsCost: course.points_cost }, transactionClient);
         await transactionClient.query('COMMIT');
         return reply(replyToken, replyMessage.trim(), studentMenu);
     } catch(err) {
         await transactionClient.query('ROLLBACK');
-        console.error("❌ 取消預約交易失敗:", err.message);
-        return reply(replyToken, '取消預約失敗，系統發生錯誤，請稍後再試。', studentMenu);
+        console.error("❌ 取消預約交易失敗:", err.stack);
+        return reply(replyToken, `取消失敗：${err.message}`, studentMenu);
     } finally {
         transactionClient.release();
     }
@@ -1519,48 +958,26 @@ async function handleStudentCommands(event, userId) {
 
   if (text.startsWith('我要取消候補 ')) {
     const id = text.replace('我要取消候補 ', '').trim();
-    const course = courses[id];
-    const now = Date.now();
-
-    if (!course || !course.waiting?.includes(userId)) {
-      return reply(replyToken, '你沒有候補此課程，無法取消。', studentMenu);
-    }
-    if (new Date(course.time).getTime() < now) {
-      return reply(replyToken, '該課程已過期，無法取消候補。', studentMenu);
-    }
-
-    const transactionClient = await pgClient.connect();
+    const transactionClient = await pgPool.connect();
     try {
       await transactionClient.query('BEGIN');
-      const courseInTransactionRes = await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id]);
-      const courseInTransaction = courseInTransactionRes.rows[0];
-
-      const userInTransactionRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
-      const userInTransaction = userInTransactionRes.rows[0];
-
-      if (!courseInTransaction || !userInTransaction) {
-          await transactionClient.query('ROLLBACK');
-          return reply(replyToken, '取消候補失敗，課程或用戶資料不存在。', studentMenu);
-      }
-
-      courseInTransaction.waiting = courseInTransaction.waiting.filter(x => x !== userId);
-      if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
-      userInTransaction.history.push({ id: id, action: `取消候補：${courseInTransaction.title}`, time: new Date().toISOString() });
-
-      await saveCourse(courseInTransaction, transactionClient);
-      await saveUser(userInTransaction, transactionClient);
+      const course = (await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id])).rows[0];
+      if (!course || !course.waiting?.includes(userId)) throw new Error('找不到您的候補紀錄。');
+      const user = (await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId])).rows[0];
+      course.waiting = course.waiting.filter(x => x !== userId);
+      user.history.push({ id: id, action: `取消候補：${course.title}`, time: new Date().toISOString() });
+      await saveCourse({ ...course, pointsCost: course.points_cost }, transactionClient);
+      await saveUser(user, transactionClient);
       await transactionClient.query('COMMIT');
-
-      return reply(replyToken, `已取消課程「${courseInTransaction.title}」的候補。`, studentMenu);
+      return reply(replyToken, `已取消課程「${course.title}」的候補。`, studentMenu);
     } catch(err) {
       await transactionClient.query('ROLLBACK');
-      console.error("❌ 取消候補交易失敗:", err.message);
-      return reply(replyToken, '取消候補失敗，系統發生錯誤，請稍後再試。', studentMenu);
+      console.error("❌ 取消候補交易失敗:", err.stack);
+      return reply(replyToken, `取消失敗：${err.message}`, studentMenu);
     } finally {
         transactionClient.release();
     }
   }
-
 
   return reply(replyToken, '指令無效，請使用下方選單或輸入正確指令。', studentMenu);
 }
@@ -1573,30 +990,20 @@ async function handleEvent(event) {
     const userId = event.source.userId;
     const replyToken = event.replyToken;
 
-    console.log(`DEBUG: 收到事件類型: ${event.type}, 用戶ID: ${userId}`);
-    if (event.type === 'message' && event.message.type === 'text') {
-        console.log(`DEBUG: 收到文字訊息: "${event.message.text}"`);
-    }
-
     if (event.type !== 'message' && event.type !== 'postback' && event.type !== 'follow' && event.type !== 'unfollow') {
-        console.log(`Ignored event type: ${event.type}`);
         return;
     }
-
+    
     if (event.type === 'follow') {
-        console.log(`New user followed bot: ${userId}`);
+        let user = { id: userId, name: '匿名使用者', points: 0, role: 'student', history: [] };
         try {
-            let user = { id: userId, name: '匿名使用者', points: 0, role: 'student', history: [] };
-            await saveUser(user);
             const profile = await client.getProfile(userId);
             user.name = profile.displayName || '匿名使用者';
-            await saveUser(user);
-            await reply(replyToken, `哈囉 ${user.name}！歡迎來到九容瑜伽小助手！\n\n我是您的專屬瑜伽小助手，您可以透過下方的選單預約課程、查詢點數等。`, studentMenu);
         } catch (e) {
-            console.error(`❌ 處理追蹤事件失敗 for ${userId}:`, e.message);
-            await reply(replyToken, `哈囉！歡迎來到九容瑜伽小助手！`, studentMenu).catch(e => console.error(`❌ 追蹤事件預設回覆失敗:`, e.message));
+            console.error(`❌ 處理追蹤事件時，取得用戶 ${userId} 資料失敗:`, e.message);
         }
-        return;
+        await saveUser(user);
+        return reply(replyToken, `哈囉 ${user.name}！歡迎來到九容瑜伽小助手！`, studentMenu);
     }
 
     if (event.type === 'unfollow') {
@@ -1607,33 +1014,23 @@ async function handleEvent(event) {
     let user = await getUser(userId);
     if (!user) {
         user = { id: userId, name: '匿名使用者', points: 0, role: 'student', history: [] };
-        await saveUser(user);
-    }
-    if (user.name === '匿名使用者' || !user.name) {
         try {
             const profile = await client.getProfile(userId);
             user.name = profile.displayName || '匿名使用者';
-            await saveUser(user);
-        } catch (e) {
-            console.error(`❌ 取得用戶資料失敗 for ${userId}:`, e.message);
-        }
+        } catch (e) { console.error(`❌ 取得用戶 ${userId} 資料失敗:`, e.message); }
+        await saveUser(user);
     }
 
     // --- Postback 事件處理 ---
     if (event.type === 'postback') {
-        console.log(`DEBUG: 處理 Postback 事件: ${event.postback.data}`);
-        const data = event.postback.data;
-        const params = new URLSearchParams(data);
-        const postbackAction = params.get('action');
-        const courseId = params.get('courseId');
-        const orderId = params.get('orderId');
-        // 【【【 新增功能 】】】 用於批次取消的課程前綴
-        const coursePrefix = params.get('prefix');
-
-        const currentUser = await getUser(userId);
+        const data = new URLSearchParams(event.postback.data);
+        const postbackAction = data.get('action');
+        const courseId = data.get('courseId');
+        const coursePrefix = data.get('prefix');
+        const orderId = data.get('orderId');
 
         // --- Teacher Postbacks ---
-        if (currentUser.role === 'teacher') {
+        if (user.role === 'teacher') {
             if (postbackAction === 'add_course_start') {
                 pendingCourseCreation[userId] = { step: 1, data: {} };
                 return reply(replyToken, '請輸入課程系列名稱：', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
@@ -1641,196 +1038,217 @@ async function handleEvent(event) {
 
             if (postbackAction === 'start_student_search') {
                 pendingStudentSearch[userId] = true;
-                return reply(replyToken, '請輸入您要查詢的學員姓名或 ID：', [
-                    { type: 'message', label: '❌ 取消查詢', text: COMMANDS.TEACHER.MAIN_MENU }
-                ]);
+                return reply(replyToken, '請輸入您要查詢的學員姓名或 ID：', [{ type: 'message', label: '❌ 取消查詢', text: COMMANDS.TEACHER.MAIN_MENU }]);
             }
 
-            // 【【【 新增功能 START 】】】 批次取消課程的 Postback 處理
-            if (postbackAction === 'cancel_course_group_confirm') {
-                if (!coursePrefix) { return reply(replyToken, '找不到課程前綴，取消失敗。', teacherMenu); }
-
-                const coursesToCancelRes = await pgClient.query('SELECT title FROM courses WHERE id LIKE $1 ORDER BY time ASC', [`${coursePrefix}%`]);
-                const coursesToCancel = coursesToCancelRes.rows;
-
-                if (coursesToCancel.length === 0) {
-                    return reply(replyToken, `找不到任何以「${coursePrefix}」開頭的課程可供取消。`, teacherMenu);
+            // 【新增】處理 "管理單堂課程" 按鈕
+            if (postbackAction === 'manage_course_group') {
+                const now = new Date();
+                const res = await pgPool.query("SELECT * FROM courses WHERE id LIKE $1 AND time > $2 ORDER BY time ASC LIMIT 10", [`${coursePrefix}%`, now]);
+                if (res.rows.length === 0) {
+                    return reply(replyToken, `此系列 (${coursePrefix}) 目前沒有可管理的未來課程。`, [{ type: 'message', label: '返回課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
                 }
-                
-                // 從課程標題中提取系列名稱
-                const seriesTitle = coursesToCancel.length > 0 ? coursesToCancel[0].title.replace(/ - 第 \d+ 堂$/, '') : `代碼 ${coursePrefix}`;
-
+                const seriesTitle = res.rows[0].title.replace(/ - 第 \d+ 堂$/, '');
+                const bubbles = res.rows.map(course => ({
+                    type: 'bubble',
+                    header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '單堂課程資訊', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#1A759F', paddingAll: 'lg' },
+                    body: {
+                        type: 'box', layout: 'vertical', spacing: 'md',
+                        contents: [
+                            { type: 'text', text: course.title, weight: 'bold', size: 'lg', wrap: true },
+                            { type: 'separator' },
+                            { type: 'text', text: `時間: ${formatDateTime(course.time)}`, size: 'sm' },
+                            { type: 'text', text: `狀態: ${course.students.length}/${course.capacity} 人報名, ${course.waiting.length} 人候補`, size: 'sm' },
+                        ]
+                    },
+                    footer: {
+                        type: 'box', layout: 'vertical',
+                        contents: [{
+                            type: 'button', style: 'primary', color: '#DE5246', height: 'sm',
+                            action: { type: 'postback', label: '取消此堂課', data: `action=cancel_single_course_confirm&courseId=${course.id}`, displayText: `準備取消 ${course.title}` }
+                        }]
+                    }
+                }));
+                return reply(replyToken, [
+                    { type: 'text', text: `以下是「${seriesTitle}」系列的可管理課程：` },
+                    { type: 'flex', altText: `單堂課程列表`, contents: { type: 'carousel', contents: bubbles } }
+                ], [{ type: 'message', label: '返回課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }]);
+            }
+            
+            // 【新增】處理單堂課程取消確認
+            if (postbackAction === 'cancel_single_course_confirm') {
+                const course = await getCourse(courseId);
+                if(!course) return reply(replyToken, '找不到課程，可能已被取消。');
                 return reply(replyToken, {
-                    type: 'text', text: `⚠️ 最終確認 ⚠️\n\n您確定要批次取消「${seriesTitle}」系列的所有 ${coursesToCancel.length} 堂課程嗎？\n\n此操作將會刪除這些課程、自動退點並通知所有相關學生，且無法復原！`,
+                    type: 'text', text: `⚠️ 最終確認 ⚠️\n您確定要取消單堂課程「${course.title}」嗎？\n此操作將退點並通知相關學生，無法復原！`,
                     quickReply: { items: [
-                        { type: 'action', action: { type: 'postback', label: '✅ 是，確認批次取消', data: `action=cancel_course_group_execute&prefix=${coursePrefix}`, displayText: `正在批次取消 ${coursePrefix} 系列課程` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 是，確認取消', data: `action=cancel_single_course_execute&courseId=${course.id}`, displayText: `確認取消 ${course.title}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 否，返回', text: COMMANDS.TEACHER.COURSE_MANAGEMENT } }
                     ]}
                 });
             }
 
-            if (postbackAction === 'cancel_course_group_execute') {
-                const transactionClient = await pgClient.connect();
+            // 【新增】執行單堂課程取消
+            if (postbackAction === 'cancel_single_course_execute') {
+                const transactionClient = await pgPool.connect();
                 try {
                     await transactionClient.query('BEGIN');
-
-                    const cancelledCourses = await deleteCoursesByPrefix(coursePrefix, transactionClient);
-
-                    if (cancelledCourses.length === 0) {
-                        await transactionClient.query('ROLLBACK');
-                        return reply(replyToken, `找不到任何以「${coursePrefix}」開頭的課程可供取消。`, teacherMenu);
-                    }
-
-                    const seriesTitle = cancelledCourses.length > 0 ? cancelledCourses[0].title.replace(/ - 第 \d+ 堂$/, '') : `代碼 ${coursePrefix}`;
-
-                    // 建立一個 map 來暫存需要更新的使用者資料，避免重複讀取
-                    const usersToUpdate = new Map();
-
-                    // 處理退點與紀錄
-                    for (const course of cancelledCourses) {
-                        // 已報名學生
-                        for (const stuId of course.students) {
-                            if (!usersToUpdate.has(stuId)) usersToUpdate.set(stuId, await getUser(stuId, transactionClient));
-                            const studentUser = usersToUpdate.get(stuId);
-                            if (studentUser) {
-                                studentUser.points += course.pointsCost;
-                                if (!Array.isArray(studentUser.history)) studentUser.history = [];
-                                studentUser.history.push({ id: course.id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
-                            }
-                        }
-                        // 候補學生
-                        for (const waitId of course.waiting) {
-                             if (!usersToUpdate.has(waitId)) usersToUpdate.set(waitId, await getUser(waitId, transactionClient));
-                            const waitingUser = usersToUpdate.get(waitId);
-                            if(waitingUser) {
-                                if (!Array.isArray(waitingUser.history)) waitingUser.history = [];
-                                waitingUser.history.push({ id: course.id, action: `候補課程取消：${course.title}`, time: new Date().toISOString() });
-                            }
-                        }
-                    }
-
-                    // 批次儲存使用者資料與發送通知
-                    for(const [userIdToUpdate, userToSave] of usersToUpdate.entries()){
-                        if(userToSave) {
-                           await saveUser(userToSave, transactionClient);
-                           // 判斷是已報名還是候補來發送不同通知
-                           const wasEnrolled = cancelledCourses.some(c => c.students.includes(userIdToUpdate));
-                           if(wasEnrolled){
-                                push(userIdToUpdate, `【課程取消通知】\n您預約的「${seriesTitle}」系列課程已被老師取消，系統已自動為您辦理所有相關堂數的退點。`).catch(e => console.error(`❌ 向學員 ${userIdToUpdate} 發送退點通知失敗:`, e.message));
-                           } else {
-                                push(userIdToUpdate, `【候補取消通知】\n您候補的「${seriesTitle}」系列課程已被老師取消。`).catch(e => console.error(`❌ 向候補者 ${userIdToUpdate} 發送取消通知失敗:`, e.message));
-                           }
-                        }
-                    }
+                    const courseRes = await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [courseId]);
+                    if (courseRes.rows.length === 0) throw new Error('找不到要取消的課程。');
+                    const course = courseRes.rows[0];
+                    const courseInfo = {
+                        id: course.id, title: course.title, pointsCost: course.points_cost, time: course.time,
+                        students: course.students || [], waiting: course.waiting || []
+                    };
                     
+                    for (const stuId of courseInfo.students) {
+                        const student = await getUser(stuId, transactionClient);
+                        if (student) {
+                            student.points += courseInfo.pointsCost;
+                            student.history.push({ action: `課程取消退點：${courseInfo.title} (退 ${courseInfo.pointsCost} 點)`, time: new Date().toISOString() });
+                            await saveUser(student, transactionClient);
+                            push(stuId, `【課程取消通知】\n您預約的課程「${courseInfo.title}」(${formatDateTime(courseInfo.time)})已被老師取消，系統已自動退還 ${courseInfo.pointsCost} 點。`).catch(e => console.error(e.message));
+                        }
+                    }
+                    for (const waitId of courseInfo.waiting) {
+                         const student = await getUser(waitId, transactionClient);
+                         if(student){
+                             student.history.push({ action: `候補課程取消：${courseInfo.title}`, time: new Date().toISOString() });
+                             await saveUser(student, transactionClient);
+                             push(waitId, `【候補取消通知】\n您候補的課程「${courseInfo.title}」(${formatDateTime(courseInfo.time)})已被老師取消。`).catch(e => console.error(e.message));
+                         }
+                    }
+                    await deleteCourse(courseInfo.id, transactionClient);
                     await transactionClient.query('COMMIT');
-
-                    console.log(`✅ 所有以 ${coursePrefix} 開頭的課程 (共 ${cancelledCourses.length} 堂) 已成功批次取消。`);
-                    return reply(replyToken, `✅ 已成功批次取消「${seriesTitle}」系列的 ${cancelledCourses.length} 堂課程，並已通知所有相關學員。`, teacherMenu);
-                
-                } catch(err) {
+                    return reply(replyToken, `✅ 已成功取消課程「${courseInfo.title}」，並通知了所有相關學員。`, teacherMenu);
+                } catch (err) {
                     await transactionClient.query('ROLLBACK');
-                    console.error("❌ 批次取消課程交易失敗:", err.message, err.stack);
-                    await push(userId, '批次取消課程失敗，系統發生錯誤，請稍後再試。');
-                    return;
+                    console.error("❌ 單堂課程取消交易失敗:", err.stack);
+                    return reply(replyToken, `操作失敗：${err.message}`, teacherMenu);
                 } finally {
                     transactionClient.release();
                 }
             }
-            // 【【【 新增功能 END 】】】
 
-            if (postbackAction === 'confirm_order') {
-                const transactionClientOrder = await pgClient.connect();
+            // 【修改】批次取消課程確認
+            if (postbackAction === 'cancel_course_group_confirm') {
+                const res = await pgPool.query('SELECT title FROM courses WHERE id LIKE $1 ORDER BY time ASC', [`${coursePrefix}%`]);
+                if (res.rows.length === 0) {
+                    return reply(replyToken, `找不到任何以「${coursePrefix}」開頭的課程。`, teacherMenu);
+                }
+                const seriesTitle = res.rows[0].title.replace(/ - 第 \d+ 堂$/, '');
+                return reply(replyToken, {
+                    type: 'text', text: `⚠️ 最終確認 ⚠️\n\n您確定要批次取消「${seriesTitle}」系列的所有 ${res.rows.length} 堂課程嗎？\n\n此操作無法復原！`,
+                    quickReply: { items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 是，批次取消', data: `action=cancel_course_group_execute&prefix=${coursePrefix}`, displayText: `確認批次取消 ${seriesTitle} 系列` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 否，返回', text: COMMANDS.TEACHER.COURSE_MANAGEMENT } }
+                    ]}
+                });
+            }
+
+            // 【修改】執行批次取消
+            if (postbackAction === 'cancel_course_group_execute') {
+                const transactionClient = await pgPool.connect();
                 try {
-                    await transactionClientOrder.query('BEGIN');
-                    const ordersRes = await transactionClientOrder.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
-                    const rawOrder = ordersRes.rows[0];
+                    await transactionClient.query('BEGIN');
+                    const cancelledCourses = await deleteCoursesByPrefix(coursePrefix, transactionClient);
+                    if (cancelledCourses.length === 0) throw new Error(`找不到以「${coursePrefix}」開頭的課程。`);
 
-                    if (!rawOrder || rawOrder.status !== 'pending_confirmation') {
-                        await transactionClientOrder.query('ROLLBACK');
-                        await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
-                        return;
+                    const seriesTitle = cancelledCourses[0].title.replace(/ - 第 \d+ 堂$/, '');
+                    const usersToUpdate = new Map();
+
+                    for (const course of cancelledCourses) {
+                        for (const stuId of course.students) {
+                            if (!usersToUpdate.has(stuId)) usersToUpdate.set(stuId, { user: await getUser(stuId, transactionClient), refund: 0, enrolled: true });
+                            if(usersToUpdate.get(stuId).user) usersToUpdate.get(stuId).refund += course.pointsCost;
+                        }
+                        for (const waitId of course.waiting) {
+                            if (!usersToUpdate.has(waitId)) usersToUpdate.set(waitId, { user: await getUser(waitId, transactionClient), refund: 0, enrolled: false });
+                        }
+                    }
+
+                    for (const [userIdToUpdate, data] of usersToUpdate.entries()) {
+                        if (data.user) {
+                           data.user.points += data.refund;
+                           data.user.history.push({ action: `「${seriesTitle}」系列課程取消 (退 ${data.refund} 點)`, time: new Date().toISOString() });
+                           await saveUser(data.user, transactionClient);
+                           const message = data.enrolled
+                             ? `【課程取消通知】\n您預約的「${seriesTitle}」系列課程已被老師取消，系統已自動為您辦理所有相關堂數的退點。`
+                             : `【候補取消通知】\n您候補的「${seriesTitle}」系列課程已被老師取消。`;
+                           push(userIdToUpdate, message).catch(e => console.error(e.message));
+                        }
                     }
                     
-                    const studentUser = await getUser(rawOrder.user_id, transactionClientOrder);
-                    if (!studentUser) {
-                        await transactionClientOrder.query('ROLLBACK');
-                        await push(userId, `找不到購點學員 (ID: ${rawOrder.user_id}) 的資料。`);
-                        return;
-                    }
-
-                    studentUser.points += rawOrder.points;
-                    if (!Array.isArray(studentUser.history)) studentUser.history = [];
-                    studentUser.history.push({ action: `購買點數成功：${rawOrder.points} 點`, time: new Date().toISOString(), orderId: rawOrder.order_id });
-                    
-                    const orderToSave = {
-                        orderId: rawOrder.order_id, userId: rawOrder.user_id, userName: rawOrder.user_name,
-                        points: rawOrder.points, amount: rawOrder.amount, last5Digits: rawOrder.last_5_digits,
-                        status: 'completed', timestamp: rawOrder.timestamp.toISOString()
-                    };
-                    
-                    await saveUser(studentUser, transactionClientOrder);
-                    await saveOrder(orderToSave, transactionClientOrder);
-                    await transactionClientOrder.query('COMMIT');
-
-                    await reply(replyToken, `✅ 已為學員 ${rawOrder.user_name} 加點 ${rawOrder.points} 點，訂單 ${rawOrder.order_id} 已完成。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    push(rawOrder.user_id, `🎉 您購買的 ${rawOrder.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${rawOrder.user_id} 購點成功失敗:`, e.message));
-
+                    await transactionClient.query('COMMIT');
+                    return reply(replyToken, `✅ 已成功批次取消「${seriesTitle}」系列的 ${cancelledCourses.length} 堂課程，並已通知所有相關學員。`, teacherMenu);
                 } catch (err) {
-                    await transactionClientOrder.query('ROLLBACK');
-                    console.error("❌ 訂單確認交易失敗:", err.message);
-                    await push(userId, '訂單確認失敗，系統發生錯誤，請稍後再試。');
-                    return;
+                    await transactionClient.query('ROLLBACK');
+                    console.error("❌ 批次取消課程交易失敗:", err.stack);
+                    return reply(replyToken, `操作失敗：${err.message}`, teacherMenu);
                 } finally {
-                    transactionClientOrder.release();
+                    transactionClient.release();
+                }
+            }
+            
+            if (postbackAction === 'confirm_order') {
+                const transactionClient = await pgPool.connect();
+                try {
+                    await transactionClient.query('BEGIN');
+                    const orderRes = await transactionClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
+                    if (orderRes.rows.length === 0 || orderRes.rows[0].status !== 'pending_confirmation') throw new Error('找不到此筆待確認訂單或訂單狀態不正確。');
+                    const order = orderRes.rows[0];
+                    const studentUser = await getUser(order.user_id, transactionClient);
+                    if (!studentUser) throw new Error(`找不到購點學員 (ID: ${order.user_id}) 的資料。`);
+                    studentUser.points += order.points;
+                    studentUser.history.push({ action: `購買點數成功：${order.points} 點`, time: new Date().toISOString(), orderId: order.order_id });
+                    order.status = 'completed';
+                    await saveUser(studentUser, transactionClient);
+                    await saveOrder({ orderId: order.order_id, userId: order.user_id, userName: order.user_name, points: order.points, amount: order.amount, last5Digits: order.last_5_digits, status: order.status, timestamp: order.timestamp.toISOString() }, transactionClient);
+                    await transactionClient.query('COMMIT');
+                    await reply(replyToken, `✅ 已為學員 ${order.user_name} 加點 ${order.points} 點，訂單 ${order.order_id} 已完成。`, teacherMenu);
+                    push(order.user_id, `🎉 您購買的 ${order.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(e.message));
+                } catch (err) {
+                    await transactionClient.query('ROLLBACK');
+                    console.error("❌ 訂單確認交易失敗:", err.stack);
+                    await push(userId, `訂單確認失敗：${err.message}`);
+                } finally {
+                    transactionClient.release();
                 }
             } 
             
             if (postbackAction === 'reject_order') {
-                const transactionClientOrder = await pgClient.connect();
+                const transactionClient = await pgPool.connect();
                 try {
-                    await transactionClientOrder.query('BEGIN');
-                    const ordersRes = await transactionClientOrder.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
-                    const rawOrder = ordersRes.rows[0];
-
-                    if (!rawOrder || rawOrder.status !== 'pending_confirmation') {
-                        await transactionClientOrder.query('ROLLBACK');
-                        await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
-                        return;
-                    }
-                    
-                    const orderToSave = {
-                        orderId: rawOrder.order_id, userId: rawOrder.user_id, userName: rawOrder.user_name,
-                        points: rawOrder.points, amount: rawOrder.amount, last5Digits: rawOrder.last_5_digits,
-                        status: 'rejected', timestamp: rawOrder.timestamp.toISOString()
-                    };
-
-                    await saveOrder(orderToSave, transactionClientOrder);
-                    await transactionClientOrder.query('COMMIT');
-
-                    await reply(replyToken, `❌ 已退回訂單 ${rawOrder.order_id}。已通知學員 ${rawOrder.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
-                    push(rawOrder.user_id, `⚠️ 您的購點訂單 ${rawOrder.order_id} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${rawOrder.user_id} 訂單退回失敗:`, e.message));
-
+                    await transactionClient.query('BEGIN');
+                    const orderRes = await transactionClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
+                    if (orderRes.rows.length === 0 || orderRes.rows[0].status !== 'pending_confirmation') throw new Error('找不到此筆待確認訂單或訂單狀態不正確。');
+                    const order = orderRes.rows[0];
+                    order.status = 'rejected';
+                    await saveOrder({ orderId: order.order_id, userId: order.user_id, userName: order.user_name, points: order.points, amount: order.amount, last5Digits: order.last_5_digits, status: order.status, timestamp: order.timestamp.toISOString() }, transactionClient);
+                    await transactionClient.query('COMMIT');
+                    await reply(replyToken, `❌ 已退回訂單 ${order.order_id}。已通知學員 ${order.user_name}。`, teacherMenu);
+                    push(order.user_id, `⚠️ 您的購點訂單 ${order.order_id} 被老師退回了！\n請檢查匯款資訊後，至「點數管理」重新提交。`).catch(e => console.error(e.message));
                 } catch (err) {
-                    await transactionClientOrder.query('ROLLBACK');
-                    console.error("❌ 訂單退回交易失敗:", err.message);
-                    await push(userId, '訂單退回失敗，系統發生錯誤，請稍後再試。');
-                    return;
+                    await transactionClient.query('ROLLBACK');
+                    console.error("❌ 訂單退回交易失敗:", err.stack);
+                    await push(userId, `訂單退回失敗：${err.message}`);
                 } finally {
-                    transactionClientOrder.release();
+                    transactionClient.release();
                 }
             }
+
+            return; // End of teacher postbacks
         }
         
         // --- Student Postbacks ---
-        if (currentUser.role === 'student') {
-            const courses = await getAllCourses();
-            const course = courses[courseId];
-            if (!course) { return reply(replyToken, '找不到對應的課程，可能已被老師取消。', studentMenu); }
-
+        if (user.role === 'student') {
+            const course = await getCourse(courseId);
+            if (!course && (postbackAction.startsWith('cancel_booking') || postbackAction.startsWith('cancel_waiting'))) { 
+                return reply(replyToken, '找不到對應的課程，可能已被老師取消。', studentMenu); 
+            }
             if (postbackAction === 'cancel_booking_confirm') {
                 return reply(replyToken, {
-                    type: 'text', text: `⚠️ 最終確認 ⚠️\n您確定要取消預約課程「${course.title}」嗎？\n點數將會退還。`,
+                    type: 'text', text: `⚠️ 最終確認 ⚠️\n您確定要取消預約課程「${course.title}」嗎？`,
                     quickReply: { items: [
                         { type: 'action', action: { type: 'postback', label: '✅ 是，取消預約', data: `action=cancel_booking_execute&courseId=${course.id}`, displayText: `確認取消預約：${course.title}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 點錯了', text: COMMANDS.STUDENT.MY_COURSES } }
@@ -1840,7 +1258,6 @@ async function handleEvent(event) {
             if (postbackAction === 'cancel_booking_execute') {
                 return handleStudentCommands({ ...event, message: { type: 'text', text: `我要取消預約 ${courseId}` } }, userId);
             }
-
             if (postbackAction === 'cancel_waiting_confirm') {
                 return reply(replyToken, {
                     type: 'text', text: `⚠️ 最終確認 ⚠️\n您確定要取消候補課程「${course.title}」嗎？`,
@@ -1878,107 +1295,69 @@ async function handleEvent(event) {
                 return reply(replyToken, '請輸入此週期課程的總堂數（例如：5）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             case 2: // 輸入總堂數
                 const totalClasses = parseInt(text);
-                if (isNaN(totalClasses) || totalClasses <= 0) {
-                    return reply(replyToken, '總堂數必須是正整數。');
-                }
+                if (isNaN(totalClasses) || totalClasses <= 0) return reply(replyToken, '總堂數必須是正整數。');
                 stepData.data.totalClasses = totalClasses;
                 stepData.step = 3;
                 const weekdayOptions = Object.keys(weekdays).map(day => ({ type: 'message', label: day, text: day }));
                 weekdayOptions.push({ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
                 return reply(replyToken, '請選擇課程日期（星期幾）：', weekdayOptions);
             case 3: // 選擇星期幾
-                if (!weekdays.hasOwnProperty(text)) {
-                    return reply(replyToken, '請選擇正確的星期。');
-                }
+                if (!weekdays.hasOwnProperty(text)) return reply(replyToken, '請選擇正確的星期。');
                 stepData.data.weekday = text;
                 stepData.step = 4;
                 return reply(replyToken, '請輸入課程時間（24小時制，如 14:30）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             case 4: // 輸入時間
-                if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) {
-                    return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
-                }
+                if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(text)) return reply(replyToken, '時間格式錯誤，請輸入 24 小時制時間，例如 14:30');
                 stepData.data.time = text;
                 stepData.step = 5;
                 return reply(replyToken, '請輸入人員上限（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             case 5: // 輸入人數上限
                 const capacity = parseInt(text);
-                if (isNaN(capacity) || capacity <= 0) {
-                    return reply(replyToken, '人數上限必須是正整數。');
-                }
+                if (isNaN(capacity) || capacity <= 0) return reply(replyToken, '人數上限必須是正整數。');
                 stepData.data.capacity = capacity;
                 stepData.step = 6;
                 return reply(replyToken, '請輸入課程所需扣除的點數（正整數）', [{ type: 'message', label: '取消新增課程', text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
             case 6: // 輸入點數
                 const pointsCost = parseInt(text);
-                if (isNaN(pointsCost) || pointsCost <= 0) {
-                    return reply(replyToken, '扣除點數必須是正整數。');
-                }
+                if (isNaN(pointsCost) || pointsCost <= 0) return reply(replyToken, '扣除點數必須是正整數。');
                 stepData.data.pointsCost = pointsCost;
                 stepData.step = 7;
-                return reply(replyToken, `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n總堂數：${stepData.data.totalClasses} 堂\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點`, [
-                    { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE },
-                    { type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE },
-                ]);
+                return reply(replyToken, `請確認是否建立課程：\n課程名稱：${stepData.data.title}\n總堂數：${stepData.data.totalClasses} 堂\n日期：${stepData.data.weekday}\n時間：${stepData.data.time}\n人數上限：${stepData.data.capacity}\n扣點數：${stepData.data.pointsCost} 點`, [ { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE }, { type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }, ]);
             case 7: // 確認新增課程
                 if (text === COMMANDS.STUDENT.CONFIRM_ADD_COURSE) {
-                    const targetWeekdayIndex = weekdays[stepData.data.weekday];
-                    const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
-                    const now = new Date();
-                    const taipeiOffsetHours = 8;
-
-                    let firstCourseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-                    let dayDiff = (targetWeekdayIndex - firstCourseDate.getUTCDay() + 7) % 7;
-
-                    const currentHourTaipei = now.getHours();
-                    const currentMinuteTaipei = now.getMinutes();
-                    if (dayDiff === 0 && (currentHourTaipei > targetHour || (currentHourTaipei === targetHour && currentMinuteTaipei >= targetMin))) {
-                        dayDiff = 7;
-                    }
-                    firstCourseDate.setUTCDate(firstCourseDate.getUTCDate() + dayDiff);
-                    firstCourseDate.setUTCHours(targetHour - taipeiOffsetHours, targetMin, 0, 0);
-
-                    const coursePrefix = await generateUniqueCoursePrefix(pgClient);
-                    const coursesToAdd = [];
-
-                    for (let i = 0; i < stepData.data.totalClasses; i++) {
-                        const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS));
-                        const sessionNumber = (i + 1).toString().padStart(2, '0');
-                        const newId = `${coursePrefix}${sessionNumber}`;
-
-                        coursesToAdd.push({
-                            id: newId,
-                            title: `${stepData.data.title} - 第 ${i + 1} 堂`,
-                            time: courseDateTime.toISOString(),
-                            capacity: stepData.data.capacity,
-                            pointsCost: stepData.data.pointsCost,
-                            students: [],
-                            waiting: []
-                        });
-                    }
-
-                    const transactionClientAddCourse = await pgClient.connect();
+                    const transactionClient = await pgPool.connect();
                     try {
-                        await transactionClientAddCourse.query('BEGIN');
-                        for (const course of coursesToAdd) {
-                            await saveCourse(course, transactionClientAddCourse);
+                        await transactionClient.query('BEGIN');
+                        const targetWeekdayIndex = weekdays[stepData.data.weekday];
+                        const [targetHour, targetMin] = stepData.data.time.split(':').map(Number);
+                        const now = new Date();
+                        let firstCourseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+                        let dayDiff = (targetWeekdayIndex - firstCourseDate.getUTCDay() + 7) % 7;
+                        if (dayDiff === 0 && (now.getHours() > targetHour || (now.getHours() === targetHour && now.getMinutes() >= targetMin))) dayDiff = 7;
+                        firstCourseDate.setUTCDate(firstCourseDate.getUTCDate() + dayDiff);
+                        firstCourseDate.setUTCHours(targetHour - 8, targetMin, 0, 0); // UTC+8
+                        const coursePrefix = await generateUniqueCoursePrefix(transactionClient);
+                        const coursesToAdd = [];
+                        for (let i = 0; i < stepData.data.totalClasses; i++) {
+                            const courseDateTime = new Date(firstCourseDate.getTime() + (i * 7 * ONE_DAY_IN_MS));
+                            const newId = `${coursePrefix}${(i + 1).toString().padStart(2, '0')}`;
+                            coursesToAdd.push({ id: newId, title: `${stepData.data.title} - 第 ${i + 1} 堂`, time: courseDateTime.toISOString(), capacity: stepData.data.capacity, pointsCost: stepData.data.pointsCost, students: [], waiting: [] });
                         }
-                        await transactionClientAddCourse.query('COMMIT');
+                        for (const course of coursesToAdd) await saveCourse(course, transactionClient);
+                        await transactionClient.query('COMMIT');
                         delete pendingCourseCreation[userId];
-                        return reply(replyToken, `✅ 已成功新增 ${stepData.data.totalClasses} 堂「${stepData.data.title}」系列課程。\n課程組代碼為【${coursePrefix}】。\n首堂時間：${formatDateTime(coursesToAdd[0].time)}`, teacherMenu);
+                        return reply(replyToken, `✅ 已成功新增 ${stepData.data.totalClasses} 堂「${stepData.data.title}」系列課程。\n課程組代碼為【${coursePrefix}】。`, teacherMenu);
                     } catch (err) {
-                        await transactionClientAddCourse.query('ROLLBACK');
-                        console.error("❌ 新增週期課程交易失敗:", err.message);
+                        await transactionClient.query('ROLLBACK');
+                        console.error("❌ 新增週期課程交易失敗:", err.stack);
                         delete pendingCourseCreation[userId];
-                        return reply(replyToken, '新增課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
+                        return reply(replyToken, '新增課程失敗，系統發生錯誤。', teacherMenu);
                     } finally {
-                        transactionClientAddCourse.release();
+                        transactionClient.release();
                     }
-
-                } else if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE) {
+                } else {
                     delete pendingCourseCreation[userId];
                     return reply(replyToken, '已取消新增課程。', teacherMenu);
-                } else {
-                    return reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_ADD_COURSE}」或「${COMMANDS.STUDENT.CANCEL_ADD_COURSE}」。`);
                 }
         }
     }
@@ -2016,12 +1395,9 @@ async function handleEvent(event) {
     }
 
     const finalUser = await getUser(userId);
-    console.log(`DEBUG: 用戶 ${userId} 角色: ${finalUser.role}`);
     if (finalUser.role === 'teacher') {
-        console.log(`DEBUG: 呼叫 handleTeacherCommands`);
         return handleTeacherCommands(event, userId);
     } else {
-        console.log(`DEBUG: 呼叫 handleStudentCommands`);
         return handleStudentCommands(event, userId);
     }
 }
@@ -2033,7 +1409,7 @@ async function checkAndSendReminders() {
     const now = Date.now();
     try {
         const courses = await getAllCourses();
-        const usersRes = await pgClient.query('SELECT id, name FROM users');
+        const usersRes = await pgPool.query('SELECT id, name FROM users');
         const dbUsersMap = new Map(usersRes.rows.map(u => [u.id, u]));
 
         for (const id in courses) {
@@ -2045,8 +1421,7 @@ async function checkAndSendReminders() {
             if (timeUntilCourse > 0 && timeUntilCourse <= ONE_HOUR_IN_MS && timeUntilCourse >= minTimeForReminder && !sentReminders[id]) {
                 console.log(`🔔 準備發送課程提醒：${course.title}`);
                 for (const studentId of course.students) {
-                    const student = dbUsersMap.get(studentId);
-                    if (student) {
+                    if (dbUsersMap.has(studentId)) {
                         push(studentId, `🔔 提醒：您預約的課程「${course.title}」將於 1 小時內開始！\n時間：${formatDateTime(course.time)}`).catch(e => {
                             console.error(`   ❌ 向學員 ${studentId} 發送提醒失敗:`, e.message);
                         });
@@ -2055,14 +1430,14 @@ async function checkAndSendReminders() {
                 sentReminders[id] = true;
             }
         }
+        // 清理舊的提醒標記
         for (const id in sentReminders) {
-            const course = courses[id];
-            if (!course || (new Date(course.time).getTime() < (now - ONE_DAY_IN_MS))) {
+            if (!courses[id] || (new Date(courses[id].time).getTime() < (now - ONE_DAY_IN_MS))) {
                 delete sentReminders[id];
             }
         }
     } catch (err) {
-        console.error('❌ 自動提醒功能發生錯誤:', err.message);
+        console.error('❌ 自動提醒功能發生錯誤:', err.stack);
     }
 }
 
@@ -2096,7 +1471,7 @@ app.post('/webhook', (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
     .then(() => res.status(200).send('OK'))
     .catch((err) => {
-      console.error('❌ Webhook 處理失敗:', err);
+      console.error('❌ Webhook 處理失敗:', err.stack);
       res.status(500).end();
     });
 });
@@ -2105,7 +1480,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.1 (Batch Course Group Cancellation)`);
+  console.log(`Bot 版本: V4.9.2 (Enhanced Cancellation & DB Pool Fix)`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
