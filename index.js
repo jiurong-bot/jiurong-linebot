@@ -1,4 +1,4 @@
-// index.js - V4.9.3.1 (Fix Student Booking Bug)
+// index.js - V4.9.3.2 (Fix Student Booking Bug)
 
 // =====================================
 //                 模組載入
@@ -288,7 +288,7 @@ function formatDateTime(isoString) {
 // =====================================
 //               📋 快速選單定義
 // =====================================
-const studentMenu = [ { type: 'message', label: '預約課程', text: COMMANDS.STUDENT.BOOK_COURSE }, { type: 'message', label: '我的課程', text: COMMANDS.STUDENT.MY_COURSES }, { type: 'message', label: '點數管理', text: COMMANDS.STUDENT.POINTS }, ];
+const studentMenu = []; // 移除預約課程、我的課程、點數管理
 const studentPointSubMenu = [ { type: 'message', label: '剩餘點數', text: COMMANDS.STUDENT.CHECK_POINTS }, { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS }, { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY }, { type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }, ];
 const teacherMenu = [ { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }, { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }, { type: 'postback', label: '查詢學員', data: 'action=start_student_search', displayText: '準備查詢學員...' }, { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT }, ];
 
@@ -689,7 +689,7 @@ async function handleStudentCommands(event, userId) {
         const headerColor = isFull ? '#ff9e00' : '#34a0a4';
         return { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: headerColor, paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator' }, { type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md', contents: [ { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${course.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: statusText, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', flex: 0, contents: [{ type: 'button', style: 'primary', height: 'sm', color: isFull ? '#ff9e00' : '#1a759f', action: actionButton }] } };
     });
-    return reply(replyToken, [ { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' }, { type: 'flex', altText: '可預約課程列表', contents: { type: 'carousel', contents: courseBubbles } } ], [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
+    return reply(replyToken, [ { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' }, { type: 'flex', altText: '可預約課程列表', contents: { type: 'carousel', contents: courseBubbles } } ], studentMenu);
   }
 
   // 【【【 錯誤修正 】】】
@@ -751,7 +751,7 @@ async function handleStudentCommands(event, userId) {
         }),
         ...waitingCourses.map(course => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '⏳ 候補中', color: '#ffffff', weight: 'bold' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator', margin: 'md'}, { type: 'text', text: `${formatDateTime(course.time)}`, size: 'md' }, { type: 'text', text: `目前候補第 ${course.waiting.indexOf(userId) + 1} 位`, size: 'sm', color: '#666666' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', color: '#8d99ae', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=cancel_waiting_confirm&courseId=${course.id}`, displayText: `準備取消候補：${course.title}` } }] } }))
     ];
-    return reply(replyToken, { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } }, [{ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU }]);
+    return reply(replyToken, { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } }, studentMenu);
   }
 
   if (text.startsWith('我要取消預約 ')) {
