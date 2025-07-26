@@ -433,7 +433,7 @@ async function handleTeacherCommands(event, userId) {
   }
 
   // 處理手動調整點數的輸入 (如果還處於這個狀態且不是其他指令)
-  if (pendingManualAdjust[userId]) {
+  if (pendingManualAdjust[userId] && text !== COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) { // 避免重複觸發
       console.log(`DEBUG: 手動調整點數流程，當前狀態: ${pendingManualAdjust[userId].step}`);
       if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
           delete pendingManualAdjust[userId];
@@ -466,17 +466,33 @@ async function handleTeacherCommands(event, userId) {
 
       const operation = amount > 0 ? '加點' : '扣點';
       const absAmount = Math.abs(amount);
-      if (operation === '扣點' && foundUser.points < absAmount) {
-          console.log(`DEBUG: 手動調整點數 - 學員點數不足，無法扣點。`);
-          delete pendingManualAdjust[userId];
-          return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
-      }
+      // Removed initial check for points shortage for robustness, handled inside transaction
+      // if (operation === '扣點' && foundUser.points < absAmount) {
+      //     console.log(`DEBUG: 手動調整點數 - 學員點數不足，無法扣點。`);
+      //     delete pendingManualAdjust[userId];
+      //     return reply(replyToken, `學員 ${foundUser.name} 點數不足。`, teacherMenu);
+      // }
 
       // --- TRANSACTION START ---
+      const transactionClient = await pgClient.connect(); // Get a client from the pool for this transaction
       try {
-          await pgClient.query('BEGIN');
-          // Re-fetch user inside transaction to avoid race conditions
-          const userInTransaction = await getUser(foundUser.id, pgClient);
+          await transactionClient.query('BEGIN');
+          // Re-fetch user inside transaction with FOR UPDATE to avoid race conditions
+          const userInTransactionRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [foundUser.id]);
+          const userInTransaction = userInTransactionRes.rows[0];
+
+          if (!userInTransaction) { // Should not happen given previous check, but for robustness
+              await transactionClient.query('ROLLBACK');
+              delete pendingManualAdjust[userId];
+              return reply(replyToken, '操作失敗，找不到學員資料。', teacherMenu);
+          }
+          
+          if (operation === '扣點' && userInTransaction.points < absAmount) {
+              await transactionClient.query('ROLLBACK');
+              delete pendingManualAdjust[userId];
+              return reply(replyToken, `學員 ${userInTransaction.name} 點數不足（目前 ${userInTransaction.points} 點，需扣 ${absAmount} 點）。`, teacherMenu);
+          }
+
           userInTransaction.points += amount;
 
           console.log(`DEBUG: 手動調整點數 - 學員 ${userInTransaction.name} 點數計算後: ${userInTransaction.points}`);
@@ -484,27 +500,27 @@ async function handleTeacherCommands(event, userId) {
           if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
           userInTransaction.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
 
-          await saveUser(userInTransaction, pgClient); // Pass client to use transaction
-          await pgClient.query('COMMIT');
+          await saveUser(userInTransaction, transactionClient); // Pass client to use transaction
+          await transactionClient.query('COMMIT');
 
           push(userInTransaction.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${userInTransaction.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
           delete pendingManualAdjust[userId];
-          return reply(replyToken, `✅ 已成功為學員 ${userInTransaction.name} ${absAmount} 點，目前點數：${userInTransaction.points} 點。`, teacherMenu);
+          return reply(replyToken, `✅ 已成功為學員 ${userInTransaction.name} ${operation} ${absAmount} 點，目前點數：${userInTransaction.points} 點。`, teacherMenu);
       } catch (err) {
-          await pgClient.query('ROLLBACK');
+          await transactionClient.query('ROLLBACK');
           console.error('❌ 手動調整點數交易失敗:', err.message);
           delete pendingManualAdjust[userId];
           return reply(replyToken, '操作失敗，資料庫發生錯誤，請稍後再試。', teacherMenu);
+      } finally {
+          transactionClient.release(); // Release the client back to the pool
       }
       // --- TRANSACTION END ---
 
-  } else if (text !== COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST && !text.match(/^\S+\s+(-?\d+)$/)) {
-      // 如果不是手動調整點數相關的指令，則清除 pendingManualAdjust 狀態
+  } else if (text !== COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST && !text.match(/^\S+\s+(-?\d+)$/) && pendingManualAdjust[userId]) {
+      // 如果不是手動調整點數相關的指令，並且處於手動調整狀態，則清除 pendingManualAdjust 狀態
       // 這個 else if 確保只在不是手動調整點數的文字輸入時才清除
-      if (pendingManualAdjust[userId]) {
-          console.log(`DEBUG: 清除 pendingManualAdjust 狀態，因為收到新指令: "${text}"`);
-          delete pendingManualAdjust[userId];
-      }
+      console.log(`DEBUG: 清除 pendingManualAdjust 狀態，因為收到新指令: "${text}"`);
+      delete pendingManualAdjust[userId];
   }
 
 
@@ -888,24 +904,18 @@ async function handlePurchaseFlow(event, userId) {
         return true; // Flow handled, but waiting for correct input
       }
 
-      const ordersRes = await pgClient.query(`SELECT * FROM orders WHERE order_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected')`, [orderId]);
-      const order = ordersRes.rows[0];
-
-      if (!order) {
-        delete pendingPurchase[userId];
-        await reply(replyToken, '此訂單狀態不正確或已處理，請重新開始購點流程。', studentMenu);
-        return true;
-      }
-
       // --- TRANSACTION START ---
+      const transactionClient = await pgClient.connect(); // Get a client from the pool for this transaction
       try {
-        await pgClient.query('BEGIN');
-        // Re-fetch order inside transaction
-        const orderInTransaction = (await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId])).rows[0];
-        if (!orderInTransaction) {
-          await pgClient.query('ROLLBACK');
+        await transactionClient.query('BEGIN');
+        // Re-fetch order inside transaction with FOR UPDATE
+        const orderInTransactionRes = await transactionClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
+        const orderInTransaction = orderInTransactionRes.rows[0];
+
+        if (!orderInTransaction || (orderInTransaction.status !== 'pending_payment' && orderInTransaction.status !== 'pending_confirmation' && orderInTransaction.status !== 'rejected')) {
+          await transactionClient.query('ROLLBACK');
           delete pendingPurchase[userId];
-          await reply(replyToken, '無法找到此訂單或訂單已被處理，請重新開始購點流程。', studentMenu);
+          await reply(replyToken, '此訂單狀態不正確或已處理，請重新開始購點流程。', studentMenu);
           return true;
         }
 
@@ -916,8 +926,8 @@ async function handlePurchaseFlow(event, userId) {
           orderId: orderInTransaction.order_id, userId: orderInTransaction.user_id, userName: orderInTransaction.user_name,
           points: orderInTransaction.points, amount: orderInTransaction.amount, last5Digits: orderInTransaction.last_5_digits,
           status: orderInTransaction.status, timestamp: orderInTransaction.timestamp.toISOString()
-        }, pgClient); // Pass client for transaction
-        await pgClient.query('COMMIT');
+        }, transactionClient); // Pass client for transaction
+        await transactionClient.query('COMMIT');
 
         delete pendingPurchase[userId]; // 完成後清除狀態
 
@@ -927,11 +937,13 @@ async function handlePurchaseFlow(event, userId) {
         await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
         return true; // Flow handled
       } catch (err) {
-        await pgClient.query('ROLLBACK');
+        await transactionClient.query('ROLLBACK');
         console.error('❌ 提交後五碼交易失敗:', err.message);
         delete pendingPurchase[userId];
         await reply(replyToken, '提交後五碼時發生錯誤，請稍後再試。', studentMenu);
         return true;
+      } finally {
+          transactionClient.release(); // Release the client back to the pool
       }
       // --- TRANSACTION END ---
 
@@ -952,20 +964,23 @@ async function handlePurchaseFlow(event, userId) {
     case 'confirm_purchase':
       if (text === COMMANDS.STUDENT.CONFIRM_BUY_POINTS) {
         // --- TRANSACTION START ---
+        const transactionClientConfirm = await pgClient.connect(); // Get a client from the pool for this transaction
         try {
-          await pgClient.query('BEGIN');
+          await transactionClientConfirm.query('BEGIN');
           const orderId = `O${Date.now()}`;
           const newOrder = { ...stepData.data, orderId: orderId };
-          await saveOrder(newOrder, pgClient); // Pass client for transaction
-          await pgClient.query('COMMIT');
+          await saveOrder(newOrder, transactionClientConfirm); // Pass client for transaction
+          await transactionClientConfirm.query('COMMIT');
 
           delete pendingPurchase[userId]; // 完成後清除狀態
           await reply(replyToken, `✅ 已確認購買 ${newOrder.points} 點，請先完成轉帳。\n\n` + `戶名：${BANK_INFO.accountName}\n` + `銀行：${BANK_INFO.bankName}\n` + `帳號：${BANK_INFO.accountNumber}\n\n` + `完成轉帳後，請再次進入「點數管理」查看新的匯款提示卡片，並輸入您的匯款帳號後五碼。\n\n` + `您的訂單編號為：${orderId}`, studentMenu);
         } catch (err) {
-          await pgClient.query('ROLLBACK');
+          await transactionClientConfirm.query('ROLLBACK');
           console.error('❌ 確認購買交易失敗:', err.message);
           delete pendingPurchase[userId];
           await reply(replyToken, '確認購買時發生錯誤，請稍後再試。', studentMenu);
+        } finally {
+            transactionClientConfirm.release(); // Release the client back to the pool
         }
         // --- TRANSACTION END ---
 
@@ -1187,16 +1202,19 @@ async function handleStudentCommands(event, userId) {
         } else if (pendingOrder.status === 'pending_payment' || pendingOrder.status === 'rejected') {
             // 如果訂單只是待付款或被退回，還沒有輸入後五碼，則可以取消
             // --- TRANSACTION START ---
+            const transactionClientCancel = await pgClient.connect(); // Get a client from the pool for this transaction
             try {
-              await pgClient.query('BEGIN');
-              await deleteOrder(pendingOrder.order_id, pgClient); // Pass client for transaction
-              await pgClient.query('COMMIT');
+              await transactionClientCancel.query('BEGIN');
+              await deleteOrder(pendingOrder.order_id, transactionClientCancel); // Pass client for transaction
+              await transactionClientCancel.query('COMMIT');
               delete pendingPurchase[userId]; // 清除狀態
               return reply(replyToken, '已取消您的購點訂單。', studentMenu);
             } catch (err) {
-              await pgClient.query('ROLLBACK');
+              await transactionClientCancel.query('ROLLBACK');
               console.error('❌ 取消購點訂單交易失敗:', err.message);
               return reply(replyToken, '取消訂單失敗，請稍後再試。', studentMenu);
+            } finally {
+                transactionClientCancel.release(); // Release the client back to the pool
             }
             // --- TRANSACTION END ---
         }
@@ -1342,25 +1360,39 @@ async function handleStudentCommands(event, userId) {
     if (course.waiting.includes(userId)) {
       return reply(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
     }
-    if (user.points < course.pointsCost) {
-      return reply(replyToken, `你的點數不足，此課程需要 ${course.pointsCost} 點，你目前有 ${user.points} 點。請先購買點數。`, studentMenu);
-    }
+    // Removed points check here, it's now done inside transaction to ensure atomicity
+    // if (user.points < course.pointsCost) {
+    //   return reply(replyToken, `你的點數不足，此課程需要 ${course.pointsCost} 點，你目前有 ${user.points} 點。請先購買點數。`, studentMenu);
+    // }
 
     // --- TRANSACTION START ---
+    const transactionClient = await pgClient.connect(); // Get a client from the pool for this transaction
     try {
-        await pgClient.query('BEGIN');
-        const currentUser = await getUser(userId, pgClient); // Get user inside transaction
+        await transactionClient.query('BEGIN');
+        // Get user and course inside transaction with FOR UPDATE
+        const currentUserRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
+        const currentUser = currentUserRes.rows[0];
 
-        if (currentUser.points < course.pointsCost) {
-            await pgClient.query('ROLLBACK');
-            return reply(replyToken, `你的點數不足，此課程需要 ${course.pointsCost} 點，你目前有 ${currentUser.points} 點。`, studentMenu);
+        const courseInTransactionRes = await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [courseId]);
+        const courseInTransaction = courseInTransactionRes.rows[0];
+
+        if (!currentUser || !courseInTransaction) {
+            await transactionClient.query('ROLLBACK');
+            return reply(replyToken, '預約失敗，用戶或課程資料不存在。', studentMenu);
         }
 
-        // Re-fetch course inside transaction to avoid race conditions
-        const courseInTransaction = (await pgClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [courseId])).rows[0];
-        if (!courseInTransaction) { // Should not happen if checked before, but good for robustness
-            await pgClient.query('ROLLBACK');
-            return reply(replyToken, '預約失敗，課程不存在或已被移除。', studentMenu);
+        if (currentUser.points < courseInTransaction.points_cost) { // Use points_cost from DB
+            await transactionClient.query('ROLLBACK');
+            return reply(replyToken, `你的點數不足，此課程需要 ${courseInTransaction.points_cost} 點，你目前有 ${currentUser.points} 點。請先購買點數。`, studentMenu);
+        }
+        
+        if (courseInTransaction.students.includes(userId)) { // Double check inside transaction
+            await transactionClient.query('ROLLBACK');
+            return reply(replyToken, '你已經預約此課程了。', studentMenu);
+        }
+        if (courseInTransaction.waiting.includes(userId)) { // Double check inside transaction
+            await transactionClient.query('ROLLBACK');
+            return reply(replyToken, '你已在該課程的候補名單中，請耐心等待。', studentMenu);
         }
 
         if (courseInTransaction.students.length < courseInTransaction.capacity) {
@@ -1369,25 +1401,27 @@ async function handleStudentCommands(event, userId) {
           if (!Array.isArray(currentUser.history)) currentUser.history = [];
           currentUser.history.push({ id: courseId, action: `預約成功：${courseInTransaction.title} (扣 ${courseInTransaction.points_cost} 點)`, time: new Date().toISOString() });
 
-          await saveCourse(courseInTransaction, pgClient);
-          await saveUser(currentUser, pgClient);
-          await pgClient.query('COMMIT');
+          await saveCourse(courseInTransaction, transactionClient);
+          await saveUser(currentUser, transactionClient);
+          await transactionClient.query('COMMIT');
 
           return reply(replyToken, `✅ 已成功預約課程：「${courseInTransaction.title}」，扣除 ${courseInTransaction.points_cost} 點。\n\n💡 請注意：課程開始前 8 小時不可退課。`, studentMenu);
         } else {
           courseInTransaction.waiting.push(userId);
           if (!Array.isArray(currentUser.history)) currentUser.history = [];
           currentUser.history.push({ id: courseId, action: `加入候補：${courseInTransaction.title}`, time: new Date().toISOString() });
-          await saveCourse(courseInTransaction, pgClient);
-          await saveUser(currentUser, pgClient); // Save user to record history
-          await pgClient.query('COMMIT');
+          await saveCourse(courseInTransaction, transactionClient);
+          await saveUser(currentUser, transactionClient); // Save user to record history
+          await transactionClient.query('COMMIT');
 
-          return reply(replyToken, `✅ 該課程「${courseInTransaction.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${course.pointsCost} 點。`, studentMenu);
+          return reply(replyToken, `✅ 該課程「${courseInTransaction.title}」已額滿，你已成功加入候補名單。若有空位將依序遞補並自動扣除 ${courseInTransaction.points_cost} 點。`, studentMenu);
         }
     } catch (err) {
-        await pgClient.query('ROLLBACK');
+        await transactionClient.query('ROLLBACK');
         console.error("❌ 預約課程交易失敗:", err.message);
         return reply(replyToken, '預約失敗，系統發生錯誤，請稍後再試。', studentMenu);
+    } finally {
+        transactionClient.release(); // Release the client back to the pool
     }
     // --- TRANSACTION END ---
   }
@@ -1475,56 +1509,76 @@ async function handleStudentCommands(event, userId) {
     }
 
     // --- TRANSACTION START ---
+    const transactionClient = await pgClient.connect(); // Get a client from the pool for this transaction
     let replyMessage = '';
     try {
-        await pgClient.query('BEGIN');
+        await transactionClient.query('BEGIN');
 
-        // 1. Refund cancelling user
-        const cancellingUser = await getUser(userId, pgClient);
+        // 1. Refund cancelling user - with FOR UPDATE
+        const cancellingUserRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
+        const cancellingUser = cancellingUserRes.rows[0];
+
+        if (!cancellingUser) { // Safety check
+            await transactionClient.query('ROLLBACK');
+            return reply(replyToken, '取消預約失敗，找不到您的用戶資料。', studentMenu);
+        }
+
         cancellingUser.points += course.pointsCost;
         if (!Array.isArray(cancellingUser.history)) cancellingUser.history = [];
         cancellingUser.history.push({ id: id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
-        await saveUser(cancellingUser, pgClient);
+        await saveUser(cancellingUser, transactionClient);
 
-        // 2. Update course student list
-        const updatedCourse = await (await pgClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id])).rows[0];
+        // 2. Update course student list - with FOR UPDATE
+        const updatedCourseRes = await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id]);
+        const updatedCourse = updatedCourseRes.rows[0];
+
+        if (!updatedCourse) { // Safety check
+            await transactionClient.query('ROLLBACK');
+            return reply(replyToken, '取消預約失敗，課程不存在或已被移除。', studentMenu);
+        }
+
         updatedCourse.students = updatedCourse.students.filter(sid => sid !== userId);
         replyMessage = `課程「${course.title}」已取消，已退還 ${course.pointsCost} 點。`;
 
         // 3. Handle waitlist promotion
         if (updatedCourse.waiting.length > 0 && updatedCourse.students.length < updatedCourse.capacity) {
             const nextWaitingUserId = updatedCourse.waiting.shift(); // Get and remove from waiting list
-            const nextWaitingUser = await getUser(nextWaitingUserId, pgClient);
+            
+            // Fetch next waiting user inside the same transaction with FOR UPDATE
+            const nextWaitingUserRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [nextWaitingUserId]);
+            const nextWaitingUser = nextWaitingUserRes.rows[0];
 
-            if (nextWaitingUser && nextWaitingUser.points >= course.pointsCost) {
+            if (nextWaitingUser && nextWaitingUser.points >= updatedCourse.points_cost) { // Use updatedCourse.points_cost
                 updatedCourse.students.push(nextWaitingUserId);
-                nextWaitingUser.points -= course.pointsCost;
+                nextWaitingUser.points -= updatedCourse.points_cost;
                 if (!Array.isArray(nextWaitingUser.history)) nextWaitingUser.history = [];
-                nextWaitingUser.history.push({ id: id, action: `候補補上：${course.title} (扣 ${course.pointsCost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
+                nextWaitingUser.history.push({ id: id, action: `候補補上：${updatedCourse.title} (扣 ${updatedCourse.points_cost} 點)`, time: new Date().toISOString() }); // Fix: use courseId
 
-                await saveUser(nextWaitingUser, pgClient);
+                await saveUser(nextWaitingUser, transactionClient);
 
-                push(nextWaitingUserId, `你已從候補名單補上課程「${course.title}」！\n上課時間：${formatDateTime(updatedCourse.time)}\n系統已自動扣除 ${course.pointsCost} 點。請確認你的「我的課程」。\n\n💡 請注意：課程開始前 8 小時不可退課。`)
+                push(nextWaitingUserId, `你已從候補名單補上課程「${updatedCourse.title}」！\n上課時間：${formatDateTime(updatedCourse.time)}\n系統已自動扣除 ${updatedCourse.points_cost} 點。請確認你的「我的課程」。\n\n💡 請注意：課程開始前 8 小時不可退課。`)
                     .catch(e => console.error(`❌ 向學員 ${nextWaitingUserId} 發送提醒失敗:`, e.message));
                 replyMessage += '\n有候補學生已遞補成功。';
             } else if (nextWaitingUser) {
                 const studentName = nextWaitingUser.name || `未知學員(${nextWaitingUser.id.substring(0, 4)}...)`; // Fix: Use nextWaitingUser.id
-                replyMessage += `\n候補學生 ${studentName} 點數不足 (需要 ${course.pointsCost} 點)，未能遞補。已將其從候補名單移除。`;
+                replyMessage += `\n候補學生 ${studentName} 點數不足 (需要 ${updatedCourse.points_cost} 點)，未能遞補。已將其從候補名單移除。`;
                 if (TEACHER_ID) {
-                  push(TEACHER_ID, `課程「${course.title}」（${formatDateTime(course.time)}）有學生取消，但候補學生 ${studentName} 點數不足 (需要 ${course.pointsCost} 點)，未能遞補。已自動從候補名單移除該學生。`)
+                  push(TEACHER_ID, `課程「${updatedCourse.title}」（${formatDateTime(updatedCourse.time)}）有學生取消，但候補學生 ${studentName} 點數不足 (需要 ${updatedCourse.points_cost} 點)，未能遞補。已自動從候補名單移除該學生。`)
                     .catch(e => console.error('❌ 通知老師失敗', e.message));
                 }
             } else {
                 replyMessage += '\n候補名單中存在無效用戶，已移除。';
             }
         }
-        await saveCourse(updatedCourse, pgClient);
-        await pgClient.query('COMMIT');
+        await saveCourse(updatedCourse, transactionClient);
+        await transactionClient.query('COMMIT');
         return reply(replyToken, replyMessage.trim(), studentMenu);
     } catch(err) {
-        await pgClient.query('ROLLBACK');
+        await transactionClient.query('ROLLBACK');
         console.error("❌ 取消預約交易失敗:", err.message);
         return reply(replyToken, '取消預約失敗，系統發生錯誤，請稍後再試。', studentMenu);
+    } finally {
+        transactionClient.release(); // Release the client back to the pool
     }
     // --- TRANSACTION END ---
   }
@@ -1542,24 +1596,35 @@ async function handleStudentCommands(event, userId) {
     }
 
     // --- TRANSACTION START ---
+    const transactionClient = await pgClient.connect(); // Get a client from the pool for this transaction
     try {
-      await pgClient.query('BEGIN');
-      const courseInTransaction = (await pgClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id])).rows[0];
-      const userInTransaction = await getUser(userId, pgClient);
+      await transactionClient.query('BEGIN');
+      const courseInTransactionRes = await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [id]);
+      const courseInTransaction = courseInTransactionRes.rows[0];
+
+      const userInTransactionRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      const userInTransaction = userInTransactionRes.rows[0];
+
+      if (!courseInTransaction || !userInTransaction) {
+          await transactionClient.query('ROLLBACK');
+          return reply(replyToken, '取消候補失敗，課程或用戶資料不存在。', studentMenu);
+      }
 
       courseInTransaction.waiting = courseInTransaction.waiting.filter(x => x !== userId);
       if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
-      userInTransaction.history.push({ id: id, action: `取消候補：${course.title}`, time: new Date().toISOString() }); // Fix: use courseId
+      userInTransaction.history.push({ id: id, action: `取消候補：${courseInTransaction.title}`, time: new Date().toISOString() }); // Fix: use courseId
 
-      await saveCourse(courseInTransaction, pgClient);
-      await saveUser(userInTransaction, pgClient);
-      await pgClient.query('COMMIT');
+      await saveCourse(courseInTransaction, transactionClient);
+      await saveUser(userInTransaction, transactionClient);
+      await transactionClient.query('COMMIT');
 
-      return reply(replyToken, `已取消課程「${course.title}」的候補。`, studentMenu);
+      return reply(replyToken, `已取消課程「${courseInTransaction.title}」的候補。`, studentMenu);
     } catch(err) {
-      await pgClient.query('ROLLBACK');
+      await transactionClient.query('ROLLBACK');
       console.error("❌ 取消候補交易失敗:", err.message);
       return reply(replyToken, '取消候補失敗，系統發生錯誤，請稍後再試。', studentMenu);
+    } finally {
+        transactionClient.release(); // Release the client back to the pool
     }
     // --- TRANSACTION END ---
   }
@@ -1676,14 +1741,15 @@ async function handleEvent(event) {
 
             if (postbackAction === 'cancel_course_group_execute') {
                 // --- TRANSACTION START ---
+                const transactionClient = await pgClient.connect(); // Get a client from the pool for this transaction
                 try {
-                    await pgClient.query('BEGIN');
+                    await transactionClient.query('BEGIN');
 
                     // 調用新的批次刪除函數，它會返回被刪除的課程列表
-                    const cancelledCourses = await deleteCoursesByPrefix(coursePrefix, pgClient);
+                    const cancelledCourses = await deleteCoursesByPrefix(coursePrefix, transactionClient); // Pass pgClient for transaction
 
                     if (cancelledCourses.length === 0) {
-                        await pgClient.query('ROLLBACK');
+                        await transactionClient.query('ROLLBACK');
                         return reply(replyToken, `找不到任何以「${coursePrefix}」開頭的課程可供取消。`, teacherMenu);
                     }
 
@@ -1691,36 +1757,38 @@ async function handleEvent(event) {
                     for (const course of cancelledCourses) {
                         // Notify and refund enrolled students
                         for (const stuId of course.students) {
-                            const studentUser = await getUser(stuId, pgClient);
+                            const studentUser = await getUser(stuId, transactionClient); // Pass pgClient for transaction
                             if (studentUser) {
                                 studentUser.points += course.pointsCost;
                                 if (!Array.isArray(studentUser.history)) studentUser.history = [];
                                 studentUser.history.push({ id: course.id, action: `課程取消退點：${course.title} (退 ${course.pointsCost} 點)`, time: new Date().toISOString() });
-                                await saveUser(studentUser, pgClient);
+                                await saveUser(studentUser, transactionClient); // Pass pgClient for transaction
                                 push(stuId, `【課程取消通知】\n您預約的課程「${course.title}」（${formatDateTime(course.time)}）已被老師批次取消，系統已自動退還 ${course.pointsCost} 點。`).catch(e => console.error(`❌ 向學員 ${stuId} 發送提醒失敗:`, e.message));
                             }
                         }
                         // Notify waiting students
                         for (const waitId of course.waiting) {
-                            const waitingUser = await getUser(waitId, pgClient);
+                            const waitingUser = await getUser(waitId, transactionClient); // Pass pgClient for transaction
                             if (waitingUser) {
                                 if (!Array.isArray(waitingUser.history)) waitingUser.history = [];
                                 waitingUser.history.push({ id: course.id, action: `候補課程取消：${course.title}`, time: new Date().toISOString() });
-                                await saveUser(waitingUser, pgClient);
+                                await saveUser(waitingUser, transactionClient); // Pass pgClient for transaction
                                 push(waitId, `【候補取消通知】\n您候補的課程「${course.title}」（${formatDateTime(course.time)}）已被老師批次取消。`).catch(e => console.error(`❌ 通知候補者 ${waitId} 課程取消失敗:`, e.message));
                             }
                         }
                     }
 
-                    await pgClient.query('COMMIT');
+                    await transactionClient.query('COMMIT');
 
                     console.log(`✅ 所有以 ${coursePrefix} 開頭的課程 (共 ${cancelledCourses.length} 堂) 已成功批次取消。`);
                     return reply(replyToken, `✅ 已成功批次取消所有以「${coursePrefix}」開頭的 ${cancelledCourses.length} 堂課程，並已通知所有相關學員。`, teacherMenu);
                 } catch(err) {
-                    await pgClient.query('ROLLBACK');
+                    await transactionClient.query('ROLLBACK');
                     console.error("❌ 批次取消課程交易失敗:", err.message);
                     await push(userId, '批次取消課程失敗，系統發生錯誤，請稍後再試。');
                     return;
+                } finally {
+                    transactionClient.release(); // Release the client back to the pool
                 }
                 // --- TRANSACTION END ---
             }
@@ -1734,23 +1802,22 @@ async function handleEvent(event) {
             // ===================================
 
             if (postbackAction === 'confirm_order') {
+                const transactionClientOrder = await pgClient.connect(); // Use a new client for this transaction
                 try {
-                    // 使用 reply 會消耗 token，所以在任何可能長時間的操作前先回覆一個「處理中」
-                    // 這樣可以避免 token 超時，但會讓老師看到兩次訊息。
-                    // 更好的做法是將所有錯誤處理都改用 push
-                    await pgClient.query('BEGIN');
-                    const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
+                    await transactionClientOrder.query('BEGIN');
+                    // Add FOR UPDATE to lock the order row
+                    const ordersRes = await transactionClientOrder.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
                     const rawOrder = ordersRes.rows[0]; // 從資料庫取出的原始資料是 snake_case
 
                     if (!rawOrder || rawOrder.status !== 'pending_confirmation') {
-                        await pgClient.query('ROLLBACK');
+                        await transactionClientOrder.query('ROLLBACK');
                         await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
                         return;
                     }
                     
-                    const studentUser = await getUser(rawOrder.user_id, pgClient); // 使用 rawOrder.user_id
+                    const studentUser = await getUser(rawOrder.user_id, transactionClientOrder); // 使用 rawOrder.user_id, 傳遞 client
                     if (!studentUser) {
-                        await pgClient.query('ROLLBACK');
+                        await transactionClientOrder.query('ROLLBACK');
                         await push(userId, `找不到購點學員 (ID: ${rawOrder.user_id}) 的資料。`); // 使用 rawOrder.user_id
                         return;
                     }
@@ -1771,30 +1838,35 @@ async function handleEvent(event) {
                         timestamp: rawOrder.timestamp.toISOString() // 轉換為 ISO 格式
                     };
                     
-                    await saveUser(studentUser, pgClient);
-                    await saveOrder(orderToSave, pgClient); // 傳遞 camelCase 格式的物件
-                    await pgClient.query('COMMIT');
+                    await saveUser(studentUser, transactionClientOrder); // 傳遞 transactionClientOrder
+                    await saveOrder(orderToSave, transactionClientOrder); // 傳遞 transactionClientOrder
+                    await transactionClientOrder.query('COMMIT');
 
+                    // 注意：這裡仍然使用 replyToken，如果 postback 處理時間過長，這裡可能會失敗。
+                    // 由於老師端的操作，期望立即回覆，所以這裡暫時保留 reply，並在 catch 中使用 push 作為後備。
                     await reply(replyToken, `✅ 已為學員 ${rawOrder.user_name} 加點 ${rawOrder.points} 點，訂單 ${rawOrder.order_id} 已完成。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                     push(rawOrder.user_id, `🎉 您購買的 ${rawOrder.points} 點已成功入帳！目前點數：${studentUser.points} 點。`).catch(e => console.error(`❌ 通知學員 ${rawOrder.user_id} 購點成功失敗:`, e.message));
 
                 } catch (err) {
-                    await pgClient.query('ROLLBACK');
+                    await transactionClientOrder.query('ROLLBACK');
                     console.error("❌ 訂單確認交易失敗:", err.message);
-                    // 【修改處】將 reply 改為 push
                     await push(userId, '訂單確認失敗，系統發生錯誤，請稍後再試。');
                     return;
+                } finally {
+                    transactionClientOrder.release(); // Release the client back to the pool
                 }
             } 
             
             if (postbackAction === 'reject_order') {
+                const transactionClientOrder = await pgClient.connect(); // Use a new client for this transaction
                 try {
-                    await pgClient.query('BEGIN');
-                    const ordersRes = await pgClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
+                    await transactionClientOrder.query('BEGIN');
+                    // Add FOR UPDATE to lock the order row
+                    const ordersRes = await transactionClientOrder.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
                     const rawOrder = ordersRes.rows[0]; // 從資料庫取出的原始資料是 snake_case
 
                     if (!rawOrder || rawOrder.status !== 'pending_confirmation') {
-                        await pgClient.query('ROLLBACK');
+                        await transactionClientOrder.query('ROLLBACK');
                         await push(userId, '找不到此筆待確認訂單或訂單狀態不正確。');
                         return;
                     }
@@ -1811,18 +1883,20 @@ async function handleEvent(event) {
                         timestamp: rawOrder.timestamp.toISOString() // 轉換為 ISO 格式
                     };
 
-                    await saveOrder(orderToSave, pgClient); // 傳遞 camelCase 格式的物件
-                    await pgClient.query('COMMIT');
+                    await saveOrder(orderToSave, transactionClientOrder); // 傳遞 transactionClientOrder
+                    await transactionClientOrder.query('COMMIT');
 
+                    // 這裡仍然使用 replyToken，如果 postback 處理時間過長，這裡可能會失敗。
                     await reply(replyToken, `❌ 已退回訂單 ${rawOrder.order_id}。已通知學員 ${rawOrder.user_name} 匯款資訊有誤。`, [{ type: 'message', label: '返回點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }]);
                     push(rawOrder.user_id, `⚠️ 您的購點訂單 ${rawOrder.order_id} 被老師退回了！\n\n原因：匯款金額或匯款帳號後五碼有誤，請您檢查後重新提交。\n\n請您進入「點數管理」查看訂單狀態，並點擊「重新提交匯款後五碼」按鈕修正。`).catch(e => console.error(`❌ 通知學員 ${rawOrder.user_id} 訂單退回失敗:`, e.message));
 
                 } catch (err) {
-                    await pgClient.query('ROLLBACK');
+                    await transactionClientOrder.query('ROLLBACK');
                     console.error("❌ 訂單退回交易失敗:", err.message);
-                    // 【修改處】將 reply 改為 push
                     await push(userId, '訂單退回失敗，系統發生錯誤，請稍後再試。');
                     return;
+                } finally {
+                    transactionClientOrder.release(); // Release the client back to the pool
                 }
             }
             
@@ -1970,19 +2044,22 @@ async function handleEvent(event) {
                         });
                     }
 
+                    const transactionClientAddCourse = await pgClient.connect(); // Use a new client for this transaction
                     try {
-                        await pgClient.query('BEGIN');
+                        await transactionClientAddCourse.query('BEGIN');
                         for (const course of coursesToAdd) {
-                            await saveCourse(course, pgClient);
+                            await saveCourse(course, transactionClientAddCourse); // Pass client for transaction
                         }
-                        await pgClient.query('COMMIT');
+                        await transactionClientAddCourse.query('COMMIT');
                         delete pendingCourseCreation[userId];
                         return reply(replyToken, `✅ 已成功新增 ${stepData.data.totalClasses} 堂「${stepData.data.title}」系列課程。\n課程組代碼為【${coursePrefix}】。\n首堂時間：${formatDateTime(coursesToAdd[0].time)}`, teacherMenu);
                     } catch (err) {
-                        await pgClient.query('ROLLBACK');
+                        await transactionClientAddCourse.query('ROLLBACK');
                         console.error("❌ 新增週期課程交易失敗:", err.message);
                         delete pendingCourseCreation[userId];
                         return reply(replyToken, '新增課程失敗，系統發生錯誤，請稍後再試。', teacherMenu);
+                    } finally {
+                        transactionClientAddCourse.release(); // Release the client back to the pool
                     }
 
                 } else if (text === COMMANDS.STUDENT.CANCEL_ADD_COURSE) {
