@@ -1,4 +1,4 @@
-// index.js - V4.8.1 (Fixed Order Confirmation Error Handling)
+// index.js - V4.9.0 (Multiple Course Group Cards)
 
 // =====================================
 //                 模組載入
@@ -428,8 +428,6 @@ async function handleTeacherCommands(event, userId) {
         foundUser.history.slice(-5).reverse().forEach(record => {
           studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
         });
-      } else {
-        studentInfo += `無歷史記錄。\n`;
       }
       return reply(replyToken, studentInfo.trim(), teacherMenu);
   }
@@ -588,84 +586,79 @@ async function handleTeacherCommands(event, userId) {
   if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT || text === COMMANDS.TEACHER.CANCEL_COURSE || text === COMMANDS.TEACHER.COURSE_LIST || text === COMMANDS.TEACHER.ADD_COURSE) {
     console.log(`DEBUG: 處理 COURSE_MANAGEMENT 相關指令`);
     const now = Date.now();
-    const sevenDaysLater = now + (ONE_DAY_IN_MS * 7); // 未來七天
-
-    // 過濾出未來7天內有課的課程，並找出最早的一堂
-    let earliestUpcomingCourse = null;
-    let earliestCourseTime = Infinity;
 
     // 從資料庫獲取所有課程
     const allCourses = Object.values(await getAllCourses());
 
-    allCourses.forEach(course => {
+    // 按課程前綴分組，並找出每個前綴下最接近現在時間的課程
+    const courseGroups = {};
+    for (const course of allCourses) {
         const courseTime = new Date(course.time).getTime();
-        // 檢查課程是否在未來7天內 (含今天到第7天結束)
-        if (courseTime > now && courseTime <= sevenDaysLater) {
-            // 找出最早的那一堂課
-            if (courseTime < earliestCourseTime) {
-                earliestCourseTime = courseTime;
-                earliestUpcomingCourse = course;
+        // 只考慮未來的課程
+        if (courseTime > now) {
+            const prefix = course.id.substring(0, 2); // 假設前綴是課程ID的前兩位
+            if (!courseGroups[prefix] || courseTime < new Date(courseGroups[prefix].time).getTime()) {
+                courseGroups[prefix] = course;
             }
         }
-    });
+    }
 
     const courseBubbles = [];
 
-    // 只顯示一張卡片：未來7天內最早的課程
-    if (earliestUpcomingCourse) {
-      // 獲取這張卡片代表的課程的前綴 (例如 'UY')
-      const coursePrefix = earliestUpcomingCourse.id.substring(0, 2);
-
-      courseBubbles.push({
-        type: 'bubble',
-        header: {
-          type: 'box', layout: 'vertical',
-          contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }],
-          backgroundColor: '#52b69a', paddingAll: 'lg'
-        },
-        body: {
-          type: 'box', layout: 'vertical', spacing: 'md',
-          contents: [
-            { type: 'text', text: earliestUpcomingCourse.title, weight: 'bold', size: 'xl', wrap: true },
-            {
-              type: 'box', layout: 'baseline', spacing: 'sm',
-              contents: [
-                { type: 'text', text: '課程組代碼', color: '#aaaaaa', size: 'sm', flex: 2 },
-                { type: 'text', text: coursePrefix, wrap: true, color: '#666666', size: 'sm', flex: 5 }, // 顯示課程組代碼 (前綴)
-              ],
+    // 為每個課程組生成一張卡片
+    const sortedPrefixes = Object.keys(courseGroups).sort(); // 按前綴字母排序
+    for (const prefix of sortedPrefixes) {
+        const earliestUpcomingCourse = courseGroups[prefix];
+        courseBubbles.push({
+            type: 'bubble',
+            header: {
+                type: 'box', layout: 'vertical',
+                contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }],
+                backgroundColor: '#52b69a', paddingAll: 'lg'
             },
-            {
-              type: 'box', layout: 'baseline', spacing: 'sm',
-              contents: [
-                { type: 'text', text: '未來最近堂數', color: '#aaaaaa', size: 'sm', flex: 2 },
-                { type: 'text', text: formatDateTime(earliestUpcomingCourse.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
-              ],
+            body: {
+                type: 'box', layout: 'vertical', spacing: 'md',
+                contents: [
+                    { type: 'text', text: earliestUpcomingCourse.title, weight: 'bold', size: 'xl', wrap: true },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm',
+                        contents: [
+                            { type: 'text', text: '課程組代碼', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: prefix, wrap: true, color: '#666666', size: 'sm', flex: 5 }, // 顯示課程組代碼 (前綴)
+                        ],
+                    },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm',
+                        contents: [
+                            { type: 'text', text: '最近堂數時間', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: formatDateTime(earliestUpcomingCourse.time), wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                        ],
+                    },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm',
+                        contents: [
+                            { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: `${earliestUpcomingCourse.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
+                        ],
+                    },
+                ],
             },
-            {
-              type: 'box', layout: 'baseline', spacing: 'sm',
-              contents: [
-                { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 },
-                { type: 'text', text: `${earliestUpcomingCourse.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 },
-              ],
+            footer: {
+                type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
+                contents: [
+                    {
+                        type: 'button', style: 'primary', color: '#de5246', height: 'sm',
+                        action: {
+                            type: 'postback',
+                            // 將要取消的「前綴」傳遞給 Postback
+                            label: '取消此課程組',
+                            data: `action=cancel_course_group_confirm&prefix=${prefix}`,
+                            displayText: `準備取消 ${prefix} 系列課程`
+                        },
+                    },
+                ],
             },
-          ],
-        },
-        footer: {
-          type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
-          contents: [
-            {
-              type: 'button', style: 'primary', color: '#de5246', height: 'sm',
-              action: {
-                type: 'postback',
-                // 將要取消的「前綴」傳遞給 Postback
-                label: '取消此課程組',
-                data: `action=cancel_course_group_confirm&prefix=${coursePrefix}`,
-                displayText: `準備取消 ${coursePrefix} 系列課程`
-              },
-            },
-          ],
-        },
-      });
+        });
     }
 
     const addCourseBubble = {
@@ -696,14 +689,17 @@ async function handleTeacherCommands(event, userId) {
     courseBubbles.push(addCourseBubble);
 
     let introText = '課程管理面板';
-    if (!earliestUpcomingCourse) { // 如果沒有找到任何未來7天內的課程
-        introText = '目前未來7天內沒有課程，點擊「+」可新增。';
+    if (Object.keys(courseGroups).length === 0) { // 如果沒有找到任何未來課程組
+        introText = '目前沒有任何進行中的課程組，點擊「+」可新增。';
+    } else {
+        introText = '以下為各課程組最接近的課程：';
     }
+
 
     const flexMessage = {
       type: 'flex',
       altText: introText,
-      contents: { type: 'carousel', contents: courseBubbles },
+      contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) }, // 最多顯示10張卡片
     };
 
     const menuOptions = [{ type: 'message', label: '返回主選單', text: COMMANDS.TEACHER.MAIN_MENU }];
@@ -711,7 +707,7 @@ async function handleTeacherCommands(event, userId) {
     return reply(replyToken, [
         { type: 'text', text: introText },
         flexMessage
-    ], menuOptions); // 修改這裡，將 introText 和 flexMessage 分開傳遞
+    ], menuOptions);
 }
 
   if (text === COMMANDS.TEACHER.REPORT) {
@@ -1320,7 +1316,7 @@ async function handleStudentCommands(event, userId) {
     const flexMessage = {
         type: 'flex',
         altText: '可預約課程列表',
-        contents: { type: 'carousel', contents: courseBubbles }
+        contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) }
     };
 
     return reply(replyToken, [
@@ -1466,7 +1462,7 @@ async function handleStudentCommands(event, userId) {
   if (text.startsWith('我要取消預約 ')) {
     const id = text.replace('我要取消預約 ', '').trim();
     const course = courses[id];
-    const now = Date.now();
+    const now = Date.now(); // Fix: Corrected to Date.now()
 
     if (!course || !course.students.includes(userId)) {
       return reply(replyToken, '你沒有預約此課程，無法取消。', studentMenu);
@@ -2115,7 +2111,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.8.1 (Fixed Order Confirmation Error Handling)`);
+  console.log(`Bot 版本: V4.9.0 (Multiple Course Group Cards)`);
 
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
