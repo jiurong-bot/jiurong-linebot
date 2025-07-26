@@ -1,4 +1,4 @@
-// index.js - V4.9.3 (Fix Student Booking Bug)
+// index.js - V4.9.3.1 (Fix Student Booking Bug)
 
 // =====================================
 //                 模組載入
@@ -422,8 +422,8 @@ async function handleTeacherCommands(event, userId) {
             footer: {
                 type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
                 contents: [
-                    { type: 'button', style: 'primary', color: '#1A759F', height: 'sm', action: { type: 'postback', label: '管理單堂課程', data: `action=manage_course_group&prefix=${prefix}`, displayText: `管理 ${prefix} 系列的單堂課程` }, },
-                    { type: 'button', style: 'secondary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: '批次取消此系列', data: `action=cancel_course_group_confirm&prefix=${prefix}`, displayText: `準備批次取消 ${prefix} 系列課程` }, },
+                    { type: 'button', style: 'primary', color: '#1A759F', height: 'sm', action: { type: 'postback', label: '單次取消', data: `action=manage_course_group&prefix=${prefix}`, displayText: `管理 ${prefix} 系列的單堂課程` }, },
+                    { type: 'button', style: 'secondary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: '批次取消', data: `action=cancel_course_group_confirm&prefix=${prefix}`, displayText: `準備批次取消 ${prefix} 系列課程` }, },
                 ],
             },
         });
@@ -719,7 +719,6 @@ async function handleStudentCommands(event, userId) {
           courseToSave.students.push(userId);
           currentUser.points -= courseToSave.pointsCost;
           currentUser.history.push({ id: courseId, action: `預約成功：${courseToSave.title} (扣 ${courseToSave.pointsCost} 點)`, time: new Date().toISOString() });
-          await saveCourse(courseToSave, transactionClient);
           await saveUser(currentUser, transactionClient);
           await transactionClient.query('COMMIT');
           return reply(replyToken, `✅ 已成功預約課程：「${courseToSave.title}」。`, studentMenu);
