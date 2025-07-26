@@ -2131,3 +2131,27 @@ app.listen(PORT, async () => {
     console.warn('⚠️ SELF_URL 未設定，Keep-alive 功能未啟用。');
   }
 });
+
+// 假設您已經配置了 client
+const line = require('@line/bot-sdk');
+const client = new line.Client({
+    channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+    channelSecret: process.env.CHANNEL_SECRET,
+});
+
+async function getAllRichMenus() {
+    try {
+        const richMenus = await client.getRichMenuList();
+        console.log('所有 Rich Menu 列表:');
+        richMenus.forEach(menu => {
+            console.log(`  Name: ${menu.name}`);
+            console.log(`  Rich Menu ID: ${menu.richMenuId}`);
+            console.log('---');
+        });
+    } catch (error) {
+        console.error('取得 Rich Menu 列表失敗:', error);
+    }
+}
+
+// 執行這個函數來列出所有 Rich Menu
+getAllRichMenus();
