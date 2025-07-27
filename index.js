@@ -1,4 +1,4 @@
-// index.js - V4.9.14 (Removed all student quickReply menus, to use rich menu only)
+// index.js - V4.9.15 (Fixed double reply and variable name bug)
 
 // =====================================
 //                 模組載入
@@ -536,7 +536,7 @@ async function handlePurchaseFlow(event, userId) {
       try {
         await transactionClient.query('BEGIN');
         const orderInTransactionRes = await transactionClient.query('SELECT * FROM orders WHERE order_id = $1 FOR UPDATE', [orderId]);
-        const orderInTransaction = orderInTransactionRes.rows[0];
+        let orderInTransaction = orderInTransactionRes.rows[0];
         if (!orderInTransaction || (orderInTransaction.status !== 'pending_payment' && orderInTransaction.status !== 'pending_confirmation' && orderInTransaction.status !== 'rejected')) {
           await transactionClient.query('ROLLBACK');
           delete pendingPurchase[userId];
@@ -545,13 +545,45 @@ async function handlePurchaseFlow(event, userId) {
         }
         orderInTransaction.last_5_digits = last5Digits;
         orderInTransaction.status = 'pending_confirmation';
-        await saveOrder({ orderId: orderInTransaction.order_id, userId: orderInTransaction.user_id, userName: orderInTransaction.user_name, points: orderInTransaction.points, amount: orderInTransaction.amount, last5Digits: orderInTransaction.last_5_digits, status: orderInTransaction.status, timestamp: orderInTransaction.timestamp.toISOString() }, transactionClient);
+        const newOrderData = { orderId: orderInTransaction.order_id, userId: orderInTransaction.user_id, userName: orderInTransaction.user_name, points: orderInTransaction.points, amount: orderInTransaction.amount, last5Digits: orderInTransaction.last_5_digits, status: orderInTransaction.status, timestamp: new Date(orderInTransaction.timestamp).toISOString() };
+        await saveOrder(newOrderData, transactionClient);
         await transactionClient.query('COMMIT');
         delete pendingPurchase[userId];
-        await reply(replyToken, `已收到您的匯款帳號後五碼：${last5Digits}。\n感謝您的配合！我們將盡快為您核對並加點。`);
-        // 這裡直接調用 handleStudentCommands 讓它處理返回點數管理的 Flex Message
-        await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
+        
+        // --- START: FIX FOR DOUBLE REPLY ---
+        const successMessage = {
+            type: 'text',
+            text: `已收到您的匯款帳號後五碼：${last5Digits}。\n感謝您的配合！我們將盡快為您核對並加點。`
+        };
+
+        const updatedUser = await getUser(userId);
+        const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
+        const pendingOrder = ordersRes.rows[0];
+        const pointBubbles = [];
+
+        if (pendingOrder) {
+            let actionButtonLabel, cardTitle, cardColor, statusText, actionCmd;
+            let additionalInfo = '';
+            if (pendingOrder.status === 'pending_confirmation') {
+                actionButtonLabel = '修改匯款後五碼'; actionCmd = COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardTitle = '🕒 匯款已提交，等待確認'; cardColor = '#ff9e00'; statusText = '已提交五碼，等待老師確認';
+            } else if (pendingOrder.status === 'rejected') {
+                actionButtonLabel = '重新提交匯款後五碼'; actionCmd = COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardTitle = '❌ 訂單被退回！'; cardColor = '#d90429'; statusText = '訂單被老師退回'; additionalInfo = '請檢查匯款金額或後五碼，並重新提交。';
+            } else { // This case should not be reachable after submitting last 5 digits, but kept for safety.
+                actionButtonLabel = '輸入匯款後五碼'; actionCmd = COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER; cardTitle = '❗ 匯款待確認'; cardColor = '#f28482'; statusText = '待付款';
+            }
+            pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: cardTitle, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: cardColor, paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [ { type: 'text', text: `訂單 ID: ${pendingOrder.order_id}`, weight: 'bold', size: 'md', align: 'center' }, { type: 'text', text: `購買 ${pendingOrder.points} 點 / ${pendingOrder.amount} 元`, size: 'sm', align: 'center' }, { type: 'text', text: `狀態: ${statusText}`, size: 'sm', align: 'center' }, { type: 'text', text: `後五碼: ${pendingOrder.last5Digits || '未輸入'}`, size: 'sm', align: 'center' }, ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', align: 'center', color: '#B00020', wrap: true }] : []), { type: 'text', text: `提交時間: ${formatDateTime(pendingOrder.timestamp)}`, size: 'xs', align: 'center', color: '#666666' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', height: 'sm', color: '#de5246', action: { type: 'message', label: actionButtonLabel, text: actionCmd } }, { type: 'button', style: 'secondary', height: 'sm', color: '#8d99ae', action: { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE } }] } });
+        }
+        pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '剩餘點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#76c893', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [ { type: 'text', text: `${updatedUser.points} 點`, weight: 'bold', size: 'xxl', align: 'center' }, { type: 'text', text: `上次查詢: ${new Date().toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })}`, color: '#666666', size: 'xs', align: 'center' } ] }, action: { type: 'message', label: '重新整理', text: COMMANDS.STUDENT.POINTS } });
+        pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '購買點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#34a0a4', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [{ type: 'text', text: '點此選購點數方案', size: 'md', color: '#AAAAAA', align: 'center', weight: 'bold' }] }, action: { type: 'message', label: '購買點數', text: COMMANDS.STUDENT.BUY_POINTS } });
+        pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '購點紀錄', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#1a759f', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [{ type: 'text', text: '查詢購買狀態與歷史', size: 'md', color: '#AAAAAA', align: 'center', weight: 'bold' }] }, action: { type: 'message', label: '購點紀錄', text: COMMANDS.STUDENT.PURCHASE_HISTORY } });
+
+        const pointsFlexMessage = { type: 'flex', altText: '點數管理選單', contents: { type: 'carousel', contents: pointBubbles } };
+        
+        await reply(replyToken, [successMessage, pointsFlexMessage]);
+        // --- END: FIX FOR DOUBLE REPLY ---
+        
         return true;
+
       } catch (err) {
         await transactionClient.query('ROLLBACK');
         console.error('❌ 提交後五碼交易失敗:', err.message);
@@ -939,7 +971,7 @@ async function handleStudentCommands(event, userId) {
                 return reply(replyToken, `已取消課程「${courseToCancelWaiting.title}」的候補。`); 
             } catch(err) {
                 await transactionClient.query('ROLLBACK');
-                console.error("❌ 取消候補交易失敗:", err.stack);
+                console.error("❌ 取消候補交易失败:", err.stack);
                 return reply(replyToken, `取消失敗：${err.message}`); 
             } finally {
                 transactionClient.release();
@@ -1021,7 +1053,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.14 (Removed all student quickReply menus, to use rich menu only)`);
+  console.log(`Bot 版本: V4.9.15 (Fixed double reply and variable name bug)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1360,9 +1392,11 @@ async function handleEvent(event) {
                         if (student) {
                             student.points += courseToDelete.points_cost;
                             if (!Array.isArray(student.history)) student.history = [];
-                            student.history.push({ action: `課程取消退點：${courseToDelete.title} (退 ${course.points_cost} 點)`, time: new Date().toISOString() });
+                            // --- START: FIX FOR VARIABLE NAME ---
+                            student.history.push({ action: `課程取消退點：${courseToDelete.title} (退 ${courseToDelete.points_cost} 點)`, time: new Date().toISOString() });
                             await saveUser(student, transactionClient);
-                            push(studentId, `您預約的課程「${courseToDelete.title}」已由老師取消，已退還您 ${course.points_cost} 點。`).catch(e => console.error(`❌ 向學員課程取消失敗:`, e.message));
+                            push(studentId, `您預約的課程「${courseToDelete.title}」已由老師取消，已退還您 ${courseToDelete.points_cost} 點。`).catch(e => console.error(`❌ 向學員課程取消失敗:`, e.message));
+                            // --- END: FIX FOR VARIABLE NAME ---
                             refundedCount++;
                         }
                     }
