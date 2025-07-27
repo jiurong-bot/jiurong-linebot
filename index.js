@@ -1,4 +1,4 @@
-// index.js - V4.9.12 (Remove quick reply from student's course cancellation and waiting list cancellation messages)
+// index.js - V4.9.13 (Enhanced quickReply handling in reply function to prevent 400 errors with empty quickReply items)
 
 // =====================================
 //                 模組載入
@@ -245,8 +245,19 @@ async function reply(replyToken, content, menu = null) {
   if (Array.isArray(content)) messages = content;
   else if (typeof content === 'string') messages = [{ type: 'text', text: content }];
   else messages = [content];
-  // 只有在 menu 存在且非空時才加入 quickReply
-  if (menu && menu.length > 0 && messages.length > 0) messages[messages.length - 1].quickReply = { items: menu.slice(0, 13).map(i => ({ type: 'action', action: i })) };
+  
+  // 檢查 menu 是否有效且有內容，才加入 quickReply
+  const validMenuItems = (menu || []).slice(0, 13).map(i => ({ type: 'action', action: i }));
+  
+  if (validMenuItems.length > 0 && messages.length > 0) {
+      messages[messages.length - 1].quickReply = { items: validMenuItems };
+  } else {
+      // 如果沒有有效的 quickReply 項目，則確保不會留下空的 quickReply 物件
+      if (messages.length > 0 && messages[messages.length - 1].quickReply) {
+          delete messages[messages.length - 1].quickReply;
+      }
+  }
+
   try {
     await client.replyMessage(replyToken, messages);
   } catch (error) {
@@ -472,7 +483,7 @@ async function handleTeacherCommands(event, userId) {
             const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
             const pendingConfirmationOrders = ordersRes.rows.map(row => ({ orderId: row.order_id, userId: row.user_id, userName: row.user_name, points: row.points, amount: row.amount, last5Digits: row.last_5_digits, timestamp: row.timestamp.toISOString() }));
             if (pendingConfirmationOrders.length === 0) return push(userId, '目前沒有待確認的購點訂單。');
-            const orderBubbles = pendingConfirmationOrders.slice(0, 10).map(order => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `訂單 #${order.orderId}`, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: `學員姓名: ${order.userName}`, wrap: true, size: 'sm' }, { type: 'text', text: `學員ID: ${order.userId.substring(0, 8)}...`, wrap: true, size: 'sm' }, { type: 'text', text: `購買點數: ${order.points} 點`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `應付金額: $${order.amount}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `匯款後五碼: ${order.last5Digits || 'N/A'}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `提交時間: ${formatDateTime(order.timestamp)}`, wrap: true, size: 'sm', color: '#666666' } ] }, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', flex: 0, contents: [ { type: 'button', style: 'primary', color: '#52b69a', height: 'sm', action: { type: 'postback', label: '✅ 確認', data: `action=confirm_order&orderId=${order.orderId}`, displayText: `確認訂單 ${order.orderId} 入帳` } }, { type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '❌ 退回', data: `action=reject_order&orderId=${order.orderId}`, displayText: `退回訂單 ${order.orderId}` } } ] } }));
+            const orderBubbles = pendingConfirmationOrders.slice(0, 10).map(order => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `訂單 #${order.orderId}`, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: `學員姓名: ${order.userName}`, wrap: true, size: 'sm' }, { type: 'text', text: `學員ID: ${order.userId.substring(0, 0)}...`, wrap: true, size: 'sm' }, { type: 'text', text: `購買點數: ${order.points} 點`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `應付金額: $${order.amount}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `匯款後五碼: ${order.last5Digits || 'N/A'}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `提交時間: ${formatDateTime(order.timestamp)}`, wrap: true, size: 'sm', color: '#666666' } ] }, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', flex: 0, contents: [ { type: 'button', style: 'primary', color: '#52b69a', height: 'sm', action: { type: 'postback', label: '✅ 確認', data: `action=confirm_order&orderId=${order.orderId}`, displayText: `確認訂單 ${order.orderId} 入帳` } }, { type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '❌ 退回', data: `action=reject_order&orderId=${order.orderId}`, displayText: `退回訂單 ${order.orderId}` } } ] } }));
             await push(userId, { type: 'flex', altText: '待確認購點訂單列表', contents: { type: 'carousel', contents: orderBubbles } });
         } catch (err) {
             console.error('❌ 查詢待確認訂單時發生錯誤:', err);
@@ -548,7 +559,7 @@ async function handlePurchaseFlow(event, userId) {
     case 'select_plan':
       const selectedPlan = PURCHASE_PLANS.find(p => p.label === text);
       if (!selectedPlan) {
-        await reply(replyToken, '請從列表中選擇有效的點數方案。');
+        await reply(replyToken, '請從列表中選擇有效的點數方案。'); // 這裡不會有 quickReply，因為沒有傳入 menu 參數
         return true;
       }
       stepData.data = { points: selectedPlan.points, amount: selectedPlan.amount, userId: userId, userName: user.name, timestamp: new Date().toISOString(), status: 'pending_payment' };
@@ -803,7 +814,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.12 (Remove quick reply from student's course cancellation and waiting list cancellation messages)`);
+  console.log(`Bot 版本: V4.9.13 (Enhanced quickReply handling in reply function to prevent 400 errors with empty quickReply items)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -984,7 +995,7 @@ async function handleEvent(event) {
 
                 if (!course) { // 課程可能已被取消
                     delete pendingBookingConfirmation[userId];
-                    return reply(event.replyToken, '無法預約：課程不存在或已被取消。'); // 移除 quickReply
+                    return reply(replyToken, '無法預約：課程不存在或已被取消。'); // 移除 quickReply
                 }
 
                 if (text === COMMANDS.STUDENT.CONFIRM_BOOKING) {
@@ -1079,8 +1090,8 @@ async function handleEvent(event) {
                     targetUser.points += orderInTransaction.points;
                     if (!Array.isArray(targetUser.history)) targetUser.history = [];
                     targetUser.history.push({ action: `購點入帳：${orderId} (加 ${orderInTransaction.points} 點)`, time: new Date().toISOString() });
-                    await saveOrder(orderInTransaction, transactionClient);
                     await saveUser(targetUser, transactionClient);
+                    await saveOrder(orderInTransaction, transactionClient);
                     await transactionClient.query('COMMIT');
                     await reply(replyToken, `已確認訂單 ${orderId}，已為學員 ${targetUser.name} 加入 ${orderInTransaction.points} 點。\n目前點數：${targetUser.points} 點。`, teacherMenu);
                     push(orderInTransaction.user_id, `您的購點訂單 ${orderId} 已確認入帳，已加入 ${orderInTransaction.points} 點。\n您目前有 ${targetUser.points} 點。`).catch(e => console.error(`❌ 通知學員入帳失敗:`, e.message));
@@ -1210,7 +1221,7 @@ async function handleEvent(event) {
                             if (!Array.isArray(student.history)) student.history = [];
                             student.history.push({ action: `課程取消退點：${courseToDelete.title} (退 ${course.points_cost} 點)`, time: new Date().toISOString() });
                             await saveUser(student, transactionClient);
-                            push(studentId, `您預約的課程「${courseToDelete.title}」已由老師取消，已退還您 ${course.points_cost} 點。`).catch(e => console.error(`❌ 通知學員課程取消失敗:`, e.message));
+                            push(studentId, `您預約的課程「${courseToDelete.title}」已由老師取消，已退還您 ${course.points_cost} 點。`).catch(e => console.error(`❌ 向學員課程取消失敗:`, e.message));
                             refundedCount++;
                         }
                     }
