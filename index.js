@@ -1,4 +1,4 @@
-// index.js - V4.9.13 (Enhanced quickReply handling in reply function to prevent 400 errors with empty quickReply items)
+// index.js - V4.9.14 (Removed studentMenu quickReply from specific student command replies)
 
 // =====================================
 //                 模組載入
@@ -588,6 +588,7 @@ async function handlePurchaseFlow(event, userId) {
       } else if (text === COMMANDS.STUDENT.CANCEL_PURCHASE) {
         delete pendingPurchase[userId];
         await reply(replyToken, '已取消購買點數。');
+        await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId); // 重新導向點數管理 Flex Message
       } else {
         await reply(replyToken, `請點選「${COMMANDS.STUDENT.CONFIRM_BUY_POINTS}」或「${COMMANDS.STUDENT.CANCEL_PURCHASE}」。`);
       }
@@ -650,7 +651,7 @@ async function handleStudentCommands(event, userId) {
       return reply(replyToken, promptText, [ { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }, { type: 'message', label: '返回點數管理', text: COMMANDS.STUDENT.RETURN_POINTS_MENU } ]);
     } else {
       delete pendingPurchase[userId];
-      return reply(replyToken, '目前沒有需要輸入或修改匯款後五碼的待確認訂單。', studentMenu);
+      return reply(replyToken, '目前沒有需要輸入或修改匯款後五碼的待確認訂單。'); // 移除 quickReply
     }
   }
 
@@ -677,7 +678,7 @@ async function handleStudentCommands(event, userId) {
     const pendingOrder = ordersRes.rows[0];
     if (pendingOrder) {
         if (pendingOrder.status === 'pending_confirmation') {
-          return reply(replyToken, '您的匯款資訊已提交，訂單正在等待老師確認，目前無法自行取消。\n如有疑問請聯繫老師。', studentMenu);
+          return reply(replyToken, '您的匯款資訊已提交，訂單正在等待老師確認，目前無法自行取消。\n如有疑問請聯繫老師。'); // 移除 quickReply
         }
         else if (pendingOrder.status === 'pending_payment' || pendingOrder.status === 'rejected') {
             const transactionClientCancel = await pgPool.connect();
@@ -686,29 +687,32 @@ async function handleStudentCommands(event, userId) {
               await deleteOrder(pendingOrder.order_id, transactionClientCancel);
               await transactionClientCancel.query('COMMIT');
               delete pendingPurchase[userId];
-              return reply(replyToken, '已取消您的購點訂單。', studentMenu);
+              // 移除 studentMenu，並讓它重新觸發點數管理 Flex Message
+              await reply(replyToken, '已取消您的購點訂單。');
+              await handleStudentCommands({ ...event, message: { type: 'text', text: COMMANDS.STUDENT.POINTS } }, userId);
+              return; // 直接返回，避免後續處理
             } catch (err) {
               await transactionClientCancel.query('ROLLBACK');
               console.error('❌ 取消購點訂單交易失敗:', err.message);
-              return reply(replyToken, '取消訂單失敗，請稍後再試。', studentMenu);
+              return reply(replyToken, '取消訂單失敗，請稍後再試。'); // 移除 quickReply
             } finally {
                 transactionClientCancel.release();
             }
         }
     }
     if (pendingPurchase[userId]) delete pendingPurchase[userId];
-    return reply(replyToken, '目前沒有待取消的購點訂單。', studentMenu);
+    return reply(replyToken, '目前沒有待取消的購點訂單。'); // 移除 quickReply
   }
 
   if (text === COMMANDS.STUDENT.PURCHASE_HISTORY) {
     if (!user.history || user.history.length === 0) {
-      return reply(replyToken, '你目前沒有點數相關記錄。', studentMenu);
+      return reply(replyToken, '你目前沒有點數相關記錄。'); // 移除 quickReply
     }
     let historyMessage = '以下是你的點數記錄 (近5筆)：\n';
     user.history.slice(-5).reverse().forEach(record => {
       historyMessage += `・${record.action} (${formatDateTime(record.time)})\n`;
     });
-    return reply(replyToken, historyMessage.trim(), studentMenu);
+    return reply(replyToken, historyMessage.trim()); // 移除 quickReply
   }
 
   if (text === COMMANDS.STUDENT.BOOK_COURSE) {
@@ -814,7 +818,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.13 (Enhanced quickReply handling in reply function to prevent 400 errors with empty quickReply items)`);
+  console.log(`Bot 版本: V4.9.14 (Removed studentMenu quickReply from specific student command replies)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
