@@ -78,8 +78,8 @@ const COMMANDS = {
     CANCEL_INPUT_LAST5: '❌ 取消輸入後五碼',
     BOOK_COURSE: '@預約課程',
     MY_COURSES: '@我的課程',
-    CANCEL_BOOKING: '@取消預約',
-    CANCEL_WAITING: '@取消候補',
+    CANCEL_BOOKING: '@取消預約', // 新增
+    CANCEL_WAITING: '@取消候補', // 新增
     CONFIRM_ADD_COURSE: '確認新增課程',
     CANCEL_ADD_COURSE: '取消新增課程',
     RETURN_POINTS_MENU: '返回點數管理',
@@ -750,6 +750,50 @@ async function handleStudentCommands(event, userId) {
     return reply(replyToken, { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } }); 
   }
 
+  // ==== 學員取消預約的文字指令處理 ====
+  if (text === COMMANDS.STUDENT.CANCEL_BOOKING) {
+      const now = Date.now();
+      const enrolledCourses = Object.values(courses).filter(c => c.students.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
+
+      if (enrolledCourses.length === 0) {
+          return reply(replyToken, '您目前沒有任何已預約的課程可取消。');
+      }
+
+      const cancelOptions = enrolledCourses.slice(0, 10).map(course => {
+          const canCancel = new Date(course.time).getTime() - now > EIGHT_HOURS_IN_MS;
+          if (canCancel) {
+              return { type: 'postback', label: `取消 ${formatDateTime(course.time)} ${course.title}`, data: `action=cancel_booking_confirm&courseId=${course.id}`, displayText: `準備取消預約：${course.title}` };
+          }
+          return null;
+      }).filter(item => item !== null); // 移除無法取消的課程選項
+
+      if (cancelOptions.length === 0) {
+          return reply(replyToken, '您所有已預約的課程都已不足 8 小時，無法取消。');
+      }
+
+      cancelOptions.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
+
+      return reply(replyToken, '請選擇要取消預約的課程：', cancelOptions);
+  }
+
+  // ==== 學員取消候補的文字指令處理 ====
+  if (text === COMMANDS.STUDENT.CANCEL_WAITING) {
+      const now = Date.now();
+      const waitingCourses = Object.values(courses).filter(c => c.waiting.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
+
+      if (waitingCourses.length === 0) {
+          return reply(replyToken, '您目前沒有任何候補中的課程可取消。');
+      }
+
+      const cancelWaitingOptions = waitingCourses.slice(0, 10).map(course => ({
+          type: 'postback', label: `取消候補 ${formatDateTime(course.time)} ${course.title}`, data: `action=cancel_waiting_confirm&courseId=${course.id}`, displayText: `準備取消候補：${course.title}`
+      }));
+
+      cancelWaitingOptions.push({ type: 'message', label: '返回主選單', text: COMMANDS.STUDENT.MAIN_MENU });
+
+      return reply(replyToken, '請選擇要取消候補的課程：', cancelWaitingOptions);
+  }
+
   // ==== 學員取消預約/候補的文字指令確認處理 ====
   if (pendingBookingConfirmation[userId]) {
     const confirmationData = pendingBookingConfirmation[userId];
@@ -786,8 +830,8 @@ async function handleStudentCommands(event, userId) {
                     courseToSave.students.push(userId);
                     currentUser.points -= courseToSave.pointsCost;
                     currentUser.history.push({ id: courseId, action: `預約成功：${courseToSave.title} (扣 ${courseToSave.pointsCost} 點)`, time: new Date().toISOString() });
-                    await saveCourse(courseToSave, transactionClient);
                     await saveUser(currentUser, transactionClient);
+                    await saveCourse(courseToSave, transactionClient);
                     await transactionClient.query('COMMIT');
                     return reply(replyToken, `已成功預約課程：「${courseToSave.title}」。`); 
                 } else {
@@ -1150,8 +1194,6 @@ async function handleEvent(event) {
             await handleTeacherCommands(event, userId); // 處理其他老師指令
             return;
         } else { // Student role
-            // 處理預約、取消預約、取消候補的確認步驟 (文字指令確認)
-            // 此段邏輯已移至 handleStudentCommands 函式末尾，以便集中處理所有學員文字指令
             await handleStudentCommands(event, userId); // 處理其他學員指令
         }
     } else if (event.type === 'postback') {
