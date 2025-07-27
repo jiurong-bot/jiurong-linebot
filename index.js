@@ -289,18 +289,18 @@ function formatDateTime(isoString) {
 }
 
 // =====================================
-//               📋 快速選單定義 (注意：此選單僅為定義，不再作為常駐 quickReply 使用)
+//               快速選單定義 (注意：此選單僅為定義，不再作為常駐 quickReply 使用)
 // =====================================
 const teacherMenu = [ { type: 'message', label: '課程管理', text: COMMANDS.TEACHER.COURSE_MANAGEMENT }, { type: 'message', label: '點數管理', text: COMMANDS.TEACHER.POINT_MANAGEMENT }, { type: 'postback', label: '查詢學員', data: 'action=start_student_search', displayText: '準備查詢學員...' }, { type: 'message', label: '統計報表', text: COMMANDS.TEACHER.REPORT }, ];
 
 // =====================================
-//      📌 暫存狀態物件
+//      暫存狀態物件
 // =====================================
 const pendingTeacherLogin = {}; const pendingCourseCreation = {}; const pendingPurchase = {}; const pendingManualAdjust = {}; const sentReminders = {}; const pendingStudentSearch = {};
 const pendingBookingConfirmation = {}; // 新增：用於預約確認步驟
 
 // =====================================
-//          👨‍🏫 老師指令處理函式
+//          老師指令處理函式
 // =====================================
 async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
@@ -486,7 +486,7 @@ async function handleTeacherCommands(event, userId) {
 
 
 // =====================================
-//        🔄 購點流程處理函式
+//        購點流程處理函式
 // =====================================
 async function handlePurchaseFlow(event, userId) {
   if (!pendingPurchase[userId] || event.message.type !== 'text') return false;
@@ -576,7 +576,7 @@ async function handlePurchaseFlow(event, userId) {
 }
 
 // =====================================
-//           👩‍🎓 學員指令處理函式
+//           學員指令處理函式
 // =====================================
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
