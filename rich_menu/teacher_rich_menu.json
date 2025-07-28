@@ -21,7 +21,7 @@
     },
     {
       "bounds": { "x": 1250, "y": 843, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "@統計報告" }
+      "action": { "type": "message", "text": "@統計報表" }
     }
   ]
 }
