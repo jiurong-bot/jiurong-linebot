@@ -1,12 +1,13 @@
-// index.js - V4.9.23 (修正週期課程未寫入資料庫問題)
-require('dotenv').config(); const line = require('@line/bot -sdk');
+// index.js - V4.9.24 (新增 Rich Menu 自動切換功能)
+require('dotenv').config(); 
+const line = require('@line/bot-sdk'); // 注意這裡重複宣告，已修正
 // =====================================
 //                 模組載入
 // =====================================
 const express = require('express');
 const { Pool } = require('pg');
-const line = require('@line/bot-sdk');
-require('dotenv').config();
+// const line = require('@line/bot-sdk'); // 這裡移除重複宣告
+// require('dotenv').config(); // 這裡移除重複宣告
 const crypto =require('crypto');
 const { default: fetch } = require('node-fetch');
 
@@ -31,7 +32,13 @@ const pgPool = new Pool({
 
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
-const TEACHER_ID = process.env.TEACHER_ID;
+const TEACHER_ID = process.env.TEACHER_ID; // 老師的 LINE User ID，用於特定通知
+
+// =====================================
+//      Rich Menu ID (從 .env 載入)
+// =====================================
+const STUDENT_RICH_MENU_ID = process.env.STUDENT_RICH_MENU_ID;
+const TEACHER_RICH_MENU_ID = process.env.TEACHER_RICH_MENU_ID;
 
 const ONE_DAY_IN_MS = 86400000;
 const EIGHT_HOURS_IN_MS = 28800000;
@@ -336,7 +343,7 @@ function getNextDate(dayOfWeek, timeStr, startDate = new Date()) {
 
 
 // =====================================
-//               快速選單定義
+//               快速選單定義 (這些是 Quick Reply，非 Rich Menu)
 // =====================================
 const teacherMenu = [ 
     { type: 'postback', label: '課程管理', data: `action=run_command&text=${COMMANDS.TEACHER.COURSE_MANAGEMENT}` }, 
@@ -497,6 +504,7 @@ async function handleTeacherCommands(event, userId) {
     delete pendingManualAdjust[userId];
     delete pendingStudentSearchQuery[userId];
     delete pendingCourseCreation[userId]; // 確保返回主選單時清除課程建立狀態
+    // 這裡不需要切換 Rich Menu，因為當前已經是老師身份，且富選單已經連結
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
 
@@ -756,6 +764,7 @@ async function handleStudentCommands(event, userId) {
   if (text === COMMANDS.STUDENT.MAIN_MENU) {
     delete pendingPurchase[userId];
     delete pendingBookingConfirmation[userId]; 
+    // 這裡不需要切換 Rich Menu，因為當前已經是學員身份，且富選單已經連結
     return reply(replyToken, '已返回學員主選單。'); 
   }
 
@@ -1134,7 +1143,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.23 (修正週期課程未寫入資料庫問題)`);
+  console.log(`Bot 版本: V4.9.24 (新增 Rich Menu 自動切換功能)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1158,6 +1167,8 @@ async function handleEvent(event) {
     const userId = event.source.userId;
     let user = await getUser(userId);
     let displayName = `用戶 ${userId.substring(0, 8)}...`;
+    
+    // 新增：處理新用戶加入，並設定預設 Rich Menu
     if (!user) {
       try {
         const profile = await client.getProfile(userId);
@@ -1165,13 +1176,27 @@ async function handleEvent(event) {
         displayName = profile.displayName;
         await saveUser(user);
         console.log(`✨ 新用戶加入: ${user.name} (${user.id})`);
+        // 新用戶預設為學員，連結學員 Rich Menu
+        if (STUDENT_RICH_MENU_ID) {
+            await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+            console.log(`✅ 為新用戶 ${user.name} 連結學員 Rich Menu: ${STUDENT_RICH_MENU_ID}`);
+        } else {
+            console.warn(`⚠️ 未設定 STUDENT_RICH_MENU_ID，無法為新用戶連結 Rich Menu。`);
+        }
       } catch (err) {
-        console.error('❌ 獲取用戶資料失敗:', err.message);
+        console.error('❌ 獲取用戶資料失敗或設定 Rich Menu 失敗:', err.message);
         user = { id: userId, name: `新用戶 ${userId.substring(0, 8)}...`, points: 0, role: 'student', history: [] };
         await saveUser(user);
+        // 即使獲取 profile 失敗，也嘗試連結預設 Rich Menu
+        if (STUDENT_RICH_MENU_ID) {
+            await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID).catch(e => console.error(`❌ 備用連結學員 Rich Menu 失敗: ${e.message}`));
+        }
       }
     } else {
         displayName = user.name;
+        // 確保已登入用戶的 Rich Menu 與其角色一致
+        // 但這裡不頻繁更新，只在角色切換或某些特定情況才更新
+        // 避免每次訊息都觸發 API 限制
     }
 
     if (event.type === 'message' && event.message.type === 'text') {
@@ -1182,9 +1207,17 @@ async function handleEvent(event) {
                 user.role = 'student';
                 await saveUser(user);
                 await reply(event.replyToken, '您已切換為學員身份。');
+                // 切換回學員身份時，連結學員 Rich Menu
+                if (STUDENT_RICH_MENU_ID) {
+                    await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+                    console.log(`✅ 用戶 ${user.name} 切換為學員身份，連結學員 Rich Menu: ${STUDENT_RICH_MENU_ID}`);
+                } else {
+                    console.warn(`⚠️ 未設定 STUDENT_RICH_MENU_ID，無法為用戶連結學員 Rich Menu。`);
+                }
             } else {
                 pendingTeacherLogin[userId] = true;
                 await reply(event.replyToken, '請輸入老師密碼：');
+                // 這裡無需切換 Rich Menu，等待密碼驗證結果
             }
             return;
         }
@@ -1195,8 +1228,24 @@ async function handleEvent(event) {
                 user.role = 'teacher';
                 await saveUser(user);
                 await reply(event.replyToken, '密碼正確，您已切換為老師身份。', teacherMenu);
+                // 老師登入成功，連結老師 Rich Menu
+                if (TEACHER_RICH_MENU_ID) {
+                    await client.linkRichMenuToUser(userId, TEACHER_RICH_MENU_ID);
+                    console.log(`✅ 用戶 ${user.name} 切換為老師身份，連結老師 Rich Menu: ${TEACHER_RICH_MENU_ID}`);
+                } else {
+                    console.warn(`⚠️ 未設定 TEACHER_RICH_MENU_ID，無法為老師連結 Rich Menu。`);
+                }
             } else {
                 await reply(event.replyToken, '密碼錯誤。已自動切換回學員身份。');
+                // 老師登入失敗，確保是學員身份並連結學員 Rich Menu
+                user.role = 'student'; // 再次確認身份為 student
+                await saveUser(user);
+                if (STUDENT_RICH_MENU_ID) {
+                    await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+                    console.log(`✅ 用戶 ${user.name} 密碼錯誤，連結學員 Rich Menu: ${STUDENT_RICH_MENU_ID}`);
+                } else {
+                    console.warn(`⚠️ 未設定 STUDENT_RICH_MENU_ID，無法為用戶連結學員 Rich Menu。`);
+                }
             }
             return;
         }
