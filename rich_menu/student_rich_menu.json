@@ -13,15 +13,15 @@
     },
     {
       "bounds": { "x": 1250, "y": 0, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "我的進度" }
+      "action": { "type": "message", "text": "@預約課程" }
     },
     {
       "bounds": { "x": 0, "y": 843, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "聯絡老師" }
+      "action": { "type": "message", "text": "@我的課程" }
     },
     {
       "bounds": { "x": 1250, "y": 843, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "@切換身份" }
+      "action": { "type": "message", "text": "@點數管理" }
     }
   ]
 }
