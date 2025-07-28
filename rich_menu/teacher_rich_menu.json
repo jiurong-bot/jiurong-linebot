@@ -8,20 +8,20 @@
   "chatBarText": "老師選單",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "@課程管理" }
+      "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
+      "action": { "type": "message", "text": "課程管理" }
     },
     {
-      "bounds": { "x": 1250, "y": 0, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "@點數管理" }
+      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
+      "action": { "type": "message", "text": "點數管理" }
     },
     {
-      "bounds": { "x": 0, "y": 843, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "@查詢學員" }
+      "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
+      "action": { "type": "message", "text": "查詢學員" }
     },
     {
-      "bounds": { "x": 1250, "y": 843, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "@統計報表" }
+      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
+      "action": { "type": "message", "text": "統計報表" }
     }
   ]
 }
