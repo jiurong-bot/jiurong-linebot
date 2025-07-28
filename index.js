@@ -1,4 +1,4 @@
-// index.js - V4.9.21 (新增課程成功後跳回課程管理)
+// index.js - V4.9.22 (課程前綴生成說明)
 
 // =====================================
 //                 模組載入
@@ -124,17 +124,30 @@ async function initializeDatabase() {
 
 initializeDatabase();
 
+/**
+ * @function generateUniqueCoursePrefix
+ * @description 隨機生成兩個大寫英文字母作為課程前綴，並確保其在資料庫中的唯一性。
+ * 這個函式會持續生成直到找到一個目前沒有任何課程 ID 以此前綴開頭的組合。
+ * @param {Pool} dbClient - PostgreSQL 連線池或客戶端。
+ * @returns {Promise<string>} 唯一的兩位字母課程前綴。
+ */
 async function generateUniqueCoursePrefix(dbClient = pgPool) {
     let prefix;
     let isUnique = false;
     while (!isUnique) {
+        // 隨機生成兩個大寫英文字母 (A-Z)
         const randomChar1 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
         const randomChar2 = String.fromCharCode(65 + Math.floor(Math.random() * 26));
         prefix = `${randomChar1}${randomChar2}`;
+        
+        // 查詢資料庫，檢查是否有任何課程 ID 以此生成的兩位前綴開頭
         const res = await dbClient.query('SELECT id FROM courses WHERE id LIKE $1', [`${prefix}%`]);
+        
+        // 如果查詢結果為空，表示此前綴是唯一的
         if (res.rows.length === 0) {
             isUnique = true;
         } else {
+            // 如果已經存在，則重新生成前綴
             console.log(`DEBUG: 生成的課程組代碼 ${prefix} 已存在，重新生成。`);
         }
     }
@@ -1121,7 +1134,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.21 (新增課程成功後跳回課程管理)`);
+  console.log(`Bot 版本: V4.9.22 (課程前綴生成說明)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
