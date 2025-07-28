@@ -1,4 +1,4 @@
-// index.js - V4.9.22 (課程前綴生成說明)
+// index.js - V4.9.23 (修正週期課程未寫入資料庫問題)
 
 // =====================================
 //                 模組載入
@@ -562,7 +562,7 @@ async function handleTeacherCommands(event, userId) {
     const totalPoints = students.reduce((sum, student) => sum + student.points, 0);
     const activeStudentsCount = students.filter(s => s.history && s.history.length > 0).length;
     const coursesRes = await pgPool.query(`SELECT * FROM courses`);
-    const allCourses = courses.rows;
+    const allCourses = coursesRes.rows; // 修正這裡的變數名稱
     const totalCourses = allCourses.length;
     const now = Date.now();
     const upcomingCourses = allCourses.filter(c => new Date(c.time).getTime() > now).length;
@@ -1134,7 +1134,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.22 (課程前綴生成說明)`);
+  console.log(`Bot 版本: V4.9.23 (修正週期課程未寫入資料庫問題)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
