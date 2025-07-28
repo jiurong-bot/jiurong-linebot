@@ -4,23 +4,23 @@
     "height": 1686
   },
   "selected": false,
-  "name": "學員專屬選單",
-  "chatBarText": "學員選單",
+  "name": "學生專屬選單",
+  "chatBarText": "學生選單",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 1250, "height": 843 },
-      "action": { "type": "message", "text": "查看課程" }
+      "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
+      "action": { "type": "message", "text": "@無動作" }
     },
     {
-      "bounds": { "x": 1250, "y": 0, "width": 1250, "height": 843 },
+      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
       "action": { "type": "message", "text": "@預約課程" }
     },
     {
-      "bounds": { "x": 0, "y": 843, "width": 1250, "height": 843 },
+      "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
       "action": { "type": "message", "text": "@我的課程" }
     },
     {
-      "bounds": { "x": 1250, "y": 843, "width": 1250, "height": 843 },
+      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
       "action": { "type": "message", "text": "@點數管理" }
     }
   ]
