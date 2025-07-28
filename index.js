@@ -1,4 +1,4 @@
-// index.js - V4.9.18 (學員查詢功能強化: 支援模糊篩選與清單選擇)
+// index.js - V4.9.19 (學員查詢功能強化，新增週期課程)
 
 // =====================================
 //                 模組載入
@@ -300,6 +300,28 @@ function formatDateTime(isoString) {
     return `${month}-${day}（${weekday}）${hour}:${minute}`;
 }
 
+function getNextDate(dayOfWeek, timeStr, startDate = new Date()) {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const resultDate = new Date(startDate);
+    resultDate.setHours(hours, minutes, 0, 0);
+
+    let currentDay = resultDate.getDay(); // 0 for Sunday, 1 for Monday...
+    let daysToAdd = (dayOfWeek - currentDay + 7) % 7;
+
+    if (daysToAdd === 0 && resultDate.getTime() <= startDate.getTime()) {
+        // If it's the same day of the week and the time has already passed today, go to next week
+        daysToAdd = 7;
+    } else if (resultDate.getTime() < startDate.getTime() && daysToAdd === 0) {
+         // If it's the same day of the week, but time has passed for today, go to next week
+        daysToAdd = 7;
+    }
+
+
+    resultDate.setDate(resultDate.getDate() + daysToAdd);
+    return resultDate;
+}
+
+
 // =====================================
 //               快速選單定義
 // =====================================
@@ -315,6 +337,24 @@ const studentMenu = [
     { type: 'postback', label: '我的課程', data: `action=run_command&text=${COMMANDS.STUDENT.MY_COURSES}` }
 ];
 
+const COURSE_CATEGORIES = [
+    { label: '瑜伽', value: 'yoga' },
+    { label: '皮拉提斯', value: 'pilates' },
+    { label: '飛輪', value: 'spinning' },
+    { label: '舞蹈', value: 'dance' },
+    { label: '其他', value: 'other' },
+];
+
+const WEEKDAYS = [
+    { label: '週日', value: 0 },
+    { label: '週一', value: 1 },
+    { label: '週二', value: 2 },
+    { label: '週三', value: 3 },
+    { label: '週四', value: 4 },
+    { label: '週五', value: 5 },
+    { label: '週六', value: 6 },
+];
+
 // =====================================
 //      暫存狀態物件
 // =====================================
@@ -323,7 +363,7 @@ const pendingCourseCreation = {};
 const pendingPurchase = {}; 
 const pendingManualAdjust = {}; 
 const sentReminders = {}; 
-const pendingStudentSearchQuery = {}; // [修改] 新增用於學員模糊查詢的狀態
+const pendingStudentSearchQuery = {};
 const pendingBookingConfirmation = {};
 
 // =====================================
@@ -334,7 +374,7 @@ async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim() : '';
   const mainMenuBtn = { type: 'postback', label: '返回主選單', data: `action=run_command&text=${COMMANDS.TEACHER.MAIN_MENU}`};
 
-  // [修改] 處理學員查詢的第二步
+  // 處理學員查詢的第二步
   if (pendingStudentSearchQuery[userId]) {
       if (text === COMMANDS.TEACHER.MAIN_MENU) {
           delete pendingStudentSearchQuery[userId];
@@ -450,8 +490,8 @@ async function handleTeacherCommands(event, userId) {
 
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
     delete pendingManualAdjust[userId];
-    delete pendingStudentSearchQuery[userId]; // [修改] 確保返回主選單時清除查詢狀態
-    delete pendingCourseCreation[userId];
+    delete pendingStudentSearchQuery[userId];
+    delete pendingCourseCreation[userId]; // 確保返回主選單時清除課程建立狀態
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
 
@@ -1089,7 +1129,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.18 (學員查詢功能強化: 支援模糊篩選與清單選擇)`);
+  console.log(`Bot 版本: V4.9.19 (學員查詢功能強化，新增週期課程)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1160,53 +1200,97 @@ async function handleEvent(event) {
             if (pendingCourseCreation[userId]) {
                 const stepData = pendingCourseCreation[userId];
                 switch (stepData.step) {
-                    case 1: 
-                        stepData.title = text;
+                    case 1: // 選擇課程類別
+                        const selectedCategory = COURSE_CATEGORIES.find(cat => cat.label === text);
+                        if (!selectedCategory) {
+                            await reply(event.replyToken, '請從列表中選擇有效的課程類別。');
+                            return;
+                        }
+                        stepData.category = selectedCategory.label;
                         stepData.step = 2;
-                        await reply(event.replyToken, '請輸入單堂課的點數費用 (例如: 2)：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                        await reply(event.replyToken, '請輸入課程名稱（例如：哈達瑜伽）：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
                         break;
-                    case 2: 
+                    case 2: // 輸入課程名稱
+                        if (!text) {
+                            await reply(event.replyToken, '課程名稱不能為空，請重新輸入。');
+                            return;
+                        }
+                        stepData.courseName = text;
+                        stepData.step = 3;
+                        await reply(event.replyToken, '請輸入總堂數（例如：5，代表您想建立 5 堂課）：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                        break;
+                    case 3: // 輸入總堂數
+                        const totalClasses = parseInt(text);
+                        if (isNaN(totalClasses) || totalClasses <= 0 || totalClasses > 12) {
+                            await reply(event.replyToken, '總堂數必須是 1 到 12 之間的整數，請重新輸入。');
+                            return;
+                        }
+                        stepData.totalClasses = totalClasses;
+                        stepData.step = 4;
+                        const weekdayOptions = WEEKDAYS.map(day => ({ type: 'message', label: day.label, text: day.label }));
+                        weekdayOptions.push({ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
+                        await reply(event.replyToken, '請選擇課程日期（星期幾）：', weekdayOptions);
+                        break;
+                    case 4: // 選擇課程日期(星期幾)
+                        const selectedWeekday = WEEKDAYS.find(day => day.label === text);
+                        if (!selectedWeekday) {
+                            await reply(event.replyToken, '請從列表中選擇有效的星期幾。');
+                            return;
+                        }
+                        stepData.weekday = selectedWeekday.value;
+                        stepData.step = 5;
+                        await reply(event.replyToken, '請輸入課程時間（格式為 HH:mm，例如：19:00）：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                        break;
+                    case 5: // 輸入課程時間
+                        if (!/^(?:2[0-3]|[01]?[0-9]):[0-5][0-9]$/.test(text)) {
+                            await reply(event.replyToken, '課程時間格式不正確，請使用 HH:mm 格式，例如：19:00。');
+                            return;
+                        }
+                        stepData.time = text;
+                        stepData.step = 6;
+                        await reply(event.replyToken, '請輸入人數上限（例如：10）：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                        break;
+                    case 6: // 輸入人數上限
+                        const capacity = parseInt(text);
+                        if (isNaN(capacity) || capacity <= 0) {
+                            await reply(event.replyToken, '人數上限必須是正整數，請重新輸入。');
+                            return;
+                        }
+                        stepData.capacity = capacity;
+                        stepData.step = 7;
+                        await reply(event.replyToken, '請輸入課程所需扣除點數（例如：2）：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                        break;
+                    case 7: // 輸入課程所需扣除點數
                         const points = parseInt(text);
                         if (isNaN(points) || points <= 0) {
                             await reply(event.replyToken, '點數費用必須是正整數，請重新輸入。');
                             return;
                         }
                         stepData.pointsCost = points;
-                        stepData.step = 3;
-                        await reply(event.replyToken, '請輸入課程容量 (例如: 5)：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-                        break;
-                    case 3: 
-                        const capacity = parseInt(text);
-                        if (isNaN(capacity) || capacity <= 0) {
-                            await reply(event.replyToken, '課程容量必須是正整數，請重新輸入。');
-                            return;
-                        }
-                        stepData.capacity = capacity;
-                        stepData.step = 4;
-                        await reply(event.replyToken, '請輸入課程日期和時間，每週至少一堂，持續四週（共四堂課），用換行分隔，格式為 YYYY/MM/DD HH:mm，例如：\n2025/08/01 19:00\n2025/08/08 19:00\n2025/08/15 19:00\n2025/08/22 19:00', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
-                        break;
-                    case 4: 
-                        const timeStrings = text.split('\n').map(s => s.trim()).filter(s => s);
-                        if (timeStrings.length < 1) {
-                            await reply(event.replyToken, '請至少輸入一堂課的時間。');
-                            return;
-                        }
+                        stepData.step = 8;
+                        
+                        // 計算所有課程日期
                         const courseTimes = [];
-                        for (const ts of timeStrings) {
-                            const date = new Date(ts);
-                            if (isNaN(date.getTime()) || date.getTime() < Date.now()) {
-                                await reply(event.replyToken, `無效的日期時間格式或時間已過期：「${ts}」。請使用 YYYY/MM/DD HH:mm 格式，並確保時間未過期。`);
-                                return;
+                        let currentDate = new Date(); // 從今天開始計算
+                        for (let i = 0; i < stepData.totalClasses; i++) {
+                            let nextClassDate = getNextDate(stepData.weekday, stepData.time, currentDate);
+                            // 確保下一個課程日期不會是過去的日期
+                            if (nextClassDate.getTime() < Date.now()) {
+                                nextClassDate = getNextDate(stepData.weekday, stepData.time, new Date(Date.now() + ONE_DAY_IN_MS)); // 從明天開始算起
                             }
-                            courseTimes.push(date.toISOString());
+                            courseTimes.push(nextClassDate.toISOString());
+                            currentDate = new Date(nextClassDate.getTime() + ONE_DAY_IN_MS * 6); // 為下一次計算設定日期（跳到下週同一天）
                         }
-                        stepData.times = courseTimes;
-                        stepData.step = 5;
-                        const confirmMsg = `請確認新增以下課程系列：\n` +
-                                           `課程名稱：${stepData.title}\n` +
-                                           `點數費用：${stepData.pointsCost} 點/堂\n` +
-                                           `課程容量：${stepData.capacity} 人/堂\n` +
-                                           `開課時間：\n${stepData.times.map(t => formatDateTime(t)).join('\n')}\n\n` +
+                        stepData.calculatedTimes = courseTimes;
+
+                        const confirmMsg = `請確認新增以下週期課程系列：\n` +
+                                           `課程類別：${stepData.category}\n` +
+                                           `課程名稱：${stepData.courseName}\n` +
+                                           `總堂數：${stepData.totalClasses} 堂\n` +
+                                           `每週：${WEEKDAYS.find(d => d.value === stepData.weekday)?.label} ${stepData.time}\n` +
+                                           `人數上限：${stepData.capacity} 人/堂\n` +
+                                           `點數費用：${stepData.pointsCost} 點/堂\n\n` +
+                                           `預計開課日期：\n${stepData.calculatedTimes.map(t => formatDateTime(t)).join('\n')}\n\n` +
                                            `確認無誤請點選「確認新增課程」。`;
                         await reply(event.replyToken, confirmMsg, [
                             { type: 'message', label: COMMANDS.STUDENT.CONFIRM_ADD_COURSE, text: COMMANDS.STUDENT.CONFIRM_ADD_COURSE },
@@ -1216,7 +1300,7 @@ async function handleEvent(event) {
                 }
                 return;
             } else if (text === COMMANDS.STUDENT.CONFIRM_ADD_COURSE) {
-                if (!pendingCourseCreation[userId] || pendingCourseCreation[userId].step !== 5) {
+                if (!pendingCourseCreation[userId] || pendingCourseCreation[userId].step !== 8) {
                     await reply(event.replyToken, '無效操作，請重新從「新增課程」開始。', teacherMenu);
                     return;
                 }
@@ -1225,9 +1309,9 @@ async function handleEvent(event) {
                 try {
                     await transactionClient.query('BEGIN');
                     const coursePrefix = await generateUniqueCoursePrefix(transactionClient);
-                    const coursesToAdd = newCourseData.times.map((time, index) => ({
-                        id: `${coursePrefix}${String.fromCharCode(65 + index)}`,
-                        title: `${newCourseData.title} - 第 ${index + 1} 堂`,
+                    const coursesToAdd = newCourseData.calculatedTimes.map((time, index) => ({
+                        id: `${coursePrefix}${String.fromCharCode(65 + index)}`, // 例如 AA0, AA1
+                        title: `${newCourseData.category} - ${newCourseData.courseName} - 第 ${index + 1} 堂`,
                         time: time,
                         capacity: newCourseData.capacity,
                         pointsCost: newCourseData.pointsCost,
@@ -1239,7 +1323,7 @@ async function handleEvent(event) {
                     }
                     await transactionClient.query('COMMIT');
                     delete pendingCourseCreation[userId];
-                    await reply(event.replyToken, `課程系列「${newCourseData.title}」已成功新增！\n系列代碼：${coursePrefix}\n共新增 ${newCourseData.times.length} 堂課。`, teacherMenu);
+                    await reply(event.replyToken, `課程系列「${newCourseData.courseName}」已成功新增！\n系列代碼：${coursePrefix}\n共新增 ${newCourseData.totalClasses} 堂課。`, teacherMenu);
                 } catch (err) {
                     await transactionClient.query('ROLLBACK');
                     console.error('❌ 新增課程交易失敗:', err.stack);
@@ -1288,11 +1372,11 @@ async function handleEvent(event) {
             return;
         }
 
-        // [修改] 學員查詢的Postback處理
+        // 學員查詢的Postback處理
         if (action === 'start_student_search') {
             pendingStudentSearchQuery[userId] = true; // 設定查詢狀態
             return reply(replyToken, '請輸入要查詢的學員姓名或 ID（支援模糊篩選）：', [ { type: 'postback', label: '返回老師主選單', data: `action=run_command&text=${COMMANDS.TEACHER.MAIN_MENU}` } ]);
-        } else if (action === 'show_student_detail') { // [修改] 顯示學員詳細資訊
+        } else if (action === 'show_student_detail') { // 顯示學員詳細資訊
             const studentId = data.get('studentId');
             const foundUser = await getUser(studentId);
             if (!foundUser) {
@@ -1311,7 +1395,9 @@ async function handleEvent(event) {
         if (user.role === 'teacher') {
             if (action === 'add_course_start') {
                 pendingCourseCreation[userId] = { step: 1 };
-                await reply(replyToken, '請輸入課程系列的名稱（例如：初級瑜伽 A 班）：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
+                const categoryOptions = COURSE_CATEGORIES.map(cat => ({ type: 'message', label: cat.label, text: cat.label }));
+                categoryOptions.push({ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE });
+                await reply(replyToken, '請選擇課程類別：', categoryOptions);
                 return;
             } else if (action === 'confirm_order') {
                 const orderId = data.get('orderId');
