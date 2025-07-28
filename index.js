@@ -1,4 +1,4 @@
-// index.js - V4.9.25 (修正課程建立流程)
+// index.js - V4.9.26 (修正時區問題)
 require('dotenv').config(); 
 const line = require('@line/bot-sdk');
 // =====================================
@@ -318,24 +318,29 @@ function formatDateTime(isoString) {
     return `${month}-${day}（${weekday}）${hour}:${minute}`;
 }
 
+// [MODIFIED] 修正後的 getNextDate 函式，處理時區問題
 function getNextDate(dayOfWeek, timeStr, startDate = new Date()) {
     const [hours, minutes] = timeStr.split(':').map(Number);
     const resultDate = new Date(startDate);
-    resultDate.setHours(hours, minutes, 0, 0);
 
-    let currentDay = resultDate.getDay(); // 0 for Sunday, 1 for Monday...
+    // 核心修正：將輸入的台北時間 (UTC+8) 轉換為 UTC 時間來設定
+    // 並使用 UTC 相關的 set/get 方法以避免時區混淆
+    resultDate.setUTCHours(hours - 8, minutes, 0, 0);
+
+    let currentDay = resultDate.getUTCDay(); // 使用 getUTCDay()
     let daysToAdd = (dayOfWeek - currentDay + 7) % 7;
 
+    // getTime() 本身就是基於 UTC 的，所以這裡的比較是正確的
     if (daysToAdd === 0 && resultDate.getTime() <= startDate.getTime()) {
-        // If it's the same day of the week and the time has already passed today, go to next week
         daysToAdd = 7;
     } else if (resultDate.getTime() < startDate.getTime() && daysToAdd === 0) {
-         // If it's the same day of the week, but time has passed for today, go to next week
+        // 雖然此行在邏輯上可被第一條 if 包含，但為求最小改動，予以保留
         daysToAdd = 7;
     }
 
-
-    resultDate.setDate(resultDate.getDate() + daysToAdd);
+    // 使用 setUTCDate() 來增加天數
+    resultDate.setUTCDate(resultDate.getUTCDate() + daysToAdd);
+    
     return resultDate;
 }
 
@@ -1141,7 +1146,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.25 (修正課程建立流程)`);
+  console.log(`Bot 版本: V4.9.26 (修正時區問題)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1370,10 +1375,12 @@ async function handleEvent(event) {
                         let currentDate = new Date();
                         for (let i = 0; i < stepData.totalClasses; i++) {
                             let nextClassDate = getNextDate(stepData.weekday, stepData.time, currentDate);
+                            // 這段邏輯在 getNextDate 內部已有處理，但保留外部檢查作為雙重保險
                             if (nextClassDate.getTime() < Date.now()) {
                                 nextClassDate = getNextDate(stepData.weekday, stepData.time, new Date(Date.now() + ONE_DAY_IN_MS));
                             }
                             courseTimes.push(nextClassDate.toISOString());
+                            // 為下一次計算設定日期（跳到接近下週同一天）
                             currentDate = new Date(nextClassDate.getTime() + ONE_DAY_IN_MS * 6);
                         }
                         stepData.calculatedTimes = courseTimes;
