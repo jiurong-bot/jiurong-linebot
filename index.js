@@ -1,4 +1,4 @@
-// index.js - V4.9.17 (Refactored points menu logic to prevent double reply, advised on Rich Menu)
+// index.js - V4.9.18 (學員查詢功能強化: 支援模糊篩選與清單選擇)
 
 // =====================================
 //                 模組載入
@@ -323,7 +323,7 @@ const pendingCourseCreation = {};
 const pendingPurchase = {}; 
 const pendingManualAdjust = {}; 
 const sentReminders = {}; 
-const pendingStudentSearch = {};
+const pendingStudentSearchQuery = {}; // [修改] 新增用於學員模糊查詢的狀態
 const pendingBookingConfirmation = {};
 
 // =====================================
@@ -334,26 +334,70 @@ async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim() : '';
   const mainMenuBtn = { type: 'postback', label: '返回主選單', data: `action=run_command&text=${COMMANDS.TEACHER.MAIN_MENU}`};
 
-  if (pendingStudentSearch[userId]) {
+  // [修改] 處理學員查詢的第二步
+  if (pendingStudentSearchQuery[userId]) {
       if (text === COMMANDS.TEACHER.MAIN_MENU) {
-          delete pendingStudentSearch[userId];
+          delete pendingStudentSearchQuery[userId];
           return reply(replyToken, '已取消學員查詢。', teacherMenu);
       }
       const query = text;
-      let foundUser = await getUser(query);
-      if (!foundUser || foundUser.role !== 'student') {
-          const res = await pgPool.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${query.toLowerCase()}%`]);
-          if (res.rows.length > 0) foundUser = res.rows[0];
+      // 模糊查詢學員，限制只查 student 角色
+      const res = await pgPool.query(`SELECT * FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id LIKE $2) LIMIT 10`, [`%${query.toLowerCase()}%`, `%${query}%`]);
+      const foundUsers = res.rows;
+      
+      delete pendingStudentSearchQuery[userId]; // 清除狀態
+
+      if (foundUsers.length === 0) {
+          return reply(replyToken, `找不到學員「${query}」。`, teacherMenu);
+      } else if (foundUsers.length === 1) {
+          // 只找到一位，直接顯示詳細資訊
+          const foundUser = foundUsers[0];
+          let studentInfo = `學員姓名：${foundUser.name}\n學員 ID：${foundUser.id}\n剩餘點數：${foundUser.points} 點\n歷史記錄 (近5筆)：\n`;
+          if (foundUser.history && foundUser.history.length > 0) {
+            foundUser.history.slice(-5).reverse().forEach(record => {
+              studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
+            });
+          }
+          return reply(replyToken, studentInfo.trim(), teacherMenu);
+      } else {
+          // 找到多位，顯示清單讓老師選擇
+          const userBubbles = foundUsers.map(u => ({
+              type: 'bubble',
+              header: {
+                  type: 'box',
+                  layout: 'vertical',
+                  contents: [{ type: 'text', text: '學員資訊', color: '#ffffff', weight: 'bold', size: 'md' }],
+                  backgroundColor: '#52b69a',
+                  paddingAll: 'lg'
+              },
+              body: {
+                  type: 'box',
+                  layout: 'vertical',
+                  spacing: 'md',
+                  contents: [
+                      { type: 'text', text: u.name, weight: 'bold', size: 'xl', wrap: true },
+                      { type: 'text', text: `ID: ${u.id.substring(0, 8)}...`, size: 'sm', color: '#666666' }
+                  ]
+              },
+              footer: {
+                  type: 'box',
+                  layout: 'vertical',
+                  spacing: 'sm',
+                  flex: 0,
+                  contents: [
+                      {
+                          type: 'button',
+                          style: 'primary',
+                          color: '#1A759F',
+                          height: 'sm',
+                          action: { type: 'postback', label: '查看詳情', data: `action=show_student_detail&studentId=${u.id}`, displayText: `查看學員 ${u.name} 的詳情` }
+                      }
+                  ]
+              }
+          }));
+          const flexMessage = { type: 'flex', altText: '請選擇學員', contents: { type: 'carousel', contents: userBubbles.slice(0, 10) } };
+          return reply(replyToken, [{ type: 'text', text: '找到多位符合的學員，請點擊查看詳情：' }, flexMessage], [mainMenuBtn]);
       }
-      delete pendingStudentSearch[userId];
-      if (!foundUser) return reply(replyToken, `找不到學員「${query}」。`, teacherMenu);
-      let studentInfo = `學員姓名：${foundUser.name}\n學員 ID：${foundUser.id}\n剩餘點數：${foundUser.points} 點\n歷史記錄 (近5筆)：\n`;
-      if (foundUser.history && foundUser.history.length > 0) {
-        foundUser.history.slice(-5).reverse().forEach(record => {
-          studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
-        });
-      }
-      return reply(replyToken, studentInfo.trim(), teacherMenu);
   }
 
   if (pendingManualAdjust[userId] && text !== COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
@@ -406,7 +450,7 @@ async function handleTeacherCommands(event, userId) {
 
   if (text === COMMANDS.TEACHER.MAIN_MENU) {
     delete pendingManualAdjust[userId];
-    delete pendingStudentSearch[userId];
+    delete pendingStudentSearchQuery[userId]; // [修改] 確保返回主選單時清除查詢狀態
     delete pendingCourseCreation[userId];
     return reply(replyToken, '已返回老師主選單。', teacherMenu);
   }
@@ -1045,7 +1089,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.17 (Refactored points menu logic to prevent double reply, advised on Rich Menu)`);
+  console.log(`Bot 版本: V4.9.18 (學員查詢功能強化: 支援模糊篩選與清單選擇)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1244,10 +1288,25 @@ async function handleEvent(event) {
             return;
         }
 
+        // [修改] 學員查詢的Postback處理
         if (action === 'start_student_search') {
-            pendingStudentSearch[userId] = true;
-            return reply(replyToken, '請輸入要查詢的學員 ID 或姓名：', [ { type: 'postback', label: '返回老師主選單', data: `action=run_command&text=${COMMANDS.TEACHER.MAIN_MENU}` } ]);
+            pendingStudentSearchQuery[userId] = true; // 設定查詢狀態
+            return reply(replyToken, '請輸入要查詢的學員姓名或 ID（支援模糊篩選）：', [ { type: 'postback', label: '返回老師主選單', data: `action=run_command&text=${COMMANDS.TEACHER.MAIN_MENU}` } ]);
+        } else if (action === 'show_student_detail') { // [修改] 顯示學員詳細資訊
+            const studentId = data.get('studentId');
+            const foundUser = await getUser(studentId);
+            if (!foundUser) {
+                return reply(replyToken, `找不到學員 ID: ${studentId}。`, teacherMenu);
+            }
+            let studentInfo = `學員姓名：${foundUser.name}\n學員 ID：${foundUser.id}\n剩餘點數：${foundUser.points} 點\n歷史記錄 (近5筆)：\n`;
+            if (foundUser.history && foundUser.history.length > 0) {
+              foundUser.history.slice(-5).reverse().forEach(record => {
+                studentInfo += `・${record.action} (${formatDateTime(record.time)})\n`;
+              });
+            }
+            return reply(replyToken, studentInfo.trim(), teacherMenu);
         }
+
 
         if (user.role === 'teacher') {
             if (action === 'add_course_start') {
