@@ -1,4 +1,4 @@
-// index.js - V4.9.26 (修正時區問題)
+// index.js - V4.9.27 (所有老師介面 Rich Menu / Quick Reply 選項改為 Postback 觸發)
 require('dotenv').config(); 
 const line = require('@line/bot-sdk');
 // =====================================
@@ -348,6 +348,7 @@ function getNextDate(dayOfWeek, timeStr, startDate = new Date()) {
 // =====================================
 //               快速選單定義 (這些是 Quick Reply，非 Rich Menu)
 // =====================================
+// [MODIFIED] 老師快速選單全部改為 postback 類型
 const teacherMenu = [ 
     { type: 'postback', label: '課程管理', data: `action=run_command&text=${COMMANDS.TEACHER.COURSE_MANAGEMENT}` }, 
     { type: 'postback', label: '點數管理', data: `action=run_command&text=${COMMANDS.TEACHER.POINT_MANAGEMENT}` }, 
@@ -386,7 +387,8 @@ const pendingBookingConfirmation = {};
 // =====================================
 async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
-  const text = event.message.text ? event.message.text.trim() : '';
+  // 這裡的 text 可能是從 event.message.text 或 postback data.text 來的
+  const text = event.message?.text ? event.message.text.trim() : ''; 
   const mainMenuBtn = { type: 'postback', label: '返回主選單', data: `action=run_command&text=${COMMANDS.TEACHER.MAIN_MENU}`};
 
   // 處理學員查詢的第二步
@@ -1146,7 +1148,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.26 (修正時區問題)`);
+  console.log(`Bot 版本: V4.9.27 (所有老師介面 Rich Menu / Quick Reply 選項改為 Postback 觸發)`); // [MODIFIED] 更新版本號
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1413,6 +1415,7 @@ async function handleEvent(event) {
         const action = data.get('action');
         const replyToken = event.replyToken;
 
+        // [MODIFIED] 處理 run_command 的 postback 事件，模擬成 text message 讓 handleTeacherCommands/handleStudentCommands 統一處理
         if (action === 'run_command') {
             const commandText = data.get('text');
             if (commandText) {
@@ -1421,7 +1424,7 @@ async function handleEvent(event) {
                     type: 'message',
                     message: {
                         type: 'text',
-                        id: 'simulated_message_id', 
+                        id: 'simulated_message_id', // 提供一個假的訊息ID
                         text: commandText
                     }
                 };
