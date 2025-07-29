@@ -1,4 +1,4 @@
-// index.js - V5.1.1 (修正訂單確認錯誤，並新增待確認訂單通知)
+// index.js - V5.1.1.1 (修正訂單確認錯誤，並新增待確認訂單通知)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 // =====================================
