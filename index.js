@@ -1,4 +1,4 @@
-// index.js - V5.1.1.1 (修正訂單確認錯誤，並新增待確認訂單通知)
+// index.js - V5.1.2 (優化老師查詢學員功能、更新點數管理選單顯示，並處理購點訂單狀態邏輯)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 // =====================================
@@ -715,10 +715,10 @@ async function buildPointsMenuFlex(userId) {
             actionButtonLabel = '修改匯款後五碼'; actionCmd = COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardTitle = '🕒 匯款已提交，等待確認'; cardColor = '#ff9e00'; statusText = '已提交五碼，等待老師確認';
         } else if (pendingOrder.status === 'rejected') {
             actionButtonLabel = '重新提交匯款後五碼'; actionCmd = COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardTitle = '❌ 訂單被退回！'; cardColor = '#d90429'; statusText = '訂單被老師退回'; additionalInfo = '請檢查匯款金額或後五碼，並重新提交。';
-        } else {
+        } else { // pending_payment
             actionButtonLabel = '輸入匯款後五碼'; actionCmd = COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER; cardTitle = '❗ 匯款待確認'; cardColor = '#f28482'; statusText = '待付款';
         }
-        pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: cardTitle, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: cardColor, paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [ { type: 'text', text: `訂單 ID: ${pendingOrder.order_id}`, weight: 'bold', size: 'md', align: 'center' }, { type: 'text', text: `購買 ${pendingOrder.points} 點 / ${pendingOrder.amount} 元`, size: 'sm', align: 'center' }, { type: 'text', text: `狀態: ${statusText}`, size: 'sm', align: 'center' }, { type: 'text', text: `後五碼: ${pendingOrder.last5Digits || '未輸入'}`, size: 'sm', align: 'center' }, ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', align: 'center', color: '#B00020', wrap: true }] : []), { type: 'text', text: `提交時間: ${formatDateTime(pendingOrder.timestamp)}`, size: 'xs', align: 'center', color: '#666666' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', height: 'sm', color: '#de5246', action: { type: 'postback', label: actionButtonLabel, data: `action=run_command&text=${actionCmd}` } }, { type: 'button', style: 'secondary', height: 'sm', color: '#8d99ae', action: { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE } }] } });
+        pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: cardTitle, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: cardColor, paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [ { type: 'text', text: `訂單 ID: ${pendingOrder.order_id}`, weight: 'bold', size: 'md', align: 'center' }, { type: 'text', text: `購買 ${pendingOrder.points} 點 / ${pendingOrder.amount} 元`, size: 'sm', align: 'center' }, { type: 'text', text: `狀態: ${statusText}`, size: 'sm', align: 'center' }, { type: 'text', text: `後五碼: ${pendingOrder.last_5_digits || '未輸入'}`, size: 'sm', align: 'center' }, ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', align: 'center', color: '#B00020', wrap: true }] : []), { type: 'text', text: `提交時間: ${formatDateTime(pendingOrder.timestamp)}`, size: 'xs', align: 'center', color: '#666666' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', height: 'sm', color: '#de5246', action: { type: 'postback', label: actionButtonLabel, data: `action=run_command&text=${actionCmd}` } }, { type: 'button', style: 'secondary', height: 'sm', color: '#8d99ae', action: { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE } }] } });
     }
 
     pointBubbles.push({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '剩餘點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#76c893', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', justifyContent: 'center', alignItems: 'center', height: '150px', contents: [ { type: 'text', text: `${user.points} 點`, weight: 'bold', size: 'xxl', align: 'center' }, { type: 'text', text: `上次查詢: ${new Date().toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })}`, color: '#666666', size: 'xs', align: 'center' } ] }, action: { type: 'postback', label: '重新整理', data: `action=run_command&text=${COMMANDS.STUDENT.POINTS}` } });
@@ -783,7 +783,7 @@ async function handlePurchaseFlow(event, userId) {
         };
         const pointsFlexMessage = await buildPointsMenuFlex(userId);
 
-        // [MOD-V5.1.1] 新增：通知老師有新訂單待確認
+        // [MOD-V5.1.2] 優化：通知老師有新訂單待確認時包含用戶名和訂單ID
         if (TEACHER_ID) {
             const notifyText = `🔔 新訂單待確認\n學員：${newOrderData.userName}\n訂單ID：${newOrderData.orderId}\n後五碼：${newOrderData.last5Digits}\n請至「點數管理」->「待確認清單」處理。`;
             push(TEACHER_ID, notifyText).catch(e => console.error(`❌ 通知老師新訂單失敗:`, e.message));
@@ -1124,318 +1124,6 @@ async function handleStudentCommands(event, userId) {
             } finally {
                 transactionClient.release();
             }
-// =====================================
-//           學員指令處理函式 (修正後)
-// =====================================
-async function handleStudentCommands(event, userId) {
-  const replyToken = event.replyToken;
-  const text = event.message.text ? event.message.text.trim() : '';
-  if (await handlePurchaseFlow(event, userId)) return;
-
-  const user = await getUser(userId);
-  const courses = await getAllCourses();
-  const returnToPointsMenuBtn = { type: 'postback', label: '返回點數管理', data: `action=run_command&text=${COMMANDS.STUDENT.POINTS}` };
-
-
-  if (text === COMMANDS.STUDENT.POINTS || text === COMMANDS.STUDENT.RETURN_POINTS_MENU) {
-    if (pendingPurchase[userId]?.step !== 'input_last5' && pendingPurchase[userId]?.step !== 'edit_last5') {
-        delete pendingPurchase[userId];
-    }
-    delete pendingBookingConfirmation[userId];
-    return sendPointsMenu(replyToken, userId);
-  }
-
-  if (text === COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER || text === COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER) {
-    const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
-    const pendingOrder = ordersRes.rows[0];
-    if (pendingOrder) {
-      pendingPurchase[userId] = { step: 'input_last5', data: { orderId: pendingOrder.order_id } };
-      let promptText = `請輸入您的訂單 ${pendingOrder.order_id} 的匯款帳號後五碼：`;
-      if (pendingOrder.status === 'rejected') promptText = `訂單 ${pendingOrder.order_id} 之前被退回。請重新輸入正確的匯款帳號後五碼：`;
-      return reply(replyToken, promptText, [ { type: 'message', label: '取消輸入', text: COMMANDS.STUDENT.CANCEL_INPUT_LAST5 }, returnToPointsMenuBtn ]);
-    } else {
-      delete pendingPurchase[userId];
-      return reply(replyToken, '目前沒有需要輸入或修改匯款後五碼的待確認訂單。');
-    }
-  }
-
-  if (text === COMMANDS.STUDENT.CHECK_POINTS) {
-    return reply(replyToken, `你目前有 ${user.points} 點。`);
-  }
-
-  // [FIX] 修改購買點數流程，避免 reply token 失效
-  if (text === COMMANDS.STUDENT.BUY_POINTS) {
-    // 1. 先快速回覆，表示已收到指令
-    reply(replyToken, '正在為您查詢點數方案，請稍候...').catch(e => console.error(e));
-    
-    // 2. 在背景執行後續的非同步作業
-    (async () => {
-      try {
-        const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
-        const pendingOrder = ordersRes.rows[0];
-        
-        if (pendingOrder) {
-          // 3. 用 push 推送結果
-          await push(userId, {
-            type: 'text',
-            text: `您有一筆待完成的購點訂單 (ID: ${pendingOrder.order_id})，請在「點數管理」主頁面輸入後五碼，或選擇「❌ 取消購買」。`,
-            quickReply: {
-              items: [
-                { type: 'action', action: { type: 'postback', label: '返回點數管理', data: `action=run_command&text=${COMMANDS.STUDENT.POINTS}`, displayText: '返回點數管理' } },
-                { type: 'action', action: { type: 'message', label: '❌ 取消購買', text: COMMANDS.STUDENT.CANCEL_PURCHASE } }
-              ]
-            }
-          });
-        } else {
-          pendingPurchase[userId] = { step: 'select_plan', data: {} };
-          const planOptions = PURCHASE_PLANS.map(plan => ({ type: 'action', action: { type: 'message', label: plan.label, text: plan.label } }));
-          planOptions.push({ type: 'action', action: { type: 'postback', label: '返回點數管理', data: `action=run_command&text=${COMMANDS.STUDENT.POINTS}`, displayText: '返回點數管理' } });
-          
-          // 3. 用 push 推送帶有 Quick Reply 的訊息
-          await push(userId, {
-            type: 'text',
-            text: '請選擇要購買的點數方案：',
-            quickReply: {
-              items: planOptions
-            }
-          });
-        }
-      } catch (err) {
-        console.error('❌ 處理購買點數異步流程失敗:', err);
-        await push(userId, '查詢點數方案時發生錯誤，請稍後再試。');
-      }
-    })();
-    return; // 因為已經 reply 過，直接結束函式
-  }
-
-  if (text === COMMANDS.STUDENT.CANCEL_PURCHASE) {
-    const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') ORDER BY timestamp DESC LIMIT 1`, [userId]);
-    const pendingOrder = ordersRes.rows[0];
-    if (pendingOrder) {
-        if (pendingOrder.status === 'pending_confirmation') {
-          return reply(replyToken, '您的匯款資訊已提交，訂單正在等待老師確認，目前無法自行取消。\n如有疑問請聯繫老師。');
-        }
-        else if (pendingOrder.status === 'pending_payment' || pendingOrder.status === 'rejected') {
-            const transactionClientCancel = await pgPool.connect();
-            try {
-              await transactionClientCancel.query('BEGIN');
-              await deleteOrder(pendingOrder.order_id, transactionClientCancel);
-              await transactionClientCancel.query('COMMIT');
-              delete pendingPurchase[userId];
-              return reply(replyToken, '已取消您的購點訂單。', [returnToPointsMenuBtn]);
-            } catch (err) {
-              await transactionClientCancel.query('ROLLBACK');
-              console.error('❌ 取消購點訂單交易失敗:', err.message);
-              return reply(replyToken, '取消訂單失敗，請稍後再試。');
-            } finally {
-                transactionClientCancel.release();
-            }
-        }
-    }
-    if (pendingPurchase[userId]) delete pendingPurchase[userId];
-    return reply(replyToken, '目前沒有待取消的購點訂單。', [returnToPointsMenuBtn]);
-  }
-
-  if (text === COMMANDS.STUDENT.PURCHASE_HISTORY) {
-    if (!user.history || user.history.length === 0) {
-      return reply(replyToken, '你目前沒有點數相關記錄。');
-    }
-    let historyMessage = '以下是你的點數記錄 (近5筆)：\n';
-    user.history.slice(-5).reverse().forEach(record => {
-      historyMessage += `・${record.action} (${formatDateTime(record.time)})\n`;
-    });
-    return reply(replyToken, historyMessage.trim());
-  }
-
-  if (text === COMMANDS.STUDENT.BOOK_COURSE) {
-    const now = Date.now();
-    const sevenDaysLater = now + (ONE_DAY_IN_MS * 7);
-    const upcomingCourses = Object.values(courses).filter(c => new Date(c.time).getTime() > now && new Date(c.time).getTime() <= sevenDaysLater && !c.students.includes(userId) && !c.waiting.includes(userId)).sort((cA, cB) => new Date(cA.time).getTime() - new Date(cB.time).getTime());
-    if (upcomingCourses.length === 0) {
-      return reply(replyToken, '未來七天內沒有您可以預約的新課程。');
-    }
-    const courseBubbles = upcomingCourses.slice(0, 10).map(course => {
-        const isFull = course.students.length >= course.capacity;
-        const statusText = `報名 ${course.students.length}/${course.capacity}`;
-        const actionButton = { type: 'postback', label: isFull ? '加入候補' : '立即預約', data: `action=confirm_booking&courseId=${course.id}&type=${isFull ? 'wait' : 'book'}`, displayText: `確認預約 ${course.title}` };
-        const headerColor = isFull ? '#ff9e00' : '#34a0a4';
-        return { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '課程資訊', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: headerColor, paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator' }, { type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md', contents: [ { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(course.time), wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '費用', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${course.pointsCost} 點`, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '狀態', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: statusText, wrap: true, color: '#666666', size: 'sm', flex: 5 } ] }, ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', flex: 0, contents: [{ type: 'button', style: 'primary', color: isFull ? '#ff9e00' : '#1a759f', action: actionButton }] } };
-    });
-    // 這裡傳入 null 確保不顯示 quickReply
-    return reply(replyToken, [ { type: 'text', text: '💡 請注意：課程開始前 8 小時不可退課。' }, { type: 'flex', altText: '可預約課程列表', contents: { type: 'carousel', contents: courseBubbles } } ], null);
-  }
-
-  if (text === COMMANDS.STUDENT.MY_COURSES) {
-    const now = Date.now();
-    const enrolledCourses = Object.values(courses).filter(c => c.students.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
-    const waitingCourses = Object.values(courses).filter(c => c.waiting.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
-    if (enrolledCourses.length === 0 && waitingCourses.length === 0) {
-      return reply(replyToken, '您目前沒有任何已預約或候補中的未來課程。');
-    }
-    const courseBubbles = [
-        ...enrolledCourses.map(course => {
-            const canCancel = new Date(course.time).getTime() - now > EIGHT_HOURS_IN_MS;
-            return { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '✅ 已預約', color: '#ffffff', weight: 'bold' }], backgroundColor: '#52b69a', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator', margin: 'md'}, { type: 'text', text: `${formatDateTime(course.time)}`, size: 'md' }, { type: 'text', text: `已扣除 ${course.pointsCost} 點`, size: 'sm', color: '#666666' } ] }, footer: canCancel ? { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '取消預約', data: `action=cancel_booking_confirm&courseId=${course.id}`, displayText: `準備取消預約：${course.title}` } }] } : undefined };
-        }),
-        ...waitingCourses.map(course => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '⏳ 候補中', color: '#ffffff', weight: 'bold' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true }, { type: 'separator', margin: 'md'}, { type: 'text', text: `${formatDateTime(course.time)}`, size: 'md' }, { type: 'text', text: `目前候補第 ${course.waiting.indexOf(userId) + 1} 位`, size: 'sm', color: '#666666' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [{ type: 'button', style: 'primary', color: '#8d99ae', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=cancel_waiting_confirm&courseId=${course.id}`, displayText: `準備取消候補：${course.title}` } }] } }))
-    ];
-    // 這裡傳入 null 確保不顯示 quickReply
-    return reply(replyToken, { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } }, null);
-  }
-
-  if (text === COMMANDS.STUDENT.CANCEL_BOOKING) {
-      const now = Date.now();
-      const enrolledCourses = Object.values(courses).filter(c => c.students.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
-
-      if (enrolledCourses.length === 0) {
-          return reply(replyToken, '您目前沒有任何已預約的課程可取消。');
-      }
-
-      const cancelOptions = enrolledCourses.slice(0, 10).map(course => {
-          const canCancel = new Date(course.time).getTime() - now > EIGHT_HOURS_IN_MS;
-          if (canCancel) {
-              return { type: 'postback', label: `取消 ${formatDateTime(course.time)} ${course.title}`, data: `action=cancel_booking_confirm&courseId=${course.id}`, displayText: `準備取消預約：${course.title}` };
-          }
-          return null;
-      }).filter(item => item !== null);
-
-      if (cancelOptions.length === 0) {
-          return reply(replyToken, '您所有已預約的課程都已不足 8 小時，無法取消。');
-      }
-
-      // 這裡傳入 null 確保不顯示 quickReply
-      return reply(replyToken, '請選擇要取消預約的課程：', cancelOptions);
-  }
-
-  if (text === COMMANDS.STUDENT.CANCEL_WAITING) {
-      const now = Date.now();
-      const waitingCourses = Object.values(courses).filter(c => c.waiting.includes(userId) && new Date(c.time).getTime() > now).sort((a,b) => new Date(a.time) - new Date(b.time));
-
-      if (waitingCourses.length === 0) {
-          return reply(replyToken, '您目前沒有任何候補中的課程可取消。');
-      }
-
-      const cancelWaitingOptions = waitingCourses.slice(0, 10).map(course => ({
-          type: 'postback', label: `取消候補 ${formatDateTime(course.time)} ${course.title}`, data: `action=cancel_waiting_confirm&courseId=${course.id}`, displayText: `準備取消候補：${course.title}`
-      }));
-
-      // 這裡傳入 null 確保不顯示 quickReply
-      return reply(replyToken, '請選擇要取消候補的課程：', cancelWaitingOptions);
-  }
-
-  if (pendingBookingConfirmation[userId]) {
-    const confirmationData = pendingBookingConfirmation[userId];
-    const courseId = confirmationData.courseId;
-    const course = await getCourse(courseId);
-
-    if (!course) {
-        delete pendingBookingConfirmation[userId];
-        return reply(replyToken, '操作失敗：課程不存在或已被取消。');
-    }
-
-    if (confirmationData.actionType === 'book' || confirmationData.actionType === 'wait') {
-        if (text === COMMANDS.STUDENT.CONFIRM_BOOKING) {
-            delete pendingBookingConfirmation[userId];
-            const transactionClient = await pgPool.connect();
-            try {
-                await transactionClient.query('BEGIN');
-                const currentUser = (await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId])).rows[0];
-                const courseInTransaction = (await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [courseId])).rows[0];
-
-                if (!currentUser || !courseInTransaction) throw new Error('用戶或課程資料不存在。');
-                if (currentUser.points < courseInTransaction.points_cost) throw new Error(`點數不足，此課程需要 ${courseInTransaction.points_cost} 點。`);
-                if (courseInTransaction.students.includes(userId) || courseInTransaction.waiting.includes(userId)) throw new Error('您已預約或候補此課程。');
-                if (new Date(courseInTransaction.time).getTime() < Date.now()) throw new Error('課程已過期。');
-
-                const courseToSave = {
-                    id: courseInTransaction.id, title: courseInTransaction.title, time: courseInTransaction.time,
-                    capacity: courseInTransaction.capacity, students: courseInTransaction.students, waiting: courseInTransaction.waiting,
-                    pointsCost: courseInTransaction.points_cost
-                };
-
-                if (courseToSave.students.length < courseToSave.capacity) {
-                    courseToSave.students.push(userId);
-                    currentUser.points -= courseToSave.pointsCost;
-                    currentUser.history.push({ id: courseId, action: `預約成功：${courseToSave.title} (扣 ${courseToSave.pointsCost} 點)`, time: new Date().toISOString() });
-                    await saveUser(currentUser, transactionClient);
-                    await saveCourse(courseToSave, transactionClient);
-                    await transactionClient.query('COMMIT');
-                    return reply(replyToken, `已成功預約課程：「${courseToSave.title}」。`);
-                } else {
-                    courseToSave.waiting.push(userId);
-                    currentUser.history.push({ id: courseId, action: `加入候補：${courseToSave.title}`, time: new Date().toISOString() });
-                    await saveCourse(courseToSave, transactionClient);
-                    await saveUser(currentUser, transactionClient);
-                    await transactionClient.query('COMMIT');
-                    return reply(replyToken, `課程已額滿，您已成功加入候補名單。`);
-                }
-            } catch (err) {
-                await transactionClient.query('ROLLBACK');
-                console.error("❌ 預約課程交易失敗:", err.stack);
-                return reply(replyToken, `預約失敗：${err.message}`);
-            } finally {
-                transactionClient.release();
-            }
-        } else if (text === COMMANDS.STUDENT.ABANDON_BOOKING) {
-            delete pendingBookingConfirmation[userId];
-            return reply(replyToken, `已放棄預約課程「${course.title}」。`);
-        } else {
-            const userPoints = (await getUser(userId)).points;
-            return reply(replyToken, `請點擊「${COMMANDS.STUDENT.CONFIRM_BOOKING}」或「${COMMANDS.STUDENT.ABANDON_BOOKING}」。\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n費用：${course.pointsCost}點\n您的剩餘點數：${userPoints} 點\n\n💡 請注意：課程開始前 8 小時不可退課。\n\n`, [
-                { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BOOKING, text: COMMANDS.STUDENT.CONFIRM_BOOKING },
-                { type: 'message', label: COMMANDS.STUDENT.ABANDON_BOOKING, text: COMMANDS.STUDENT.ABANDON_BOOKING }
-            ]);
-        }
-    }
-    else if (confirmationData.actionType === 'cancel_book') {
-        if (text === COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING) {
-            delete pendingBookingConfirmation[userId];
-            const transactionClient = await pgPool.connect();
-            try {
-                await transactionClient.query('BEGIN');
-                const courseToCancel = (await transactionClient.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [courseId])).rows[0];
-                if (!courseToCancel || !courseToCancel.students.includes(userId)) {
-                    await transactionClient.query('ROLLBACK');
-                    return reply(replyToken, '您並未預約此課程或課程不存在。');
-                }
-                if (new Date(courseToCancel.time).getTime() - Date.now() < EIGHT_HOURS_IN_MS) {
-                    await transactionClient.query('ROLLBACK');
-                    return reply(replyToken, `課程「${courseToCancel.title}」即將開始（不足8小時），無法取消。`);
-                }
-
-                const cancellingUser = (await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId])).rows[0];
-                cancellingUser.points += courseToCancel.points_cost;
-                cancellingUser.history.push({ id: courseId, action: `課程取消退點：${courseToCancel.title} (退 ${courseToCancel.points_cost} 點)`, time: new Date().toISOString() });
-                await saveUser(cancellingUser, transactionClient);
-
-                courseToCancel.students = courseToCancel.students.filter(sid => sid !== userId);
-                let replyMessage = `課程「${courseToCancel.title}」已取消，已退還 ${courseToCancel.points_cost} 點。`;
-
-                if (courseToCancel.waiting.length > 0) {
-                    const nextWaitingUserId = courseToCancel.waiting.shift();
-                    const nextWaitingUser = (await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [nextWaitingUserId])).rows[0];
-                    if (nextWaitingUser && nextWaitingUser.points >= courseToCancel.points_cost) {
-                        courseToCancel.students.push(nextWaitingUserId);
-                        nextWaitingUser.points -= courseToCancel.points_cost;
-                        nextWaitingUser.history.push({ id: courseId, action: `候補補上：${courseToCancel.title} (扣 ${courseToCancel.points_cost} 點)`, time: new Date().toISOString() });
-                        await saveUser(nextWaitingUser, transactionClient);
-                        push(nextWaitingUserId, `您已從候補名單補上課程「${courseToCancel.title}」！系統已自動扣點。`).catch(e => console.error(e.message));
-                        replyMessage += '\n有候補學生已遞補成功。';
-                    } else if (nextWaitingUser) {
-                        replyMessage += `\n候補學生 ${nextWaitingUser.name} 點數不足，未能遞補。`;
-                        if (TEACHER_ID) push(TEACHER_ID, `課程「${courseToCancel.title}」有學生取消，但候補者 ${nextWaitingUser.name} 點數不足，遞補失敗。`).catch(e => console.error(e.message));
-                    }
-                }
-                await saveCourse({ ...courseToCancel, pointsCost: courseToCancel.points_cost }, transactionClient);
-                await transactionClient.query('COMMIT');
-                return reply(replyToken, replyMessage.trim());
-            } catch(err) {
-                await transactionClient.query('ROLLBACK');
-                console.error("❌ 取消預約交易失敗:", err.stack);
-                return reply(replyToken, `取消失敗：${err.message}`);
-            } finally {
-                transactionClient.release();
-            }
         } else if (text === COMMANDS.STUDENT.ABANDON_CANCEL_BOOKING) {
             delete pendingBookingConfirmation[userId];
             return reply(replyToken, `已放棄取消課程「${course.title}」。`);
@@ -1479,6 +1167,7 @@ async function handleStudentCommands(event, userId) {
 
   return reply(replyToken, '指令無效，請使用富選單或輸入正確指令。');
 }
+
 
 // =====================================
 //           自動提醒功能 & 伺服器啟動
@@ -1543,7 +1232,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V5.1.1 (修正訂單確認錯誤，並新增待確認訂單通知)`);
+  console.log(`Bot 版本: V5.1.2 (優化老師查詢學員功能、更新點數管理選單顯示，並處理購點訂單狀態邏輯)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1892,7 +1581,7 @@ async function handleEvent(event) {
                         return;
                     }
                     
-                    // [FIX-V5.1.1] 修正：手動映射屬性以避免命名不匹配問題
+                    // [FIX-V5.1.2] 修正：確保 orderInTransaction.timestamp 轉換為有效的 ISO 格式
                     const updatedOrder = {
                         orderId: orderInTransaction.order_id,
                         userId: orderInTransaction.user_id,
@@ -1901,7 +1590,7 @@ async function handleEvent(event) {
                         amount: orderInTransaction.amount,
                         last5Digits: orderInTransaction.last_5_digits,
                         status: 'completed', // 設定新狀態
-                        timestamp: new Date(orderInTransaction.timestamp).toISOString()
+                        timestamp: new Date(orderInTransaction.timestamp).toISOString() // 確保時間戳是ISO格式
                     };
                     await saveOrder(updatedOrder, transactionClient);
 
@@ -1939,7 +1628,7 @@ async function handleEvent(event) {
                         return;
                     }
 
-                    // [FIX-V5.1.1] 修正：手動映射屬性以避免命名不匹配問題
+                    // [FIX-V5.1.2] 修正：確保 orderInTransaction.timestamp 轉換為有效的 ISO 格式
                     const updatedOrder = {
                         orderId: orderInTransaction.order_id,
                         userId: orderInTransaction.user_id,
@@ -1948,7 +1637,7 @@ async function handleEvent(event) {
                         amount: orderInTransaction.amount,
                         last5Digits: orderInTransaction.last_5_digits,
                         status: 'rejected', // 設定新狀態
-                        timestamp: new Date(orderInTransaction.timestamp).toISOString()
+                        timestamp: new Date(orderInTransaction.timestamp).toISOString() // 確保時間戳是ISO格式
                     };
                     await saveOrder(updatedOrder, transactionClient);
 
