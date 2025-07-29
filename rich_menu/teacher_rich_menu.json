@@ -10,22 +10,22 @@
     {
       "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
       "action": { "type": "postback", "data": "action=manage_courses", "displayText": "課程管理" }
-      // 點擊後發送 postback 事件，數據為 action=manage_courses
+      
     },
     {
       "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
       "action": { "type": "postback", "data": "action=manage_points", "displayText": "點數管理" }
-      // 點擊後發送 postback 事件，數據為 action=manage_points
+      
     },
     {
       "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
       "action": { "type": "postback", "data": "action=start_student_search", "displayText": "查詢學員" }
-      // 這個已經在上次討論中改過了
+     
     },
     {
       "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
       "action": { "type": "postback", "data": "action=view_statistics", "displayText": "統計報表" }
-      // 點擊後發送 postback 事件，數據為 action=view_statistics
+      
     }
   ]
 }
