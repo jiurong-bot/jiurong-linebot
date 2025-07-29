@@ -9,19 +9,19 @@
   "areas": [
     {
       "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
-      "action": { "type": "message", "text": "以瑜伽修心,以古意養形" }
+      "action": { "type": "message", "text": "以瑜伽修心，以古意養形" }
     },
     {
       "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "@預約課程" }
+      "action": { "type": "postback", "data": "action=run_command&text=@預約課程", "displayText": "預約課程" }
     },
     {
       "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
-      "action": { "type": "message", "text": "@我的課程" }
+      "action": { "type": "postback", "data": "action=run_command&text=@我的課程", "displayText": "我的課程" }
     },
     {
       "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "@點數管理" }
+      "action": { "type": "postback", "data": "action=run_command&text=@點數管理", "displayText": "點數管理" }
     }
   ]
 }
