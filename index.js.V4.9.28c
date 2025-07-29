@@ -1,4 +1,4 @@
-// index.js - V4.9.28 (移除所有切換身份 Quick Reply)
+// index.js - V5.0.0 (優化 Rich Menu 連結邏輯並移除切換身份 Quick Reply)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 // =====================================
@@ -1132,7 +1132,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.28 (移除所有切換身份 Quick Reply)`);
+  console.log(`Bot 版本: V5.0.0 (優化 Rich Menu 連結邏輯並移除切換身份 Quick Reply)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1199,7 +1199,7 @@ async function handleEvent(event) {
                 // 切換回學員身份時，連結學員 Rich Menu
                 if (STUDENT_RICH_MENU_ID) {
                     await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
-                    console.log(`✅ 為新用戶 ${user.name} 連結學員 Rich Menu: ${STUDENT_RICH_MENU_ID}`);
+                    console.log(`✅ 為用戶 ${user.name} 連結學員 Rich Menu: ${STUDENT_RICH_MENU_ID}`);
                 } else {
                     console.warn(`⚠️ 未設定 STUDENT_RICH_MENU_ID，無法為用戶連結學員 Rich Menu。`);
                 }
