@@ -18,7 +18,7 @@
     {
       "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
       "action": { "type": "message", "text": "@查詢學員" }
-     }
+     },
     {
       "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
       "action": { "type": "message", "text": "@統計報表" }
