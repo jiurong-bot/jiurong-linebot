@@ -1,4 +1,4 @@
-// index.js - V4.9.29 (優化手動調整點數流程)
+// index.js - V5.0.0 (優化 Rich Menu 連結邏輯並移除切換身份 Quick Reply)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 // =====================================
@@ -379,7 +379,7 @@ const WEEKDAYS = [
 const pendingTeacherLogin = {};
 const pendingCourseCreation = {};
 const pendingPurchase = {};
-const pendingManualAdjust = {}; // 修改這裡的結構
+const pendingManualAdjust = {};
 const sentReminders = {};
 const pendingStudentSearchQuery = {};
 const pendingBookingConfirmation = {};
@@ -453,62 +453,59 @@ async function handleTeacherCommands(event, userId) {
       }
   }
 
-  // [MODIFIED] 處理手動調整點數的輸入步驟
-  if (pendingManualAdjust[userId] && pendingManualAdjust[userId].step === 'input_amount') {
-      const { studentId, adjustType } = pendingManualAdjust[userId].data;
-      const amount = parseInt(text);
-
-      if (isNaN(amount) || amount <= 0) {
-          return reply(replyToken, `請輸入有效的正整數點數。\n輸入 ${COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST} 取消。`);
+  if (pendingManualAdjust[userId] && text !== COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
+      if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST) {
+          delete pendingManualAdjust[userId];
+          return reply(replyToken, '已取消手動調整點數。', teacherMenu);
       }
-
-      const finalAmount = adjustType === 'add' ? amount : -amount;
-      const operation = adjustType === 'add' ? '加點' : '扣點';
-
+      const parts = text.split(' ');
+      if (parts.length !== 2) return reply(replyToken, '指令格式錯誤。\n請輸入：學員姓名/ID [空格] 點數\n例如：王小明 5\n或輸入 @返回點數管理 取消。');
+      const targetIdentifier = parts[0];
+      const amount = parseInt(parts[1]);
+      if (isNaN(amount) || amount === 0) return reply(replyToken, '點數數量必須是非零整數。');
+      let foundUser = await getUser(targetIdentifier);
+      if (!foundUser) {
+          const res = await pgPool.query(`SELECT * FROM users WHERE role = 'student' AND LOWER(name) LIKE $1`, [`%${targetIdentifier.toLowerCase()}%`]);
+          if (res.rows.length > 0) foundUser = res.rows[0];
+      }
+      if (!foundUser) {
+          delete pendingManualAdjust[userId];
+          return reply(replyToken, `找不到學員：${targetIdentifier}。`, teacherMenu);
+      }
+      const operation = amount > 0 ? '加點' : '扣點';
+      const absAmount = Math.abs(amount);
       const transactionClient = await pgPool.connect();
       try {
           await transactionClient.query('BEGIN');
-          const userInTransactionRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [studentId]);
+          const userInTransactionRes = await transactionClient.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [foundUser.id]);
           const userInTransaction = userInTransactionRes.rows[0];
-
           if (!userInTransaction) throw new Error('操作失敗，找不到學員資料。');
-          if (adjustType === 'minus' && userInTransaction.points < amount) throw new Error(`學員 ${userInTransaction.name} 點數不足（目前 ${userInTransaction.points} 點，需扣 ${amount} 點）。`);
-
-          userInTransaction.points += finalAmount;
+          if (operation === '扣點' && userInTransaction.points < absAmount) throw new Error(`學員 ${userInTransaction.name} 點數不足（目前 ${userInTransaction.points} 點，需扣 ${absAmount} 點）。`);
+          userInTransaction.points += amount;
           if (!Array.isArray(userInTransaction.history)) userInTransaction.history = [];
-          userInTransaction.history.push({ action: `老師手動${operation} ${amount} 點`, time: new Date().toISOString(), by: userId });
+          userInTransaction.history.push({ action: `老師手動${operation} ${absAmount} 點`, time: new Date().toISOString(), by: userId });
           await saveUser(userInTransaction, transactionClient);
           await transactionClient.query('COMMIT');
-
-          push(userInTransaction.id, `您的點數已由老師手動調整：${operation}${amount}點。\n目前點數：${userInTransaction.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
-          delete pendingManualAdjust[userId]; // 清除狀態
-
-          return reply(replyToken, `✅ 已成功為學員 ${userInTransaction.name} ${operation} ${amount} 點，目前點數：${userInTransaction.points} 點。`, teacherMenu);
-
+          push(userInTransaction.id, `您的點數已由老師手動調整：${operation}${absAmount}點。\n目前點數：${userInTransaction.points}點。`).catch(e => console.error(`❌ 通知學員點數變動失敗:`, e.message));
+          delete pendingManualAdjust[userId];
+          return reply(replyToken, `✅ 已成功為學員 ${userInTransaction.name} ${absAmount} 點，目前點數：${userInTransaction.points} 點。`, teacherMenu);
       } catch (err) {
           await transactionClient.query('ROLLBACK');
           console.error('❌ 手動調整點數交易失敗:', err.message);
-          delete pendingManualAdjust[userId]; // 清除狀態
+          delete pendingManualAdjust[userId];
           return reply(replyToken, err.message || '操作失敗，資料庫發生錯誤，請稍後再試。', teacherMenu);
       } finally {
           transactionClient.release();
       }
-  }
-  // [MODIFIED] 處理手動調整點數的取消指令
-  if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST && pendingManualAdjust[userId]) {
+  } else if (text !== COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST && !text.match(/^\S+\s+(-?\d+)$/) && pendingManualAdjust[userId]) {
       delete pendingManualAdjust[userId];
-      return reply(replyToken, '已取消手動調整點數操作。', teacherMenu);
-  } else if (text === COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST && !pendingManualAdjust[userId]) {
-      // 如果老師在非調整點數流程中輸入取消，則直接返回主菜單
-      return reply(replyToken, '您目前沒有正在進行中的手動點數調整操作。', teacherMenu);
   }
 
-  // [MODIFIED] 點數管理菜單包含新的手動調整選項
   if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
     const pendingOrdersCount = (await pgPool.query(`SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'`)).rows[0].count;
     const pointManagementBubbles = [
       { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '待確認訂單', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: `${pendingOrdersCount} 筆`, weight: 'bold', size: 'xxl', align: 'center' }, { type: 'text', text: '點擊查看並處理', color: '#666666', size: 'sm', align: 'center' }, ], justifyContent: 'center', alignItems: 'center', height: '150px' }, action: { type: 'postback', label: '查看待確認訂單', data: `action=run_command&text=${COMMANDS.TEACHER.PENDING_ORDERS}` } },
-      { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '手動調整點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#52b69a', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', paddingAll: 'xxl', contents: [ { type: 'text', text: '增減學員點數', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' }, ], justifyContent: 'center', alignItems: 'center', height: '150px' }, action: { type: 'postback', label: '調整學員點數', data: `action=select_student_for_adjust` } } // [MODIFIED] 新增的按鈕，導向選擇學員
+      { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '手動調整點數', color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#52b69a', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', paddingAll: 'xxl', contents: [ { type: 'text', text: '增減學員點數', size: 'md', weight: 'bold', color: '#AAAAAA', align: 'center', margin: 'md' }, ], justifyContent: 'center', alignItems: 'center', height: '150px' }, action: { type: 'postback', label: '手動調整點數', data: `action=run_command&text=${COMMANDS.TEACHER.MANUAL_ADJUST_POINTS}` } }
     ];
     const flexMessage = { type: 'flex', altText: '點數管理功能', contents: { type: 'carousel', contents: pointManagementBubbles } };
     return reply(replyToken, flexMessage); // 這裡傳入 null 確保不顯示 quickReply
@@ -587,7 +584,7 @@ async function handleTeacherCommands(event, userId) {
             const ordersRes = await pgPool.query(`SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC`);
             const pendingConfirmationOrders = ordersRes.rows.map(row => ({ orderId: row.order_id, userId: row.user_id, userName: row.user_name, points: row.points, amount: row.amount, last5Digits: row.last_5_digits, timestamp: row.timestamp.toISOString() }));
             if (pendingConfirmationOrders.length === 0) return push(userId, '目前沒有待確認的購點訂單。');
-            const orderBubbles = pendingConfirmationOrders.slice(0, 10).map(order => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `訂單 #${order.orderId}`, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: `學員姓名: ${order.userName}`, wrap: true, size: 'sm' }, { type: 'text', text: `學員ID: ${order.userId.substring(0, 0)}...`, wrap: true, size: 'sm' }, { type: 'text', text: `購買點數: ${order.points} 點`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `應付金額: $${order.amount}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `匯款後五碼: ${order.last5Digits || '未輸入'}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `提交時間: ${formatDateTime(order.timestamp)}`, wrap: true, size: 'sm', color: '#666666' } ] }, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', flex: 0, contents: [ { type: 'button', style: 'primary', color: '#52b69a', height: 'sm', action: { type: 'postback', label: '✅ 確認', data: `action=confirm_order&orderId=${order.orderId}`, displayText: `確認訂單 ${order.orderId} 入帳` } }, { type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '❌ 退回', data: `action=reject_order&orderId=${order.orderId}`, displayText: `退回訂單 ${order.orderId}` } } ] } }));
+            const orderBubbles = pendingConfirmationOrders.slice(0, 10).map(order => ({ type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `訂單 #${order.orderId}`, color: '#ffffff', weight: 'bold', size: 'md' }], backgroundColor: '#ff9e00', paddingAll: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: `學員姓名: ${order.userName}`, wrap: true, size: 'sm' }, { type: 'text', text: `學員ID: ${order.userId.substring(0, 0)}...`, wrap: true, size: 'sm' }, { type: 'text', text: `購買點數: ${order.points} 點`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `應付金額: $${order.amount}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `匯款後五碼: ${order.last5Digits || '未輸入'}`, wrap: true, size: 'sm', weight: 'bold' }, { type: 'text', text: `提交時間: ${formatDateTime(order.timestamp)}`, size: 'xs', align: 'center', color: '#666666' } ] }, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', flex: 0, contents: [ { type: 'button', style: 'primary', color: '#52b69a', height: 'sm', action: { type: 'postback', label: '✅ 確認', data: `action=confirm_order&orderId=${order.orderId}`, displayText: `確認訂單 ${order.orderId} 入帳` } }, { type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '❌ 退回', data: `action=reject_order&orderId=${order.orderId}`, displayText: `退回訂單 ${order.orderId}` } } ] } }));
             await push(userId, { type: 'flex', altText: '待確認購點訂單列表', contents: { type: 'carousel', contents: orderBubbles } });
         } catch (err) {
             console.error('❌ 查詢待確認訂單時發生錯誤:', err);
@@ -597,7 +594,11 @@ async function handleTeacherCommands(event, userId) {
     return;
   }
 
-  // [REMOVED] 舊的手動調整點數邏輯已移除，由新的postback處理
+  if (text === COMMANDS.TEACHER.MANUAL_ADJUST_POINTS) {
+    pendingManualAdjust[userId] = { step: 1 };
+    // 這裡傳入 [] 確保不顯示 quickReply
+    return reply(replyToken, '請輸入學員 ID 或姓名，以及要調整的點數數量（正數加點，負數扣點），例如：\n王小明 5\n或\nU123abc -2\n\n輸入 @返回點數管理 取消。', []);
+  }
 
   return reply(replyToken, '指令無效，請使用下方老師選單或輸入正確指令。', teacherMenu);
 }
@@ -1131,7 +1132,7 @@ app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'))
 
 app.listen(PORT, async () => {
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V4.9.29 (優化手動調整點數流程)`);
+  console.log(`Bot 版本: V5.0.0 (優化 Rich Menu 連結邏輯並移除切換身份 Quick Reply)`);
   setInterval(cleanCoursesDB, ONE_DAY_IN_MS);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   if (SELF_URL && SELF_URL !== 'https://你的部署網址/') {
@@ -1198,7 +1199,7 @@ async function handleEvent(event) {
                 // 切換回學員身份時，連結學員 Rich Menu
                 if (STUDENT_RICH_MENU_ID) {
                     await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
-                    console.log(`✅ 為新用戶 ${user.name} 連結學員 Rich Menu: ${STUDENT_RICH_MENU_ID}`);
+                    console.log(`✅ 為用戶 ${user.name} 連結學員 Rich Menu: ${STUDENT_RICH_MENU_ID}`);
                 } else {
                     console.warn(`⚠️ 未設定 STUDENT_RICH_MENU_ID，無法為用戶連結學員 Rich Menu。`);
                 }
@@ -1308,8 +1309,9 @@ async function handleEvent(event) {
                         break;
                     case 2: // 輸入總堂數
                         const totalClasses = parseInt(text);
-                        if (isNaN(totalClasses) || totalClasses <= 0 || totalClasses > 12) {
-                            await reply(event.replyToken, '總堂數必須是 1 到 12 之間的整數，請重新輸入。');
+                        // 修改總堂數限制為 1 到 99
+                        if (isNaN(totalClasses) || totalClasses <= 0 || totalClasses > 99) {
+                            await reply(event.replyToken, '總堂數必須是 1 到 99 之間的整數，請重新輸入。');
                             return;
                         }
                         stepData.totalClasses = totalClasses;
@@ -1439,70 +1441,9 @@ async function handleEvent(event) {
             return reply(replyToken, studentInfo.trim(), teacherMenu);
         }
 
+
         if (user.role === 'teacher') {
-            // [MODIFIED] 新增選擇學員進行點數調整的動作
-            if (action === 'select_student_for_adjust') {
-                const studentsRes = await pgPool.query(`SELECT id, name, points FROM users WHERE role = 'student' ORDER BY name ASC LIMIT 10`);
-                const students = studentsRes.rows;
-
-                if (students.length === 0) {
-                    return reply(replyToken, '目前沒有任何學員可供點數調整。', teacherMenu);
-                }
-
-                const studentBubbles = students.map(s => ({
-                    type: 'bubble',
-                    header: {
-                        type: 'box',
-                        layout: 'vertical',
-                        contents: [{ type: 'text', text: '學員點數調整', color: '#ffffff', weight: 'bold', size: 'md' }],
-                        backgroundColor: '#52b69a',
-                        paddingAll: 'lg'
-                    },
-                    body: {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'md',
-                        contents: [
-                            { type: 'text', text: s.name, weight: 'bold', size: 'xl', wrap: true },
-                            { type: 'text', text: `目前點數：${s.points} 點`, size: 'sm', color: '#666666' }
-                        ]
-                    },
-                    footer: {
-                        type: 'box',
-                        layout: 'horizontal',
-                        spacing: 'sm',
-                        flex: 0,
-                        contents: [
-                            { type: 'button', style: 'primary', color: '#34a0a4', height: 'sm', action: { type: 'postback', label: '+ 加點', data: `action=start_manual_adjust_points&studentId=${s.id}&type=add`, displayText: `為 ${s.name} 加點` } },
-                            { type: 'button', style: 'primary', color: '#de5246', height: 'sm', action: { type: 'postback', label: '- 扣點', data: `action=start_manual_adjust_points&studentId=${s.id}&type=minus`, displayText: `為 ${s.name} 扣點` } }
-                        ]
-                    }
-                }));
-
-                const flexMessage = { type: 'flex', altText: '請選擇學員調整點數', contents: { type: 'carousel', contents: studentBubbles } };
-                return reply(replyToken, [{ type: 'text', text: '請選擇要調整點數的學員：' }, flexMessage], [{ type: 'message', label: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST, text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }]); // 提供取消選項
-            }
-            // [MODIFIED] 新增處理開始調整點數的 Postback
-            else if (action === 'start_manual_adjust_points') {
-                const studentId = data.get('studentId');
-                const adjustType = data.get('type'); // 'add' or 'minus'
-                const targetUser = await getUser(studentId);
-
-                if (!targetUser) {
-                    return reply(replyToken, '學員資料不存在。', teacherMenu);
-                }
-
-                pendingManualAdjust[userId] = {
-                    step: 'input_amount',
-                    data: { studentId: studentId, adjustType: adjustType, studentName: targetUser.name }
-                };
-                const prompt = adjustType === 'add'
-                    ? `您選擇為學員 ${targetUser.name} 加點。請輸入要增加的點數數量 (正整數)：`
-                    : `您選擇為學員 ${targetUser.name} 扣點。請輸入要扣除的點數數量 (正整數)：`;
-
-                return reply(replyToken, prompt, [{ type: 'message', label: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST, text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST }]); // 提供取消選項
-            }
-            else if (action === 'add_course_start') {
+            if (action === 'add_course_start') {
                 pendingCourseCreation[userId] = { step: 1 }; // 從新的步驟 1 開始
                 await reply(replyToken, '請輸入課程名稱（例如：哈達瑜伽）：', [{ type: 'message', label: COMMANDS.STUDENT.CANCEL_ADD_COURSE, text: COMMANDS.STUDENT.CANCEL_ADD_COURSE }]);
                 return;
