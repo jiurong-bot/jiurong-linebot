@@ -9,20 +9,19 @@
   "areas": [
     {
       "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
-      "action": { "type": "message", "text": "@課程管理" }
+      "action": { "type": "postback", "data": "action=run_command&text=@課程管理", "displayText": "課程管理" }
     },
     {
       "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "@點數管理" }
+      "action": { "type": "postback", "data": "action=run_command&text=@點數管理", "displayText": "點數管理" }
     },
     {
       "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
-      "action": { "type": "postback", "data": "action=start_student_search"
-      }
+      "action": { "type": "postback", "data": "action=start_student_search", "displayText": "查詢學員" }
     },
     {
       "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "@統計報表" }
+      "action": { "type": "postback", "data": "action=run_command&text=@統計報表", "displayText": "統計報表" }
     }
   ]
 }
