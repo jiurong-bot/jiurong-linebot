@@ -349,7 +349,7 @@ function getNextDate(dayOfWeek, timeStr, startDate = new Date()) {
 //               快速選單定義 (這些是 Quick Reply，非 Rich Menu)
 // =====================================
 const teacherMenu = [ 
-    { type: 'postback', label: '課程管理', data: `action=run_command&text=${COMMANDS.TEACHER.COURSE_MANAGEMENT}`, **displayText: ''** }, 
+    { type: 'postback', label: '課程管理', data: `action=run_command&text=${COMMANDS.TEACHER.COURSE_MANAGEMENT}`, displayText: '' }, 
     { type: 'postback', label: '點數管理', data: `action=run_command&text=${COMMANDS.TEACHER.POINT_MANAGEMENT}` }, 
     { type: 'postback', label: '查詢學員', data: 'action=start_student_search' }, 
     { type: 'postback', label: '統計報表', data: `action=run_command&text=${COMMANDS.TEACHER.REPORT}` }, 
