@@ -8,11 +8,19 @@
   "chatBarText": "學員選單",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 2500, "height": 843 },
-      "action": { "type": "message", "text": "🛒賣場建置中，敬請期待🛒" }
+      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
+      "action": { "type": "postback", "data": "action=run_command&text=@最新公告" }
     },
     {
-      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
+      "bounds": { "x": 833, "y": 0, "width": 833, "height": 843 },
+      "action": { "type": "postback", "data": "action=run_command&text=@活動賣場" }
+    },
+    {
+      "bounds": { "x": 1666, "y": 0, "width": 834, "height": 843 },
+      "action": { "type": "postback", "data": "action=run_command&text=@聯絡我們" }
+    },
+    {
+      "bounds": { "x": 0, "y": 843, "width": 834, "height": 843 },
       "action": { "type": "postback", "data": "action=run_command&text=@預約課程" }
     },
     {
@@ -20,7 +28,7 @@
       "action": { "type": "postback", "data": "action=run_command&text=@我的課程" }
     },
     {
-      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
+      "bounds": { "x": 1666, "y": 843, "width": 834, "height": 843 },
       "action": { "type": "postback", "data": "action=run_command&text=@點數管理" }
     }
   ]
