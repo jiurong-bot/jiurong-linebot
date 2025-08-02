@@ -765,7 +765,7 @@ app.post('/webhook', (req, res) => {
   const signature = req.headers['x-line-signature'];
   if (signature && config.channelSecret) {
     try {
-      const hash = crypto.createHmac('sha266', config.channelSecret).update(req.rawBody).digest('base64');
+      const hash = crypto.createHmac('sha256', config.channelSecret).update(req.rawBody).digest('base64');
       if (hash !== signature) {
         console.error('❌ LINE Webhook 簽名驗證失敗。');
         return res.status(401).send('Unauthorized');
