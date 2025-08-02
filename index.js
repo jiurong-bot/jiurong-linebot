@@ -1393,7 +1393,6 @@ async function checkAndSendReminders() {
 }
 
 app.use(express.json({ verify: (req, res, buf) => { if (req.headers['x-line-signature']) req.rawBody = buf; } }));
-
 app.post('/webhook', (req, res) => {
   const signature = req.headers['x-line-signature'];
   const channelSecret = config.channelSecret;
@@ -1403,10 +1402,13 @@ app.post('/webhook', (req, res) => {
       if (hash !== signature) { console.error('❌ LINE Webhook 簽名驗證失敗。'); return res.status(401).send('Unauthorized: Invalid signature'); }
     } catch (error) { console.error('❌ LINE Webhook 簽名驗證時發生錯誤:', error); return res.status(400).send('Bad Request'); }
   }
+  // 【修正】將 handleEven t 的拼寫錯誤修正為 handleEvent
   Promise.all(req.body.events.map(handleEvent))
     .then(() => res.status(200).send('OK'))
     .catch((err) => { console.error('❌ Webhook 處理失敗:', err.stack); res.status(500).end(); });
 });
+
+
 
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
