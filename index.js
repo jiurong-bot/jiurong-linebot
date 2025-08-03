@@ -170,7 +170,13 @@ async function initializeDatabase() {
         await pgPool.query('ALTER TABLE announcements ADD COLUMN creator_name VARCHAR(255) NOT NULL DEFAULT \'unknown\'');
         console.log('✅ 已成功為 announcements 表新增 creator_name 欄位。');
     }
-    
+
+    const createdAtCol = await pgPool.query("SELECT column_name FROM information_schema.columns WHERE table_name='announcements' AND column_name='created_at'");
+    if (createdAtCol.rows.length === 0) {
+        await pgPool.query('ALTER TABLE announcements ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()');
+        console.log('✅ 已成功為 announcements 表新增 created_at 欄位。');
+    }
+
     await cleanCoursesDB();
     console.log('✅ 資料庫初始化完成。');
   } catch (err) {
