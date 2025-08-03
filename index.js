@@ -139,7 +139,7 @@ async function initializeDatabase() {
         status VARCHAR(50) DEFAULT 'available', -- 'available' 或 'unavailable'
         creator_id VARCHAR(255) NOT NULL,
         creator_name VARCHAR(255) NOT NULL,
-        created_at TIMESTAMTz DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
     console.log('✅ 已檢查/建立 products 表格');
