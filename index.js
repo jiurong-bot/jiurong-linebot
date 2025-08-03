@@ -1502,14 +1502,7 @@ async function handleEvent(event) {
         }
     }
 
-    // 自動設定管理者
-    if (ADMIN_USER_ID && userId === ADMIN_USER_ID && user.role !== 'admin') {
-      user.role = 'admin';
-      await saveUser(user);
-      console.log(`使用者 ${user.name} (${userId}) 已自動設為管理者。`);
-      if (ADMIN_RICH_MENU_ID) await client.linkRichMenuToUser(userId, ADMIN_RICH_MENU_ID);
-    }
-
+    
     if (user.role === 'student') {
         try {
             const latestAnnRes = await pgPool.query('SELECT * FROM announcements ORDER BY id DESC LIMIT 1');
