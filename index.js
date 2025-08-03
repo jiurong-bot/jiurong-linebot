@@ -1152,14 +1152,6 @@ async function handleEvent(event) {
         // ...
     }
 
-    // V10: 自動設定首次使用的管理者
-    if (ADMIN_USER_ID && userId === ADMIN_USER_ID && user.role !== 'admin') {
-      user.role = 'admin';
-      await saveUser(user);
-      console.log(`使用者 ${user.name} (${userId}) 已自動設為管理者。`);
-      if (ADMIN_RICH_MENU_ID) await client.linkRichMenuToUser(userId, ADMIN_RICH_MENU_ID);
-    }
-
     // ... Announcement check logic remains the same ...
 
     if (event.type === 'message' && event.message.type === 'text') {
