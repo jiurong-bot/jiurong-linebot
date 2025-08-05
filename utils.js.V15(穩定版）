@@ -1,4 +1,4 @@
-// utils.js - V7.5 (新增資料庫狀態管理)
+// utils.js - V15 (新增資料庫狀態管理)
 const line = require('@line/bot-sdk');
 const { Pool } = require('pg');
 
