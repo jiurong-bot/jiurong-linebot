@@ -1432,3 +1432,331 @@ async function handleTeacherCommands(event, userId) {
     }
   }
 }
+async function checkAndSendReminders() {
+    const client = await pgPool.connect();
+    try {
+        const now = Date.now();
+        const reminderWindowStart = new Date(now + ONE_HOUR_IN_MS - (1000 * 60 * 5)); 
+        const reminderWindowEnd = new Date(now + ONE_HOUR_IN_MS);
+
+        const res = await client.query(`SELECT * FROM courses WHERE time BETWEEN $1 AND $2`, [reminderWindowStart, reminderWindowEnd]);
+        const upcomingCourses = res.rows;
+
+        for (const course of upcomingCourses) {
+            if (!sentReminders[course.id]) {
+                const reminderMsg = `🔔 課程提醒：\n您的課程「${course.title}」即將在約一小時後 (${formatDateTime(course.time)}) 開始，請準備上課！`;
+                for (const studentId of course.students) {
+                    await push(studentId, reminderMsg);
+                }
+                sentReminders[course.id] = true; 
+            }
+        }
+    } catch (err) {
+        console.error("❌ 檢查課程提醒時發生錯誤:", err);
+    } finally {
+        if(client) client.release();
+    }
+}
+
+app.use(express.json({ verify: (req, res, buf) => { if (req.headers['x-line-signature']) req.rawBody = buf; } }));
+
+app.post('/webhook', (req, res) => {
+  const signature = crypto.createHmac('SHA256', config.channelSecret).update(req.rawBody).digest('base64');
+  if (req.headers['x-line-signature'] !== signature) {
+    return res.status(401).send('Unauthorized');
+  }
+  Promise.all(req.body.events.map(handleEvent))
+    .then(() => res.status(200).send('OK'))
+    .catch((err) => { console.error('❌ Webhook 處理失敗:', err.stack); res.status(500).end(); });
+});
+
+app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
+
+app.listen(PORT, async () => {
+  await initializeDatabase();
+  console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
+  console.log(`Bot 版本: V15.6`);
+  setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
+  setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, PING_INTERVAL_MS);
+});
+
+async function handleEvent(event) {
+    if (!event.replyToken) return;
+    
+    const token = event.replyToken;
+    if (repliedTokens.has(token)) {
+      console.log('🔄️ 偵測到重複的 Webhook 事件，已忽略。');
+      return;
+    }
+    repliedTokens.add(token);
+    setTimeout(() => repliedTokens.delete(token), 60000);
+
+    const userId = event.source.userId;
+    let user = await getUser(userId);
+    
+    if (!user) {
+        try {
+            const profile = await client.getProfile(userId);
+            user = { id: userId, name: profile.displayName, points: 0, role: 'student', history: [], pictureUrl: profile.pictureUrl };
+            await saveUser(user);
+            await push(userId, `歡迎 ${user.name}！感謝您加入九容瑜伽。`);
+            if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+        } catch (error) {
+            console.error(`創建新用戶時出錯: `, error);
+            return;
+        }
+    } else {
+        try {
+            const profile = await client.getProfile(userId);
+            if (profile.displayName !== user.name || (profile.pictureUrl && profile.pictureUrl !== user.picture_url)) {
+                user.name = profile.displayName;
+                user.pictureUrl = profile.pictureUrl;
+                await saveUser(user);
+            }
+        } catch(e) {
+            console.error(`更新用戶 ${userId} 資料時出錯:`, e.message);
+        }
+    }
+
+    if (user.role === 'student') {
+      const annRes = await pgPool.query('SELECT id FROM announcements ORDER BY created_at DESC LIMIT 1');
+      if (annRes.rows.length > 0 && annRes.rows[0].id > (user.last_seen_announcement_id || 0)) {
+        // New announcement logic can be placed here if needed
+      }
+    }
+
+    if (event.type === 'message' && event.message.type === 'text') {
+        const text = event.message.text.trim();
+        
+        if (userId === ADMIN_USER_ID && text === COMMANDS.ADMIN.PANEL) {
+            if (user.role !== 'admin') {
+              user.role = 'admin';
+              await saveUser(user);
+              if (ADMIN_RICH_MENU_ID) await client.linkRichMenuToUser(userId, ADMIN_RICH_MENU_ID);
+            }
+            return handleAdminCommands(event, userId);
+        }
+
+        switch(user.role) {
+            case 'admin':
+                await handleAdminCommands(event, userId);
+                break;
+            case 'teacher':
+                await handleTeacherCommands(event, userId);
+                break;
+            default:
+                await handleStudentCommands(event, userId);
+                break;
+        }
+    } else if (event.type === 'postback') {
+        const data = new URLSearchParams(event.postback.data);
+        const action = data.get('action');
+        const replyToken = event.replyToken;
+
+        if (action === 'run_command') {
+            const commandText = data.get('text');
+            if (commandText) {
+                const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: 'simulated_message_id', text: commandText } };
+                if (user.role === 'admin') await handleAdminCommands(simulatedEvent, userId);
+                else if (user.role === 'teacher') await handleTeacherCommands(simulatedEvent, userId);
+                else await handleStudentCommands(simulatedEvent, userId);
+            }
+            return;
+        }
+        
+        if (user.role === 'admin') {
+            if (action === 'select_teacher_for_removal') {
+                const targetId = data.get('targetId');
+                const targetName = decodeURIComponent(data.get('targetName'));
+                pendingTeacherRemoval[userId] = { step: 'await_confirmation', targetUser: { id: targetId, name: targetName } };
+                setupConversationTimeout(userId, pendingTeacherRemoval, 'pendingTeacherRemoval', (u) => push(u, '移除老師操作逾時，自動取消。').catch(e => console.error(e)));
+                return reply(replyToken, `您確定要移除老師「${targetName}」的權限嗎？該用戶將會變回學員身份。`, [
+                    { type: 'action', action: { type: 'message', label: COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER, text: COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.ADMIN.CANCEL_REMOVE_TEACHER, text: COMMANDS.ADMIN.CANCEL_REMOVE_TEACHER } }
+                ]);
+            }
+        }
+        
+        if (user.role === 'teacher') {
+          if (action === 'add_course_start') {
+              pendingCourseCreation[userId] = { step: 'await_title' };
+              setupConversationTimeout(userId, pendingCourseCreation, 'pendingCourseCreation', (u) => push(u, '新增課程逾時，自動取消。').catch(e => console.error(e)));
+              const newPrompt = '請輸入新課程系列的標題（例如：高階空中瑜伽），或按「取消」來放棄操作。';
+              const cancelMenu = [{ type: 'action', action: { type: 'message', label: '取消', text: '取消' } }];
+              return reply(replyToken, newPrompt, cancelMenu);
+          }
+          if (action === 'set_course_weekday') {
+              const state = pendingCourseCreation[userId];
+              if (state && state.step === 'await_weekday') {
+                  const day = parseInt(data.get('day'), 10);
+                  const dayLabel = WEEKDAYS.find(d => d.value === day).label;
+                  state.weekday = day;
+                  state.weekday_label = dayLabel;
+                  state.step = 'await_time';
+                  return reply(replyToken, `已選擇 ${dayLabel}，請問上課時間是？（請輸入四位數時間，例如：19:30）`);
+              }
+          }
+          if (action === 'manage_course_group') {
+              const prefix = data.get('prefix');
+              const coursesRes = await pgPool.query("SELECT * FROM courses WHERE id LIKE $1 AND time > NOW() ORDER BY time ASC", [`${prefix}%`]);
+              if (coursesRes.rows.length === 0) {
+                return reply(replyToken, "此系列沒有可取消的未來課程。");
+              }
+              const courseBubbles = coursesRes.rows.map(c => ({ type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: c.title, wrap: true, weight: 'bold' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'md'} ] }, footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: '取消此堂課', data: `action=confirm_single_course_cancel&courseId=${c.id}` } }] } }));
+              return reply(replyToken, { type: 'flex', altText: '請選擇要單次取消的課程', contents: { type: 'carousel', contents: courseBubbles.slice(0, 10) } });
+          }
+           if (action === 'cancel_course_group_confirm') {
+                const prefix = data.get('prefix');
+                const courseRes = await pgPool.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`]);
+                if (courseRes.rows.length === 0) return reply(replyToken, "找不到課程系列。");
+                const courseMainTitle = courseRes.rows[0].title.replace(/ - 第 \d+ 堂$/, '');
+
+                pendingCourseCancellation[userId] = { type: 'batch', prefix: prefix };
+                setupConversationTimeout(userId, pendingCourseCancellation, 'pendingCourseCancellation', (u) => push(u, '取消課程操作逾時。').catch(e => console.error(e)));
+                const message = `您確定要批次取消【${courseMainTitle}】所有未來的課程嗎？\n\n此動作無法復原，並會將點數退還給所有已預約的學員。`;
+                return reply(replyToken, message, [
+                    { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL, text: COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.CANCEL_FLOW, text: COMMANDS.TEACHER.CANCEL_FLOW } }
+                ]);
+            }
+            if (action === 'confirm_single_course_cancel') {
+                const courseId = data.get('courseId');
+                const course = await getCourse(courseId);
+                if (!course) return reply(replyToken, "找不到該課程。");
+
+                pendingCourseCancellation[userId] = { type: 'single', courseId: course.id };
+                setupConversationTimeout(userId, pendingCourseCancellation, 'pendingCourseCancellation', (u) => push(u, '取消課程操作逾時。').catch(e => console.error(e)));
+
+                const message = `您確定要取消單堂課程「${course.title}」嗎？\n(${formatDateTime(course.time)})\n\n將會退點給所有已預約的學員。`;
+                return reply(replyToken, message, [
+                    { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL, text: COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.CANCEL_FLOW, text: COMMANDS.TEACHER.CANCEL_FLOW } }
+                ]);
+            }
+            if (action === 'select_student_for_adjust') {
+              const studentId = data.get('studentId');
+              const targetStudent = await getUser(studentId);
+              if (!targetStudent) { return reply(replyToken, '找不到該學員，可能已被刪除。'); }
+              pendingManualAdjust[userId] = { step: 'await_operation', targetStudent: { id: targetStudent.id, name: targetStudent.name } };
+              return reply(replyToken, `您要為學員「${targetStudent.name}」進行何種點數調整？`, [ { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.ADD_POINTS, text: COMMANDS.TEACHER.ADD_POINTS } }, { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.DEDUCT_POINTS, text: COMMANDS.TEACHER.DEDUCT_POINTS } }, { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST, text: COMMANDS.TEACHER.CANCEL_MANUAL_ADJUST } } ]);
+            }
+            if (action === 'view_student_details') {
+                const studentId = data.get('studentId');
+                const student = await getUser(studentId);
+                if (!student) return reply(replyToken, '找不到該學員資料。');
+                
+                const client = await pgPool.connect();
+                try {
+                    const myCoursesRes = await client.query(
+                        `SELECT * FROM courses 
+                         WHERE time > NOW() AND ($1 = ANY(students) OR $1 = ANY(waiting))
+                         ORDER BY time ASC LIMIT 5`,
+                        [studentId]
+                    );
+                    
+                    let courseText = '【未來5筆課程】\n';
+                    if (myCoursesRes.rows.length > 0) {
+                        courseText += myCoursesRes.rows.map(c => {
+                            const status = c.students.includes(studentId) ? ' (已預約)' : ' (候補中)';
+                            return ` - ${c.title}${status} \n   ${formatDateTime(c.time)}`;
+                        }).join('\n\n');
+                    } else {
+                        courseText += '無';
+                    }
+
+                    let historyText = '\n\n【最近10筆點數紀錄】\n';
+                    const history = student.history || [];
+                    if (history.length > 0) {
+                        historyText += history.slice(-10).reverse().map(h => {
+                            const pointsChangeText = h.pointsChange ? ` (${h.pointsChange > 0 ? '+' : ''}${h.pointsChange}點)` : '';
+                            return ` - ${formatDateTime(h.time)}\n   ${h.action}${pointsChangeText}`;
+                        }).join('\n\n');
+                    } else {
+                        historyText += '無';
+                    }
+
+                    const fullReport = `【學員詳細資料】\n姓名: ${student.name}\nID: ${student.id}\n剩餘點數: ${student.points}\n\n${courseText}${historyText}`;
+                    return reply(replyToken, fullReport);
+                } catch (err) {
+                    console.error('❌ 查詢學員詳細資料失敗:', err);
+                    return reply(replyToken, '查詢學員詳細資料時發生錯誤。');
+                } finally {
+                    if (client) client.release();
+                }
+            }
+            if (action === 'mark_feedback_read') {
+                const msgId = data.get('msgId');
+                await pgPool.query("UPDATE feedback_messages SET status = 'read' WHERE id = $1", [msgId]);
+                return reply(replyToken, '已將此留言標示為已讀。');
+            }
+            if (action === 'reply_feedback') {
+                const msgId = data.get('msgId');
+                const studentId = data.get('userId');
+                const msgRes = await pgPool.query("SELECT message FROM feedback_messages WHERE id = $1", [msgId]);
+                if (msgRes.rows.length > 0) {
+                    pendingReply[userId] = {
+                        step: 'await_reply',
+                        msgId: msgId,
+                        studentId: studentId,
+                        originalMessage: msgRes.rows[0].message
+                    };
+                    setupConversationTimeout(userId, pendingReply, 'pendingReply', (u) => push(u, '回覆留言逾時，自動取消。').catch(e => console.error(e)));
+                    return reply(replyToken, '請輸入您要回覆的內容，或輸入「取消」。');
+                }
+            }
+        } 
+        
+        if (user.role === 'student') {
+            if (action === 'select_purchase_plan') {
+                const planPoints = parseInt(data.get('plan'), 10);
+                const selectedPlan = PURCHASE_PLANS.find(p => p.points === planPoints);
+                if (selectedPlan) {
+                    pendingPurchase[userId] = {
+                        step: 'confirm_purchase',
+                        data: {
+                            points: selectedPlan.points,
+                            amount: selectedPlan.amount,
+                        }
+                    };
+                    return reply(replyToken, `您選擇了「${selectedPlan.label}」。\n請確認是否購買？`, [
+                        { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: COMMANDS.STUDENT.CONFIRM_BUY_POINTS } },
+                        { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.CANCEL_PURCHASE, text: COMMANDS.STUDENT.CANCEL_PURCHASE } }
+                    ]);
+                }
+            }
+            if (action === 'confirm_booking_start') {
+                const courseId = data.get('courseId');
+                const course = await getCourse(courseId);
+                if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
+                pendingBookingConfirmation[userId] = { type: 'book', courseId: courseId };
+                const message = `您確定要預約以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n費用：${course.pointsCost} 點\n\n預約後將立即扣點，確認嗎？`;
+                return reply(replyToken, message, [
+                    { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.CONFIRM_BOOKING, text: COMMANDS.STUDENT.CONFIRM_BOOKING } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.ABANDON_BOOKING, text: COMMANDS.STUDENT.ABANDON_BOOKING } }
+                ]);
+            }
+            if (action === 'confirm_cancel_booking_start') {
+                const courseId = data.get('courseId');
+                const course = await getCourse(courseId);
+                if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
+                pendingBookingConfirmation[userId] = { type: 'cancel_book', courseId: courseId };
+                const message = `您確定要取消預約以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n取消後將歸還 ${course.pointsCost} 點，確認嗎？`;
+                return reply(replyToken, message, [
+                    { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING, text: COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.ABANDON_CANCEL_BOOKING, text: COMMANDS.STUDENT.ABANDON_CANCEL_BOOKING } }
+                ]);
+            }
+            if (action === 'confirm_cancel_waiting_start') {
+                const courseId = data.get('courseId');
+                const course = await getCourse(courseId);
+                if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
+                pendingBookingConfirmation[userId] = { type: 'cancel_wait', courseId: courseId };
+                const message = `您確定要取消候補以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`;
+                return reply(replyToken, message, [
+                    { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING, text: COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.ABANDON_CANCEL_WAITING, text: COMMANDS.STUDENT.ABANDON_CANCEL_WAITING } }
+                ]);
+            }
+        }
+    }
+}
