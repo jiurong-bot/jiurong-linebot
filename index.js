@@ -1,4 +1,4 @@
-// index.js - V15.6 (修復資料庫連線洩漏問題)
+// index.js - V15.6(穩定版） (修復資料庫連線洩漏問題)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
