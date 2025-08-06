@@ -1086,7 +1086,7 @@ app.listen(PORT, async () => {
   console.log(`Bot 版本: V24.0 (穩定版)`);
   
   console.log('🕒 開始設定背景排程任務...');
-  setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
+  //setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   setInterval(keepAlive, PING_INTERVAL_MS);
   setInterval(cleanCoursesDB, CLEAN_DB_INTERVAL_MS);
   console.log('✅ 背景排程任務已設定完成。');
