@@ -1476,7 +1476,32 @@ app.listen(PORT, async () => {
 });
 
 async function handleEvent(event) {
-    if (event.type === 'unfollow' || event.type === 'leave' || !event.source.userId) {
+   // --- 請將此偵錯區塊加到這裡 ---
+
+console.log("================
+
+EVENT RECEIVED console.log("EVENT OBJECT:"
+
+JSON.stringify(event, null, 2));
+
+if (event.source.userId) { const tempUserForDebug =
+
+await getUser(event.source.userId); console.log("USER
+
+OBJECT (from DB):"
+
+JSON.stringify(tempUserForDebug,
+
+null, 2));
+
+}
+
+console.log("==
+
+=========")
+
+// -- 偵錯區塊結束 --- 
+  if (event.type === 'unfollow' || event.type === 'leave' || !event.source.userId) {
         console.log(`用戶 ${event.source.userId || '未知'} 已封鎖或離開，或事件無來源 ID`);
         return;
     }
