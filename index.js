@@ -1,4 +1,4 @@
-// index.js - V16.1 (分頁與啟動檢查)
+// index.js - V16.1a (分頁與啟動檢查)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
