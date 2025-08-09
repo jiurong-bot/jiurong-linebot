@@ -2164,7 +2164,7 @@ app.listen(PORT, async () => {
   checkEnvironmentVariables();
   await initializeDatabase();
   console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-  console.log(`Bot 版本: V17.0 (智慧取消機制優化)`);
+  console.log(`Bot 版本: V17.2 (全面風險控制優化)`);
   setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
   setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, PING_INTERVAL_MS);
 });
