@@ -1,3 +1,4 @@
+//測試版
 // index.js - V19.0 (程式碼重構)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
