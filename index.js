@@ -20,7 +20,9 @@ const pgPool = new Pool({
   ssl: { rejectUnauthorized: false },
   family: 4 // <--- 請加上這一行，強制使用 IPv4
 });
-
+// --- 這是我們新增的終極測試行 ---
+console.log('✅ [DEBUG] Database pool options:', pgPool.options);
+//
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
 const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
 const TEACHER_ID = process.env.TEACHER_ID;
