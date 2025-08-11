@@ -17,7 +17,8 @@ const client = new line.Client(config);
 
 const pgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  family: 4 // <--- 請加上這一行，強制使用 IPv4
 });
 
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
