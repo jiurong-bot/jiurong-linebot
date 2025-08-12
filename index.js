@@ -1420,53 +1420,77 @@ async function handleTeacherCommands(event, userId) {
                 await reply(replyToken, '請直接上傳一張商品圖片，或輸入「無」：', getCancelMenu());
             }
             break;
-        case 'await_image_url':
-            let imageUrl = null;
-            
-            if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') {
-                imageUrl = null;
-            } else if (event.message.type === 'image') {
-                try {
-                    await reply(replyToken, '收到圖片，正在上傳至雲端空間，請稍候...');
+        // 在 handleTeacherCommands 函式中...
+// case 'await_image_url': ... 替換成以下內容 ...
 
-                    const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, {
-                        headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` },
-                        responseType: 'arraybuffer'
-                    });
-                    const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+    case 'await_image_url':
+        // **[修改]** 將 replyToken 從 event 中取出，因為 await reply 會修改 event 物件
+        const originalReplyToken = event.replyToken;
 
-                    const uploadResponse = await imagekit.upload({
-                        file: imageBuffer,
-                        fileName: `product_${Date.now()}.jpg`,
-                        useUniqueFileName: true,
-                        folder: "/yoga_products/"
-                    });
-                    
-                    imageUrl = uploadResponse.url;
+        let imageUrl = null;
+        let proceed = true;
+        let errorMessage = '';
 
-                } catch (err) {
-                    console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err);
-                    proceed = false;
-                    errorMessage = '圖片上傳失敗，請稍後再試。';
-                }
-            } else {
+        if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') {
+            imageUrl = null;
+        } else if (event.message.type === 'image') {
+            try {
+                // 第一步：先用 replyToken 回覆一則立即性的訊息
+                await reply(originalReplyToken, '收到圖片，正在上傳至雲端空間，請稍候...');
+
+                // 接下來的操作，不能再使用 replyToken
+                const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, {
+                    headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` },
+                    responseType: 'arraybuffer'
+                });
+                const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+
+                const uploadResponse = await imagekit.upload({
+                    file: imageBuffer,
+                    fileName: `product_${Date.now()}.jpg`,
+                    useUniqueFileName: true,
+                    folder: "/yoga_products/"
+                });
+                
+                imageUrl = uploadResponse.url;
+
+            } catch (err) {
+                console.error("❌ 圖片上傳或處理過程中失敗:", err);
                 proceed = false;
-                errorMessage = '格式錯誤，請直接上傳一張商品圖片，或輸入「無」。';
+                // 如果上傳失敗，用 push 通知使用者
+                await push(userId, '圖片上傳失敗，請稍後再試。');
+                return; // 直接中斷
             }
+        } else {
+            proceed = false;
+            errorMessage = '格式錯誤，請直接上傳一張商品圖片，或輸入「無」。';
+        }
 
-            if (!proceed) {
-                await reply(event.replyToken, errorMessage, getCancelMenu());
-                return;
+        if (!proceed) {
+            await reply(originalReplyToken, errorMessage, getCancelMenu());
+            return;
+        }
+
+        state.image_url = imageUrl;
+        state.step = 'await_confirmation';
+        const summary = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 點\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
+        
+        // **[修改]** 建立帶有快速回覆按鈕的訊息物件
+        const finalMessage = {
+            type: 'text',
+            text: summary,
+            quickReply: {
+                items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL } }
+                ]
             }
+        };
+        
+        // **[修改]** 將最後的 reply 改為 push
+        await push(userId, finalMessage);
+        break;
 
-            state.image_url = imageUrl;
-            state.step = 'await_confirmation';
-            const summary = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 點\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
-            await reply(event.replyToken, summary, [
-                { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' }},
-                { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL }}
-            ]);
-            break;
     }
     if (!proceed && state.step !== 'await_image_url') { // Image URL step has its own error handling
         await reply(replyToken, errorMessage, getCancelMenu());
