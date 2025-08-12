@@ -1420,13 +1420,11 @@ async function handleTeacherCommands(event, userId) {
                 await reply(replyToken, '請直接上傳一張商品圖片，或輸入「無」：', getCancelMenu());
             }
             break;
-        // 在 handleTeacherCommands 函式中...
+       // 在 handleTeacherCommands 函式中...
 // case 'await_image_url': ... 替換成以下內容 ...
 
     case 'await_image_url':
-        // **[修改]** 將 replyToken 從 event 中取出，因為 await reply 會修改 event 物件
         const originalReplyToken = event.replyToken;
-
         let imageUrl = null;
         let proceed = true;
         let errorMessage = '';
@@ -1435,10 +1433,7 @@ async function handleTeacherCommands(event, userId) {
             imageUrl = null;
         } else if (event.message.type === 'image') {
             try {
-                // 第一步：先用 replyToken 回覆一則立即性的訊息
-                await reply(originalReplyToken, '收到圖片，正在上傳至雲端空間，請稍候...');
-
-                // 接下來的操作，不能再使用 replyToken
+                // [修改] 不再立即回覆"上傳中"，而是先在背景完成所有工作
                 const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, {
                     headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` },
                     responseType: 'arraybuffer'
@@ -1455,11 +1450,9 @@ async function handleTeacherCommands(event, userId) {
                 imageUrl = uploadResponse.url;
 
             } catch (err) {
-                console.error("❌ 圖片上傳或處理過程中失敗:", err);
+                console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err);
                 proceed = false;
-                // 如果上傳失敗，用 push 通知使用者
-                await push(userId, '圖片上傳失敗，請稍後再試。');
-                return; // 直接中斷
+                errorMessage = '圖片上傳失敗，請稍後再試。';
             }
         } else {
             proceed = false;
@@ -1475,20 +1468,11 @@ async function handleTeacherCommands(event, userId) {
         state.step = 'await_confirmation';
         const summary = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 點\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
         
-        // **[修改]** 建立帶有快速回覆按鈕的訊息物件
-        const finalMessage = {
-            type: 'text',
-            text: summary,
-            quickReply: {
-                items: [
-                    { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } },
-                    { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL } }
-                ]
-            }
-        };
-        
-        // **[修改]** 將最後的 reply 改為 push
-        await push(userId, finalMessage);
+        // [修改] 將最終的確認訊息改回使用 replyToken 發送
+        await reply(originalReplyToken, summary, [
+            { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } },
+            { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL } }
+        ]);
         break;
 
     }
