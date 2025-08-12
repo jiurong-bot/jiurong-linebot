@@ -13,7 +13,7 @@
     },
     {
       "bounds": { "x": 833, "y": 0, "width": 833, "height": 843 },
-      "action": { "type": "postback", "data": "action=run_command&text=@活動賣場" }
+      "action": { "type": "postback", "data": "action=run_command&text=@活動商城" }
     },
     {
       "bounds": { "x": 1666, "y": 0, "width": 834, "height": 843 },
