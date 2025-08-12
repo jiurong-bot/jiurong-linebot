@@ -1380,6 +1380,67 @@ async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim() : '';
   const user = await getUser(userId);
 
+  // [新增] 處理商品上架流程
+  if (pendingProductCreation[userId]) {
+    const state = pendingProductCreation[userId];
+    let proceed = true;
+    let errorMessage = '';
+
+    switch (state.step) {
+        case 'await_name':
+            state.name = text;
+            state.step = 'await_description';
+            await reply(replyToken, '請輸入商品描述 (可換行)，或輸入「無」：', getCancelMenu());
+            break;
+        case 'await_description':
+            state.description = text === '無' ? null : text;
+            state.step = 'await_price';
+            await reply(replyToken, '請輸入商品兌換價格 (點數，純數字)：', getCancelMenu());
+            break;
+        case 'await_price':
+            const price = parseInt(text, 10);
+            if (isNaN(price) || price < 0) {
+                proceed = false;
+                errorMessage = '價格格式不正確，請輸入一個非負整數。';
+            } else {
+                state.price = price;
+                state.step = 'await_inventory';
+                await reply(replyToken, '請輸入商品初始庫存 (純數字)：', getCancelMenu());
+            }
+            break;
+        case 'await_inventory':
+            const inventory = parseInt(text, 10);
+            if (isNaN(inventory) || inventory < 0) {
+                proceed = false;
+                errorMessage = '庫存格式不正確，請輸入一個非負整數。';
+            } else {
+                state.inventory = inventory;
+                state.step = 'await_image_url';
+                await reply(replyToken, '請提供商品圖片的 HTTPS 網址，或輸入「無」：', getCancelMenu());
+            }
+            break;
+        case 'await_image_url':
+            const imageUrl = text === '無' ? null : text;
+            if (imageUrl && (!imageUrl.startsWith('https://') || !imageUrl.match(/\.(jpeg|jpg|gif|png)$/i))) {
+                proceed = false;
+                errorMessage = '圖片網址格式不正確，必須是 https 開頭的圖片連結。';
+            } else {
+                state.image_url = imageUrl;
+                state.step = 'await_confirmation';
+                const summary = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 點\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
+                await reply(replyToken, summary, [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' }},
+                    { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL }}
+                ]);
+            }
+            break;
+    }
+    if (!proceed) {
+        await reply(replyToken, errorMessage, getCancelMenu());
+    }
+    return; // 結束函式，避免執行後續指令判斷
+  }
+
   // [新增] 處理商品編輯流程
   if (pendingProductEdit[userId]) {
     const state = pendingProductEdit[userId];
@@ -1400,13 +1461,11 @@ async function handleTeacherCommands(event, userId) {
     } else if (field === 'description' && text.toLowerCase() === '無') {
         newValue = null;
     } else if (field === 'image_url') {
-        if (!text.startsWith('https://') || !text.match(/\.(jpeg|jpg|gif|png)$/)) {
-            isValid = false;
-            errorMessage = '圖片網址格式不正確，必須是 https 開頭的圖片連結。';
-        }
         if (text.toLowerCase() === '無') {
            newValue = null;
-           isValid = true;
+        } else if (!text.startsWith('https://') || !text.match(/\.(jpeg|jpg|gif|png)$/i)) {
+            isValid = false;
+            errorMessage = '圖片網址格式不正確，必須是 https 開頭的圖片連結。';
         }
     }
 
@@ -1418,7 +1477,8 @@ async function handleTeacherCommands(event, userId) {
     await saveProduct(product);
     delete pendingProductEdit[userId];
     const fieldMap = { name: '名稱', description: '描述', price: '價格', image_url: '圖片網址', inventory: '庫存' };
-    return reply(replyToken, `✅ 已成功將商品「${product.name}」的「${fieldMap[field]}」更新為「${newValue === null ? '無' : newValue}」。`);
+    await reply(replyToken, `✅ 已成功將商品「${product.name}」的「${fieldMap[field]}」更新為「${newValue === null ? '無' : newValue}」。`);
+    return;
   }
   
   // [新增] 處理庫存調整流程
@@ -1439,7 +1499,8 @@ async function handleTeacherCommands(event, userId) {
     product.inventory = newInventory;
     await saveProduct(product);
     delete pendingInventoryAdjust[userId];
-    return reply(replyToken, `✅ 已成功調整商品「${product.name}」的庫存。\n原庫存: ${state.originalInventory}\n調整量: ${numValue > 0 ? '+' : ''}${numValue}\n新庫存: ${newInventory}`);
+    await reply(replyToken, `✅ 已成功調整商品「${product.name}」的庫存。\n原庫存: ${state.originalInventory}\n調整量: ${numValue > 0 ? '+' : ''}${numValue}\n新庫存: ${newInventory}`);
+    return;
   }
 
 
@@ -1554,7 +1615,6 @@ async function handleTeacherCommands(event, userId) {
 
           } catch (error) {
               console.error('❌ 啟動批次取消時發生錯誤:', error);
-              // Do not reply again if the initial reply succeeded
           }
           return;
         }
@@ -1764,10 +1824,15 @@ async function handleTeacherCommands(event, userId) {
     } finally {
         if(client) client.release();
     }
-  } else if (pendingMessageSearchQuery[userId] || pendingProductCreation[userId]) {
+  } else if (pendingMessageSearchQuery[userId]) {
     return;
   } else {
-    if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT) {
+    // [修改] 指令判斷順序調整
+    if (text === COMMANDS.TEACHER.ADD_PRODUCT) {
+        pendingProductCreation[userId] = { step: 'await_name' };
+        setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', u => push(u, '上架商品操作逾時，自動取消。').catch(e => console.error(e)));
+        return reply(replyToken, '請輸入新商品的名稱：', getCancelMenu());
+    } else if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT) {
         return showCourseSeries(replyToken, 1);
     } else if (text === COMMANDS.TEACHER.POINT_MANAGEMENT) {
         const client = await pgPool.connect();
@@ -1836,7 +1901,7 @@ async function handleTeacherCommands(event, userId) {
             { type: 'action', action: { type: 'message', label: '訂單管理', text: COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } } 
         ];
         return reply(replyToken, '請選擇商城管理功能：', shopMenu);
-    } else if (text === COMMANDS.TEACHER.VIEW_PRODUCTS) { // [修改]
+    } else if (text === COMMANDS.TEACHER.VIEW_PRODUCTS) { 
         return showProductManagementList(replyToken, 1);
     } else if (text === COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT) {
         const orderMenu = [
@@ -1920,6 +1985,7 @@ async function handleTeacherCommands(event, userId) {
     }
   }
 }
+            
 /**
  * 顯示歷史購買紀錄 (支援分頁)
  * @param {string} replyToken The reply token.
