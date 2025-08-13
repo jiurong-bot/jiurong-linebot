@@ -2976,79 +2976,39 @@ app.listen(PORT, async () => {
 });
 
 async function handleEvent(event) {
-      // ... 當新用戶加入...
-if (event.type === 'follow') {
 
-        console.log(`[Follow Event] Detected new user: ${event.source.userId}. Starting creation process.`);
+    // 處理新用戶加入 (Follow Event)
+    if (event.type === 'follow') {
+        const userId = event.source.userId;
+        try {
+            const profile = await client.getProfile(userId);
+            const user = { id: userId, name: profile.displayName, points: 0, role: 'student', history: [], picture_url: profile.pictureUrl };
+            await saveUser(user);
 
-        const userId = event.source.userId;
+            // 嘗試發送歡迎詞 (若額度用完會失敗，但不影響後續)
+            push(userId, `歡迎 ${user.name}！感謝您加入九容瑜伽。`).catch(err => {
+                console.error(`發送歡迎詞給新用戶 ${userId} 失敗:`, err.message);
+            });
 
-        try {
+            // 連結 Rich Menu
+            if (STUDENT_RICH_MENU_ID) {
+                await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+            }
+        } catch (error) {
+            console.error(`[Follow Event] 處理新用戶 ${userId} 時出錯:`, error.message);
+        }
+        return; // 處理完 follow 事件就結束
+    }
 
-            const profile = await client.getProfile(userId);
+    if (event.type === 'unfollow' || event.type === 'leave') {
+        console.log(`用戶 ${event.source.userId} 已封鎖或離開`);
+        return;
+    }
 
-            console.log(`[Follow Event] Step 1: Successfully got profile for ${profile.displayName}.`);
-
-
-            const user = { id: userId, name: profile.displayName, points: 0, role: 'student', history: [], picture_url: profile.pictureUrl };
-
-            await saveUser(user);
-
-            console.log(`[Follow Event] Step 2: Successfully saved user to database.`);
-
-
-            try {
-
-                await push(userId, `歡迎 ${user.name}！感謝您加入九容瑜伽。`);
-
-                console.log(`[Follow Event] Step 3: Push message sent successfully.`);
-
-            } catch (pushError) {
-
-                // 如果 Push 失敗（例如額度用完），只記錄錯誤，不中斷後續操作
-
-                console.error(`[Follow Event] Step 3 FAILED: Could not send push message.`, pushError.message);
-
-            }
-
-
-            // --- 這是診斷 Rich Menu 問題的關鍵日誌 ---
-
-            console.log(`[Follow Event] Checking Rich Menu ID: [${process.env.STUDENT_RICH_MENU_ID}]`);
-
-            if (process.env.STUDENT_RICH_MENU_ID) {
-
-                try {
-
-                    await client.linkRichMenuToUser(userId, process.env.STUDENT_RICH_MENU_ID);
-
-                    console.log(`[Follow Event] Step 4: Successfully linked Rich Menu.`);
-
-                } catch (richMenuError) {
-
-                    // 將詳細的 API 錯誤訊息印出來
-
-                    const errorResponse = richMenuError.originalError ? richMenuError.originalError.response.data : richMenuError.message;
-
-                    console.error(`[Follow Event] Step 4 FAILED: Could not link Rich Menu.`, JSON.stringify(errorResponse));
-
-                }
-
-            } else {
-
-                console.warn(`[Follow Event] Step 4 SKIPPED: STUDENT_RICH_MENU_ID is not set or empty.`);
-
-            }
-
-        } catch (error) {
-
-            console.error(`[Follow Event] FATAL ERROR during user creation: `, error.message);
-
-        }
-
-        return; // 處理完 follow 事件就結束
-
-}
+    if (!event.replyToken && event.type !== 'postback') {
+        return;
+    }
+    
   
     if (event.type === 'unfollow' || event.type === 'leave') {
         console.log(`用戶 ${event.source.userId} 已封鎖或離開`);
