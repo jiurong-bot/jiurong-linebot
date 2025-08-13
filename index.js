@@ -1,4 +1,4 @@
-// index.js - V22.3 (介面一致性重構)
+// index.js - V22.2 (介面一致性重構)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
