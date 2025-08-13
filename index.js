@@ -1,7 +1,7 @@
-// index.js - V22.0 (介面一致性重構)
+// index.js - V22.1 (介面一致性重構)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
-const express = 'express';
+const express = require('express');
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const { default: fetch } = require('node-fetch');
