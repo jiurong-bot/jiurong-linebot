@@ -2317,8 +2317,6 @@ async function showShopProducts(replyToken, page) {
         const productsRes = await client.query("SELECT * FROM products WHERE status = 'available' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [PAGINATION_SIZE + 1, offset]);
         
         const hasNextPage = productsRes.rows.length > PAGINATION_SIZE;
-        
-        // [修正] 將錯誤的 res.rows 改為正確的 productsRes.rows
         const pageProducts = hasNextPage ? productsRes.rows.slice(0, PAGINATION_SIZE) : productsRes.rows;
 
         if (pageProducts.length === 0 && page === 1) {
@@ -2360,7 +2358,14 @@ async function showShopProducts(replyToken, page) {
                     type: 'box',
                     layout: 'vertical',
                     contents: [
-                        { type: 'button', style: buttonStyle, action: buttonAction, color: isSoldOut ? '#AAAAAA' : '#52B69A', disabled: isSoldOut }
+                        {
+                            type: 'button',
+                            style: buttonStyle,
+                            action: buttonAction,
+                            color: isSoldOut ? '#AAAAAA' : '#52B69A',
+                            // [修正] 移除 LINE Flex Message 不支援的 'disabled' 屬性
+                            // disabled: isSoldOut
+                        }
                     ]
                 }
             };
