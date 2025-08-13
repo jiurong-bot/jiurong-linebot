@@ -1444,7 +1444,7 @@ async function handleTeacherCommands(event, userId) {
                     file: imageBuffer,
                     fileName: `product_${Date.now()}.jpg`,
                     useUniqueFileName: true,
-                    folder: "/yoga_products/"
+                    folder: "yoga_products"
                 });
                 
                 imageUrl = uploadResponse.url;
