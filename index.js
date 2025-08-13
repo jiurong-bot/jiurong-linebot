@@ -2317,7 +2317,9 @@ async function showShopProducts(replyToken, page) {
         const productsRes = await client.query("SELECT * FROM products WHERE status = 'available' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [PAGINATION_SIZE + 1, offset]);
         
         const hasNextPage = productsRes.rows.length > PAGINATION_SIZE;
-        const pageProducts = hasNextPage ? productsRes.rows.slice(0, PAGINATION_SIZE) : res.rows;
+        
+        // [修正] 將錯誤的 res.rows 改為正確的 productsRes.rows
+        const pageProducts = hasNextPage ? productsRes.rows.slice(0, PAGINATION_SIZE) : productsRes.rows;
 
         if (pageProducts.length === 0 && page === 1) {
             return reply(replyToken, '目前商城沒有任何商品，敬請期待！');
@@ -2336,7 +2338,6 @@ async function showShopProducts(replyToken, page) {
 
             return {
                 type: 'bubble',
-                // [修正] 增加對 image_url 的嚴格檢查，防止無效網址導致錯誤
                 hero: (p.image_url && p.image_url.startsWith('https')) ? { type: 'image', url: p.image_url, size: 'full', aspectRatio: '20:13', aspectMode: 'cover' } : undefined,
                 body: {
                     type: 'box',
