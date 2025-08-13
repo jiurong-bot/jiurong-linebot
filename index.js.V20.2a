@@ -2356,7 +2356,7 @@ async function showSingleCoursesForCancellation(replyToken, prefix, page) {
     }
 }
 
-// [新增] 顯示商品管理列表 (for Teacher)
+// [修改] 顯示商品管理列表 (for Teacher) - 為其增加 hero 圖片區塊
 async function showProductManagementList(replyToken, page = 1) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
@@ -2374,25 +2374,38 @@ async function showProductManagementList(replyToken, page = 1) {
         }
 
         const productBubbles = pageProducts.map(p => {
-            const statusText = p.status === 'available' ? '✅ 已上架' : '❌ 已下架';
             const statusColor = p.status === 'available' ? '#52B69A' : '#6A7D8B';
             const toggleLabel = p.status === 'available' ? '下架商品' : '重新上架';
             const toggleAction = `action=toggle_product_status&product_id=${p.id}`;
 
             return {
                 type: 'bubble',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: p.name, color: '#ffffff', weight: 'bold', size: 'lg', wrap: true }], backgroundColor: statusColor, paddingAll: 'lg' },
+                // [新增] 圖片顯示區塊
+                hero: p.image_url ? {
+                    type: 'image',
+                    url: p.image_url,
+                    size: 'full',
+                    aspectRatio: '20:13',
+                    aspectMode: 'cover',
+                } : undefined,
+                // [修改] header 不再需要背景色，改為 body 的一部分
                 body: {
                     type: 'box',
                     layout: 'vertical',
                     spacing: 'md',
                     contents: [
-                        { type: 'text', text: p.description || '無描述', wrap: true, size: 'sm', color: '#666666' },
-                        { type: 'separator' },
-                        { type: 'box', layout: 'horizontal', contents: [
-                            { type: 'text', text: `價格: ${p.price} 點`, size: 'md' },
-                            { type: 'text', text: `庫存: ${p.inventory}`, size: 'md', align: 'end' }
-                        ]}
+                        { type: 'text', text: p.name, weight: 'bold', size: 'xl', wrap: true },
+                        { type: 'text', text: p.description || '無描述', wrap: true, size: 'sm', color: '#666666', margin: 'md' },
+                        { type: 'separator', margin: 'lg' },
+                        {
+                            type: 'box',
+                            layout: 'horizontal',
+                            margin: 'md',
+                            contents: [
+                                { type: 'text', text: `價格: ${p.price} 點`, size: 'md' },
+                                { type: 'text', text: `庫存: ${p.inventory}`, size: 'md', align: 'end' }
+                            ]
+                        }
                     ]
                 },
                 footer: {
@@ -2400,7 +2413,7 @@ async function showProductManagementList(replyToken, page = 1) {
                     layout: 'vertical',
                     spacing: 'sm',
                     contents: [
-                        { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯資訊', data: `action=manage_product&product_id=${p.id}` } },
+                        { type: 'button', style: 'primary', height: 'sm', color: '#52B69A', action: { type: 'postback', label: '✏️ 編輯資訊', data: `action=manage_product&product_id=${p.id}` } },
                         { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 調整庫存', data: `action=adjust_inventory_start&product_id=${p.id}` } },
                         { type: 'button', style: 'secondary', height: 'sm', color: '#D9534F', action: { type: 'postback', label: toggleLabel, data: toggleAction } }
                     ]
