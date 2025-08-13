@@ -2976,6 +2976,41 @@ app.listen(PORT, async () => {
 });
 
 async function handleEvent(event) {
+      // ... 當新用戶加入...
+    if (event.type === 'follow') {
+        console.log(`[Follow Event] New user ${event.source.userId} followed the bot.`);
+        const userId = event.source.userId;
+        let user = await getUser(userId);
+
+        if (!user) { // 基本上一定是新用戶
+
+            try {
+
+                const profile = await client.getProfile(userId);
+
+                user = { id: userId, name: profile.displayName, points: 0, role: 'student', history: [], picture_url: profile.pictureUrl };
+
+                await saveUser(user);
+
+                await push(userId, `歡迎 ${user.name}！感謝您加入九容瑜伽。`);
+
+                if (STUDENT_RICH_MENU_ID) {
+
+                    await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+
+                }
+
+            } catch (error) {
+
+                console.error(`處理 follow 事件時出錯: `, error);
+
+            }
+
+        }
+
+        return; // 處理完 follow 事件就結束
+
+    }  
     if (event.type === 'unfollow' || event.type === 'leave') {
         console.log(`用戶 ${event.source.userId} 已封鎖或離開`);
         return;
