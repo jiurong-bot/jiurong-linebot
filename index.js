@@ -1,4 +1,4 @@
-// index.js - V23.0 (功能優化與穩定性更新)
+// index.js - V23.1 (功能優化與穩定性更新)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
