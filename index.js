@@ -1906,6 +1906,77 @@ async function handleTeacherCommands(event, userId) {
   }
 }
 // index.js - V23.8 (重大修正與功能補齊)
+// [V24.0 補齊] 顯示學員搜尋結果的函式
+async function showStudentSearchResults(replyToken, query, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query(
+            `SELECT id, name, picture_url FROM users 
+             WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) 
+             ORDER BY name ASC LIMIT $3 OFFSET $4`,
+            [`%${query.toLowerCase()}%`, query, PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageUsers = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        if (pageUsers.length === 0 && page === 1) {
+            return reply(replyToken, `找不到與「${query}」相關的學員。`);
+        }
+        if (pageUsers.length === 0) {
+            return reply(replyToken, '沒有更多搜尋結果了。');
+        }
+
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+        const userBubbles = pageUsers.map(u => ({
+            type: 'bubble',
+            body: {
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'md',
+                contents: [
+                    { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
+                    { 
+                        type: 'box', 
+                        layout: 'vertical', 
+                        flex: 3, 
+                        justifyContent: 'center', 
+                        contents: [
+                            { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true },
+                            { type: 'text', text: `ID: ${formatIdForDisplay(u.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm', wrap: true }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'primary',
+                    color: '#1A759F',
+                    height: 'sm',
+                    action: { type: 'postback', label: '查看詳細資料', data: `action=view_student_details&studentId=${u.id}` }
+                }]
+            }
+        }));
+
+        const paginationBubble = createPaginationBubble('action=student_search_results', page, hasNextPage, `&query=${encodeURIComponent(query)}`);
+        if (paginationBubble) {
+            userBubbles.push(paginationBubble);
+        }
+
+        return reply(replyToken, { type: 'flex', altText: `學員搜尋結果：${query}`, contents: { type: 'carousel', contents: userBubbles } });
+
+    } catch(err) {
+        console.error('❌ 搜尋學員失敗:', err);
+        return reply(replyToken, '搜尋學員時發生錯誤。');
+    } finally {
+        if(client) client.release();
+    }
+}
+
 async function showPurchaseHistory(replyToken, userId, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
