@@ -2718,7 +2718,7 @@ app.post('/webhook', (req, res) => {
 });
 
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
-
+/*
 app.listen(PORT, async () => {
   checkEnvironmentVariables();
   await initializeDatabase();
@@ -2728,7 +2728,32 @@ app.listen(PORT, async () => {
   setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, PING_INTERVAL_MS);
   setInterval(cancelExpiredPendingOrders, ONE_HOUR_IN_MS);
 });
+*/
+//**********
+// 新的、有錯誤捕獲的程式碼
+app.listen(PORT, async () => {
+  try {
+    checkEnvironmentVariables();
+    await initializeDatabase();
 
+    console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
+    console.log(`Bot 版本: V23.6 (老師功能強化)`);
+
+    setInterval(checkAndSendReminders, REMINDER_CHECK_INTERVAL_MS);
+    setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, PING_INTERVAL_MS);
+    setInterval(cancelExpiredPendingOrders, ONE_HOUR_IN_MS);
+
+  } catch (error) {
+    // 如果上面 try {...} 區塊有任何錯誤，都會在這裡被捕獲並印出來
+    console.error('❌ 應用程式啟動失敗:', error);
+    process.exit(1); // 讓程序以失敗狀態退出，Render 會立刻知道部署失敗
+  }
+});
+
+
+
+
+//****************
 async function handleEvent(event) {
     if (event.type === 'follow') {
         const userId = event.source.userId;
