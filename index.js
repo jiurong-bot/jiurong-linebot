@@ -1,5 +1,5 @@
 // Part 1 of 8
-// index.js - V23.5 (效能優化更新)
+// index.js - V23.5 (資料庫索引)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
