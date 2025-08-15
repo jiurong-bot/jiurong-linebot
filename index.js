@@ -2100,6 +2100,99 @@ async function showPurchaseHistory(replyToken, userId, page) {
     }
 }
 
+async function showUnreadMessages(replyToken, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query("SELECT * FROM feedback_messages WHERE status = 'new' ORDER BY timestamp ASC LIMIT $1 OFFSET $2", [PAGINATION_SIZE + 1, offset]);
+        
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageMessages = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        if (pageMessages.length === 0 && page === 1) {
+            return reply(replyToken, '太棒了！目前沒有未回覆的學員留言。');
+        }
+        if (pageMessages.length === 0) {
+            return reply(replyToken, '沒有更多未回覆的留言了。');
+        }
+
+        const messageBubbles = pageMessages.map(msg => ({
+            type: 'bubble',
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                    {
+                        type: 'text',
+                        text: msg.user_name,
+                        weight: 'bold',
+                        size: 'lg',
+                        wrap: true
+                    },
+                    {
+                        type: 'text',
+                        text: formatDateTime(msg.timestamp),
+                        size: 'xs',
+                        color: '#AAAAAA'
+                    },
+                    {
+                        type: 'separator',
+                        margin: 'lg'
+                    },
+                    {
+                        type: 'text',
+                        text: msg.message,
+                        wrap: true,
+                        margin: 'lg',
+                        size: 'md'
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: [
+                    {
+                        type: 'button',
+                        style: 'primary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '💬 回覆此留言',
+                            data: `action=reply_feedback&msgId=${msg.id}&userId=${msg.user_id}`
+                        }
+                    },
+                    {
+                        type: 'button',
+                        style: 'secondary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '標示為已讀',
+                            data: `action=mark_feedback_read&msgId=${msg.id}`
+                        }
+                    }
+                ]
+            }
+        }));
+        
+        const paginationBubble = createPaginationBubble('action=view_unread_messages', page, hasNextPage);
+        if (paginationBubble) {
+            messageBubbles.push(paginationBubble);
+        }
+
+        return reply(replyToken, { type: 'flex', altText: '未回覆的學員留言', contents: { type: 'carousel', contents: messageBubbles } });
+
+    } catch (err) {
+        console.error('❌ 查詢未讀留言失敗:', err);
+        return reply(replyToken, '查詢未回覆留言時發生錯誤。');
+    } finally {
+        if(client) client.release();
+    }
+}
+
 async function showPendingOrders(replyToken, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
