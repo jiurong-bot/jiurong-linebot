@@ -3709,38 +3709,46 @@ async function handleEvent(event) {
              const page = parseInt(data.get('page') || '1', 10);
              return showFailedTasks(replyToken, page);
         } 
-        if (action === 'retry_failed_task') {
-            const failedTaskId = data.get('id');
-            const db = await pgPool.connect();
-            try {
-                await db.query('BEGIN');
-                const failedTaskRes = await db.query('SELECT * FROM failed_tasks WHERE id = $1', [failedTaskId]);
-                if (failedTaskRes.rows.length === 0) {
-                    await db.query('ROLLBACK');
-                    return reply(replyToken, '找不到該失敗任務，可能已被處理。');
-                }
-                const taskToRetry = failedTaskRes.rows[0];
+        
+        if (action === 'retry_failed_task') {
+            const failedTaskId = data.get('id');
+            const db = await pgPool.connect();
+            try {
+                await db.query('BEGIN');
+                const failedTaskRes = await db.query('SELECT * FROM failed_tasks WHERE id = $1', [failedTaskId]);
+                if (failedTaskRes.rows.length === 0) {
+                    await db.query('ROLLBACK');
+                    return reply(replyToken, '找不到該失敗任務，可能已被處理。');
+                }
+                const taskToRetry = failedTaskRes.rows[0];
 
-                // 將任務重新加回主任務表 tasks
-                await db.query(
-                    `INSERT INTO tasks (recipient_id, message_payload, status, retry_count, last_error)
-                     VALUES ($1, $2, 'pending', 0, 'Retried from DLQ')`,
-                    [taskToRetry.recipient_id, taskToRetry.message_payload]
-                );
+                // [修正] 將所有 VALUES 改為參數化傳入
+                await db.query(
+                    `INSERT INTO tasks (recipient_id, message_payload, status, retry_count, last_error)
+                     VALUES ($1, $2, $3, $4, $5)`,
+                    [
+                        taskToRetry.recipient_id,
+                        taskToRetry.message_payload,
+                        'pending',
+                        0,
+                        'Retried from DLQ'
+                    ]
+                );
 
-                // 從 failed_tasks 表中刪除
-                await db.query('DELETE FROM failed_tasks WHERE id = $1', [failedTaskId]);
+                // 從 failed_tasks 表中刪除
+                await db.query('DELETE FROM failed_tasks WHERE id = $1', [failedTaskId]);
 
-                await db.query('COMMIT');
-                return reply(replyToken, `✅ 已將任務 #${failedTaskId} 重新加入佇列等待發送。`);
-            } catch (err) {
-                await db.query('ROLLBACK');
-                console.error(`❌ 重試失敗任務 ${failedTaskId} 失敗:`, err);
-                return reply(replyToken, '重試任務時發生錯誤，操作已取消。');
-            } finally {
-                if (db) db.release();
-            }
-        }
+                await db.query('COMMIT');
+                return reply(replyToken, `✅ 已將任務 #${failedTaskId} 重新加入佇列等待發送。`);
+            } catch (err) {
+                await db.query('ROLLBACK');
+                console.error(`❌ 重試失敗任務 ${failedTaskId} 失敗:`, err);
+                return reply(replyToken, '重試任務時發生錯誤，操作已取消。');
+            } finally {
+                if (db) db.release();
+            }
+        }
+
 
         if (action === 'delete_failed_task') {
             const failedTaskId = data.get('id');
