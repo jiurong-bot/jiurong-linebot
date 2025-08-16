@@ -299,23 +299,14 @@ async function initializeDatabase() {
     console.log('✅ 已檢查/建立 system_settings 表格');
 
        await client.query(`
-
       CREATE TABLE IF NOT EXISTS failed_tasks (
-
         id SERIAL PRIMARY KEY,
-
         original_task_id INTEGER,
-
         recipient_id VARCHAR(255) NOT NULL,
-
         message_payload JSONB NOT NULL,
-
         last_error TEXT,
-
         failed_at TIMESTAMPTZ DEFAULT NOW()
-
       )
-
     `);
 
     console.log('✅ 已檢查/建立 failed_tasks 表格');
