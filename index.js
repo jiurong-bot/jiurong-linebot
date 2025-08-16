@@ -278,7 +278,7 @@ async function initializeDatabase() {
     recipient_id VARCHAR(255) NOT NULL,
     message_payload JSONB NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, processing, sent, failed
-    send_at TIMESTAM-PTZ NOT NULL DEFAULT NOW(),
+    send_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     retry_count INTEGER DEFAULT 0,
     last_error TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
