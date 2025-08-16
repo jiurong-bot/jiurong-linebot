@@ -2202,6 +2202,108 @@ async function showUnreadMessages(replyToken, page) {
     }
 }
 
+async function showCourseSeries(replyToken, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        // 使用 DISTINCT ON 語法，依據課程 ID 的前兩碼 (prefix) 來取得每個系列的第一堂未來課程
+        const res = await client.query(
+            `SELECT DISTINCT ON (LEFT(id, 2)) id, title
+             FROM courses
+             WHERE time > NOW()
+             ORDER BY LEFT(id, 2), time ASC
+             LIMIT $1 OFFSET $2`,
+            [PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageSeries = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        if (pageSeries.length === 0 && page === 1) {
+            return reply(replyToken, '目前沒有任何已開設且未來的課程系列可供管理。');
+        }
+        if (pageSeries.length === 0) {
+            return reply(replyToken, '沒有更多課程系列了。');
+        }
+
+        const seriesBubbles = pageSeries.map(series => {
+            const prefix = series.id.substring(0, 2);
+            // 因為您已移除後綴，直接用 series.title 即可
+            // 為了相容舊資料，這裡暫時保留 getCourseMainTitle，您之後可以移除
+            const mainTitle = getCourseMainTitle(series.title); 
+
+            return {
+                type: 'bubble',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [
+                        {
+                            type: 'text',
+                            text: mainTitle,
+                            weight: 'bold',
+                            size: 'lg',
+                            color: '#FFFFFF',
+                            wrap: true
+                        }
+                    ],
+                    backgroundColor: '#343A40',
+                    paddingAll: 'lg'
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'md',
+                    paddingAll: 'lg',
+                    contents: [
+                        {
+                            type: 'button',
+                            style: 'secondary',
+                            height: 'sm',
+                            action: {
+                                type: 'postback',
+                                label: '🗓️ 單堂管理與取消',
+                                data: `action=manage_course_group&prefix=${prefix}&page=1`
+                            }
+                        },
+                        {
+                            type: 'button',
+                            style: 'secondary',
+                            color: '#DE5246',
+                            height: 'sm',
+                            action: {
+                                type: 'postback',
+                                label: '🗑️ 批次取消全系列',
+                                data: `action=cancel_course_group_confirm&prefix=${prefix}`
+                            }
+                        }
+                    ]
+                }
+            };
+        });
+
+        const paginationBubble = createPaginationBubble('action=view_course_series', page, hasNextPage);
+        if (paginationBubble) {
+            seriesBubbles.push(paginationBubble);
+        }
+
+        return reply(replyToken, {
+            type: 'flex',
+            altText: '管理已開課程',
+            contents: {
+                type: 'carousel',
+                contents: seriesBubbles
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ 查詢課程系列失敗:', err);
+        return reply(replyToken, '查詢課程系列時發生錯誤，請稍後再試。');
+    } finally {
+        if (client) client.release();
+    }
+}
+
 async function showPendingOrders(replyToken, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
