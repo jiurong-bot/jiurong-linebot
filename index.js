@@ -3704,6 +3704,10 @@ async function handleEvent(event) {
         if (action === 'view_exchange_history') {
             return showStudentExchangeHistory(replyToken, userId, page);
         }
+        if (action === 'view_failed_tasks') { 
+             const page = parseInt(data.get('page') || '1', 10);
+             return showFailedTasks(replyToken, page);
+        } 
         if (action === 'manage_course_group') {
              const prefix = data.get('prefix');
              return showSingleCoursesForCancellation(replyToken, prefix, page);
