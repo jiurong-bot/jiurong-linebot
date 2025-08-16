@@ -2202,6 +2202,80 @@ async function showUnreadMessages(replyToken, page) {
     }
 }
 
+async function showPendingShopOrders(replyToken, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query(
+            "SELECT * FROM product_orders WHERE status = 'pending' ORDER BY created_at ASC LIMIT $1 OFFSET $2",
+            [PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageOrders = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        if (pageOrders.length === 0 && page === 1) {
+            return reply(replyToken, '目前沒有待處理的商品訂單。');
+        }
+        if (pageOrders.length === 0) {
+            return reply(replyToken, '沒有更多待處理的訂單了。');
+        }
+
+        const orderBubbles = pageOrders.map(order => ({
+            type: 'bubble',
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                    { type: 'text', text: order.product_name, weight: 'bold', size: 'xl', wrap: true },
+                    { type: 'text', text: `兌換者: ${order.user_name}`, size: 'md' },
+                    { type: 'separator', margin: 'lg' },
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        margin: 'lg',
+                        spacing: 'sm',
+                        contents: [
+                            { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '花費點數', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${order.points_spent} 點`, color: '#666666', size: 'sm', flex: 3, wrap: true } ] },
+                            { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '訂單時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(order.created_at), color: '#666666', size: 'sm', flex: 3, wrap: true } ] }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'sm',
+                contents: [
+                    { type: 'button', style: 'secondary', flex: 1, action: { type: 'postback', label: '取消訂單', data: `action=cancel_shop_order_start&orderUID=${order.order_uid}` } },
+                    { type: 'button', style: 'primary', color: '#28a745', flex: 1, action: { type: 'postback', label: '確認訂單', data: `action=confirm_shop_order&orderUID=${order.order_uid}` } }
+                ]
+            }
+        }));
+
+        const paginationBubble = createPaginationBubble('action=view_pending_shop_orders', page, hasNextPage);
+        if (paginationBubble) {
+            orderBubbles.push(paginationBubble);
+        }
+
+        return reply(replyToken, {
+            type: 'flex',
+            altText: '待處理的商品訂單',
+            contents: {
+                type: 'carousel',
+                contents: orderBubbles
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ 查詢待處理商品訂單失敗:', err);
+        return reply(replyToken, '查詢訂單時發生錯誤。');
+    } finally {
+        if (client) client.release();
+    }
+}
+
 async function showAnnouncementsForDeletion(replyToken, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
