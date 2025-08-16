@@ -1322,7 +1322,13 @@ async function handleAdminCommands(event, userId) {
       else if (text === COMMANDS.ADMIN.SYSTEM_STATUS) {
       return showSystemStatus(replyToken);
 
-    }   else if (text === COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
+    }   
+      else if (text === COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT) {
+
+  return showFailedTasks(replyToken, 1); // 顯示第一頁
+
+      }      
+        else if (text === COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
         const currentStatus = await getNotificationStatus();
         const newStatus = !currentStatus;
         const db = await pgPool.connect();
