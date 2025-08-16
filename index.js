@@ -1164,7 +1164,8 @@ async function showFailedTasks(replyToken, page) {
             "SELECT * FROM failed_tasks ORDER BY failed_at DESC LIMIT $1 OFFSET $2",
             [PAGINATION_SIZE + 1, offset]
         );
-
+        console.log('--- DEBUG: Fetched from failed_tasks ---', res.rows);
+      
         const hasNextPage = res.rows.length > PAGINATION_SIZE;
         const pageTasks = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
 
