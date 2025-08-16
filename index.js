@@ -1542,13 +1542,13 @@ async function handleTeacherCommands(event, userId) {
               const course = courseToCancelRes.rows[0];
               for (const studentId of course.students) {
                  await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [course.points_cost, studentId]);
-                 const studentMsg = { type: 'text', text: `課程取消通知：\n老師已取消您預約的課程「${getCourseMainTitle(course.title)}」，已歸還 ${course.points_cost} 點至您的帳戶。`};
+                 const studentMsg = { type: 'text', text: `課程取消通知：\n老師已取消您預約的課程「${course.title}」，已歸還 ${course.points_cost} 點至您的帳戶。`};
                  enqueuePushTask(studentId, studentMsg).catch(e => console.error(e));
               }
               await client.query("DELETE FROM courses WHERE id = $1", [state.course_id]);
               await client.query('COMMIT');
               delete pendingCourseCancellation[userId];
-              return reply(replyToken, `✅ 已成功取消課程「${getCourseMainTitle(course.title)}」。`);
+              return reply(replyToken, `✅ 已成功取消課程「${course.title}」。`);
             } catch (e) {
                 await client.query('ROLLBACK');
                 delete pendingCourseCancellation[userId];
@@ -1615,7 +1615,7 @@ async function handleTeacherCommands(event, userId) {
                         const courseDate = getNextDate(state.weekday, state.time, currentDate);
                         const course = {
                             id: `${prefix}${String(i + 1).padStart(2, '0')}`,
-                            title: `${state.title} - 第 ${i + 1} 堂`,
+                            title: state.title,
                             time: courseDate.toISOString(),
                             capacity: state.capacity,
                             points_cost: state.points_cost,
@@ -2289,7 +2289,7 @@ async function showAvailableCourses(replyToken, userId, page) {
 
         const courseItems = pageCourses.map(c => {
             const remainingSpots = c.capacity - (c.students?.length || 0);
-            const mainTitle = getCourseMainTitle(c.title);
+            const mainTitle = c.title;
             return {
                 type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
                 contents: [
@@ -2370,7 +2370,7 @@ async function showMyCourses(replyToken, userId, page) {
                 spotsBooked = c.students.filter(id => id === userId).length;
             }
 
-            const courseMainTitle = getCourseMainTitle(c.title); 
+            const courseMainTitle = c.title; 
             const actionLabel = isBooked ? '取消預約 (1位)' : '取消候補';
             const postbackAction = isBooked ? 'confirm_cancel_booking_start' : 'confirm_cancel_waiting_start';
 
@@ -2513,7 +2513,7 @@ async function showSingleCoursesForCancellation(replyToken, prefix, page) {
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-                    { type: 'text', text: getCourseMainTitle(c.title), wrap: true, weight: 'bold' }, // [V23.2 修改]
+                    { type: 'text', text: c.title, wrap: true, weight: 'bold' }, // [V23.2 修改]
                     { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'md'}
                 ]
             },
@@ -2726,7 +2726,7 @@ async function showCourseRosterSummary(replyToken, page) {
                 layout: 'vertical',
                 spacing: 'md',
                 contents: [
-                    { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'lg', wrap: true },
+                    { type: 'text', text: c.title, weight: 'bold', size: 'lg', wrap: true },
                     { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#666666' },
                     { type: 'separator', margin: 'md' },
                     {
@@ -2858,14 +2858,14 @@ async function showCourseRosterDetails(replyToken, courseId) {
 
         const flexMessage = {
             type: 'flex',
-            altText: `課程 ${getCourseMainTitle(course.title)} 的詳細名單`,
+            altText: `課程 ${course.title} 的詳細名單`,
             contents: {
                 type: 'bubble',
                 size: 'giga',
                 header: {
                     type: 'box', layout: 'vertical', paddingAll: 'lg',
                     contents: [
-                        { type: 'text', text: getCourseMainTitle(course.title), weight: 'bold', size: 'xl', wrap: true },
+                        { type: 'text', text: course.title, weight: 'bold', size: 'xl', wrap: true },
                         { type: 'text', text: formatDateTime(course.time), size: 'sm', color: '#666666', margin: 'md' }
                     ]
                 },
@@ -2975,7 +2975,7 @@ async function handleStudentCommands(event, userId) {
                 const newWaitingList = course.waiting.filter(id => id !== userId);
                 await saveCourse({ ...course, waiting: newWaitingList });
                 delete pendingBookingConfirmation[userId];
-                return reply(replyToken, `✅ 已為您取消「${getCourseMainTitle(course.title)}」的候補。`);
+                return reply(replyToken, `✅ 已為您取消「${course.title}」的候補。`);
             } else if (text === COMMANDS.GENERAL.CANCEL) {
                 delete pendingBookingConfirmation[userId];
                 return reply(replyToken, '已放棄取消操作。');
@@ -3382,7 +3382,7 @@ async function handleEvent(event) {
 
                         const coursePopularity = {};
                         courses.forEach(c => {
-                            const mainTitle = getCourseMainTitle(c.title);
+                            const mainTitle = c.title;
                             if (!coursePopularity[mainTitle]) coursePopularity[mainTitle] = 0;
                             coursePopularity[mainTitle] += c.students.length;
                         });
@@ -3567,7 +3567,7 @@ async function handleEvent(event) {
                     enqueuePushTask(u, timeoutMsg).catch(e => console.error(e));
                 });
 
-                const message = `您確定要取消單堂課程「${getCourseMainTitle(course.title)}」嗎？\n(${formatDateTime(course.time)})\n\n將會退點給所有已預約的學員。`;
+                const message = `您確定要取消單堂課程「${course.title}」嗎？\n(${formatDateTime(course.time)})\n\n將會退點給所有已預約的學員。`;
                 return reply(replyToken, message, [
                     { type: 'action', action: { type: 'message', label: COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL, text: COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL } },
                     { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL } }
@@ -3593,7 +3593,7 @@ async function handleEvent(event) {
                     if (myCoursesRes.rows.length > 0) {
                         courseText += myCoursesRes.rows.map(c => {
                             const status = c.students.includes(studentId) ? ' (已預約)' : ' (候補中)';
-                            return ` - ${getCourseMainTitle(c.title)}${status} \n   ${formatDateTime(c.time)}`;
+                            return ` - ${c.title}${status} \n   ${formatDateTime(c.time)}`;
                         }).join('\n\n');
                     } else {
                         courseText += '無';
@@ -3807,7 +3807,7 @@ async function handleEvent(event) {
                             type: 'box',
                             layout: 'vertical',
                             contents: [
-                                { type: 'text', text: getCourseMainTitle(course.title), wrap: true, weight: 'bold', size: 'md' },
+                                { type: 'text', text: course.title, wrap: true, weight: 'bold', size: 'md' },
                                 { type: 'text', text: `剩餘名額：${remainingSpots} 位`, size: 'sm', color: '#666666', margin: 'md' },
                                 { type: 'separator', margin: 'lg' }
                             ]
@@ -3859,14 +3859,14 @@ async function handleEvent(event) {
                         newStudents.push(userId);
                     }
                     
-                    const historyEntry = { action: `預約課程 (共${spotsToBook}位)：${getCourseMainTitle(course.title)}`, pointsChange: -totalCost, time: new Date().toISOString() };
+                    const historyEntry = { action: `預約課程 (共${spotsToBook}位)：${course.title}`, pointsChange: -totalCost, time: new Date().toISOString() };
                     const newHistory = student.history ? [...student.history, historyEntry] : [historyEntry];
 
                     await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
                     await client.query('UPDATE courses SET students = $1 WHERE id = $2', [newStudents, course_id]);
                     await client.query('COMMIT');
                     
-                    await reply(replyToken, `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${getCourseMainTitle(course.title)}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`);
+                    await reply(replyToken, `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`);
                 
                 } catch (e) {
                     await client.query('ROLLBACK');
@@ -3882,7 +3882,7 @@ async function handleEvent(event) {
                 const course = await getCourse(course_id);
                 if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
                 pendingBookingConfirmation[userId] = { type: 'cancel_book', course_id: course_id };
-                const message = `您確定要取消預約以下課程嗎？ (一次取消1位)\n\n課程：${getCourseMainTitle(course.title)}\n時間：${formatDateTime(course.time)}\n\n取消後將歸還 ${course.points_cost} 點，確認嗎？`;
+                const message = `您確定要取消預約以下課程嗎？ (一次取消1位)\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n取消後將歸還 ${course.points_cost} 點，確認嗎？`;
                 return reply(replyToken, message, [
                     { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING, text: COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING } },
                     { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL } }
@@ -3893,7 +3893,7 @@ async function handleEvent(event) {
                 const course = await getCourse(course_id);
                 if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
                 pendingBookingConfirmation[userId] = { type: 'cancel_wait', course_id: course_id };
-                const message = `您確定要取消候補以下課程嗎？\n\n課程：${getCourseMainTitle(course.title)}\n時間：${formatDateTime(course.time)}`;
+                const message = `您確定要取消候補以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`;
                 return reply(replyToken, message, [
                     { type: 'action', action: { type: 'message', label: COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING, text: COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING } },
                     { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL } }
