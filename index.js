@@ -1249,7 +1249,11 @@ async function handleAdminCommands(event, userId) {
       const statusText = currentStatus ? '【目前為：開啟】' : '【目前為：關閉】';
       return reply(replyToken, `請選擇管理者功能：\n\n開發者推播通知 ${statusText}`, adminMenu);
 
-    } else if (text === COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
+    }
+      else if (text === COMMANDS.ADMIN.SYSTEM_STATUS) {
+      return showSystemStatus(replyToken);
+
+    }   else if (text === COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
         const currentStatus = await getNotificationStatus();
         const newStatus = !currentStatus;
         const db = await pgPool.connect();
