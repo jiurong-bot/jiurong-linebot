@@ -1141,6 +1141,44 @@ async function handlePurchaseFlow(event, userId) {
     }
     return false;
 }
+/**
+ * 查詢並顯示背景 Worker 的系統狀態
+ * @param {string} replyToken - 用於回覆的 token
+ */
+async function showSystemStatus(replyToken) {
+  const db = await pgPool.connect();
+  try {
+    // 平行執行三個查詢以提高效率
+    const [pendingRes, processingRes, failedRes] = await Promise.all([
+      db.query("SELECT COUNT(*) FROM tasks WHERE status = 'pending'"),
+      db.query("SELECT COUNT(*) FROM tasks WHERE status = 'processing'"),
+      db.query("SELECT COUNT(*) FROM failed_tasks")
+    ]);
+
+    const pendingCount = pendingRes.rows[0].count;
+    const processingCount = processingRes.rows[0].count;
+    const failedCount = failedRes.rows[0].count;
+
+    const statusText = `
+⚙️ 背景系統狀態 ⚙️
+
+- 待處理任務: ${pendingCount} 個
+- 正在處理中: ${processingCount} 個
+- 失敗任務(DLQ): ${failedCount} 個
+
+ℹ️ 「待處理任務」是系統即將要發送的排程訊息 (如課程提醒)。若「失敗任務」數量持續增加，請檢查 Worker 紀錄。
+    `.trim();
+
+    await reply(replyToken, statusText);
+
+  } catch (err) {
+    console.error('❌ 查詢系統狀態失敗:', err);
+    await reply(replyToken, '查詢系統狀態時發生錯誤。');
+  } finally {
+    if (db) db.release();
+  }
+}
+
 async function handleAdminCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
