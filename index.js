@@ -2748,7 +2748,7 @@ async function showProductManagementList(replyToken, page = 1, filter = null) {
         const productsRes = await client.query(baseQuery, queryParams);
 
         const hasNextPage = productsRes.rows.length > PAGINATION_SIZE;
-        const pageProducts = hasNextPage ? productsRes.rows.slice(0, PAGINATION_SIZE) : res.rows;
+        const pageProducts = hasNextPage ? productsRes.rows.slice(0, PAGINATION_SIZE) : productsRes.rows;
 
         if (pageProducts.length === 0 && page === 1) {
             const emptyMessage = filter === 'available'
