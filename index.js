@@ -1146,6 +1146,72 @@ async function handlePurchaseFlow(event, userId) {
  * 查詢並顯示背景 Worker 的系統狀態
  * @param {string} replyToken - 用於回覆的 token
  */
+// [新增] 輔助函式：用來查詢多個使用者的名稱
+async function getUserNames(userIds, dbClient) {
+    if (!userIds || userIds.length === 0) {
+        return new Map();
+    }
+    const usersRes = await dbClient.query("SELECT id, name FROM users WHERE id = ANY($1::text[])", [userIds]);
+    return new Map(usersRes.rows.map(u => [u.id, u.name]));
+}
+
+// [新增] 主要函式：顯示失敗任務列表
+async function showFailedTasks(replyToken, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query(
+            "SELECT * FROM failed_tasks ORDER BY failed_at DESC LIMIT $1 OFFSET $2",
+            [PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageTasks = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        if (pageTasks.length === 0 && page === 1) {
+            return reply(replyToken, '✅ 太好了！目前沒有任何失敗的任務。');
+        }
+        if (pageTasks.length === 0) {
+            return reply(replyToken, '沒有更多失敗的任務了。');
+        }
+
+        const userIds = [...new Set(pageTasks.map(task => task.recipient_id))];
+        const userNamesMap = await getUserNames(userIds, client);
+
+        const taskBubbles = pageTasks.map(task => {
+            const recipientName = userNamesMap.get(task.recipient_id) || '未知用戶';
+            const errorMessage = task.last_error || '沒有錯誤訊息。';
+            
+            return {
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🚨 任務失敗', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#d9534f', paddingAll: 'lg' },
+                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '收件人', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${recipientName}`, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '失敗時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(task.failed_at), color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                    { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'text', text: '錯誤原因', color: '#aaaaaa', size: 'sm' }, { type: 'text', text: errorMessage.substring(0, 100), color: '#666666', size: 'sm', wrap: true, margin: 'md' } ] }
+                ]},
+                footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+                    { type: 'button', style: 'secondary', flex: 1, height: 'sm', action: { type: 'postback', label: '🗑️ 刪除', data: `action=delete_failed_task&id=${task.id}` } },
+                    { type: 'button', style: 'primary', color: '#5cb85c', flex: 1, height: 'sm', action: { type: 'postback', label: '🔄 重試', data: `action=retry_failed_task&id=${task.id}` } }
+                ]}
+            };
+        });
+
+        const paginationBubble = createPaginationBubble('action=view_failed_tasks', page, hasNextPage);
+        if (paginationBubble) {
+            taskBubbles.push(paginationBubble);
+        }
+
+        return reply(replyToken, { type: 'flex', altText: '失敗任務列表', contents: { type: 'carousel', contents: taskBubbles } });
+    } catch (err) {
+        console.error('❌ 查詢失敗任務列表失敗:', err);
+        return reply(replyToken, '查詢失敗任務時發生錯誤。');
+    } finally {
+        if (client) client.release();
+    }
+}
+
 async function showSystemStatus(replyToken) {
   const db = await pgPool.connect();
   try {
