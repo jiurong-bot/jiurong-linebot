@@ -2289,7 +2289,7 @@ async function showAvailableCourses(replyToken, userId, page) {
 
         const courseItems = pageCourses.map(c => {
             const remainingSpots = c.capacity - (c.students?.length || 0);
-            const mainTitle = getCourseMainTitle(c.title);
+            const mainTitle = c.title;
             return {
                 type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
                 contents: [
@@ -2370,7 +2370,7 @@ async function showMyCourses(replyToken, userId, page) {
                 spotsBooked = c.students.filter(id => id === userId).length;
             }
 
-            const courseMainTitle = getCourseMainTitle(c.title); 
+            const courseMainTitle = c.title; 
             const actionLabel = isBooked ? '取消預約 (1位)' : '取消候補';
             const postbackAction = isBooked ? 'confirm_cancel_booking_start' : 'confirm_cancel_waiting_start';
 
@@ -2513,7 +2513,7 @@ async function showSingleCoursesForCancellation(replyToken, prefix, page) {
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-                    { type: 'text', text: getCourseMainTitle(c.title), wrap: true, weight: 'bold' }, // [V23.2 修改]
+                    { type: 'text', text: c.title, wrap: true, weight: 'bold' }, // [V23.2 修改]
                     { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'md'}
                 ]
             },
@@ -2726,7 +2726,7 @@ async function showCourseRosterSummary(replyToken, page) {
                 layout: 'vertical',
                 spacing: 'md',
                 contents: [
-                    { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'lg', wrap: true },
+                    { type: 'text', text: c.title, weight: 'bold', size: 'lg', wrap: true },
                     { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#666666' },
                     { type: 'separator', margin: 'md' },
                     {
@@ -3382,7 +3382,7 @@ async function handleEvent(event) {
 
                         const coursePopularity = {};
                         courses.forEach(c => {
-                            const mainTitle = getCourseMainTitle(c.title);
+                            const mainTitle = c.title;
                             if (!coursePopularity[mainTitle]) coursePopularity[mainTitle] = 0;
                             coursePopularity[mainTitle] += c.students.length;
                         });
@@ -3593,7 +3593,7 @@ async function handleEvent(event) {
                     if (myCoursesRes.rows.length > 0) {
                         courseText += myCoursesRes.rows.map(c => {
                             const status = c.students.includes(studentId) ? ' (已預約)' : ' (候補中)';
-                            return ` - ${getCourseMainTitle(c.title)}${status} \n   ${formatDateTime(c.time)}`;
+                            return ` - ${c.title}${status} \n   ${formatDateTime(c.time)}`;
                         }).join('\n\n');
                     } else {
                         courseText += '無';
