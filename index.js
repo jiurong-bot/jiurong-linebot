@@ -2202,6 +2202,95 @@ async function showUnreadMessages(replyToken, page) {
     }
 }
 
+async function showAnnouncementsForDeletion(replyToken, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query(
+            "SELECT * FROM announcements ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            [PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageAnnouncements = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        if (pageAnnouncements.length === 0 && page === 1) {
+            return reply(replyToken, '目前沒有任何可刪除的公告。');
+        }
+        if (pageAnnouncements.length === 0) {
+            return reply(replyToken, '沒有更多公告了。');
+        }
+
+        const announcementBubbles = pageAnnouncements.map(ann => {
+            return {
+                type: 'bubble',
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'md',
+                    contents: [
+                        {
+                            type: 'text',
+                            text: ann.content,
+                            wrap: true,
+                            size: 'sm'
+                        },
+                        {
+                            type: 'separator',
+                            margin: 'lg'
+                        },
+                        {
+                            type: 'text',
+                            text: `由 ${ann.creator_name} 於 ${formatDateTime(ann.created_at)} 發布`,
+                            size: 'xxs',
+                            color: '#AAAAAA',
+                            margin: 'lg',
+                            wrap: true
+                        }
+                    ]
+                },
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [
+                        {
+                            type: 'button',
+                            style: 'primary',
+                            color: '#DE5246',
+                            height: 'sm',
+                            action: {
+                                type: 'postback',
+                                label: '🗑️ 刪除此公告',
+                                data: `action=select_announcement_for_deletion&ann_id=${ann.id}`
+                            }
+                        }
+                    ]
+                }
+            };
+        });
+
+        const paginationBubble = createPaginationBubble('action=view_announcements_for_deletion', page, hasNextPage);
+        if (paginationBubble) {
+            announcementBubbles.push(paginationBubble);
+        }
+
+        return reply(replyToken, {
+            type: 'flex',
+            altText: '選擇要刪除的公告',
+            contents: {
+                type: 'carousel',
+                contents: announcementBubbles
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ 查詢公告列表失敗:', err);
+        return reply(replyToken, '查詢公告時發生錯誤。');
+    } finally {
+        if (client) client.release();
+    }
+}
+
 async function showCourseSeries(replyToken, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
