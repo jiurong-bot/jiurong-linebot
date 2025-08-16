@@ -67,6 +67,7 @@ const COMMANDS = {
   ADMIN: {
     PANEL: '@管理模式',
     SYSTEM_STATUS: '@系統狀態',
+    FAILED_TASK_MANAGEMENT: '@失敗任務管理',
     ADD_TEACHER: '@授權老師',
     REMOVE_TEACHER: '@移除老師',
     SIMULATE_STUDENT: '@模擬學員身份',
