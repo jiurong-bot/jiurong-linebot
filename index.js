@@ -298,7 +298,27 @@ async function initializeDatabase() {
     );
     console.log('✅ 已檢查/建立 system_settings 表格');
 
+       await client.query(`
 
+      CREATE TABLE IF NOT EXISTS failed_tasks (
+
+        id SERIAL PRIMARY KEY,
+
+        original_task_id INTEGER,
+
+        recipient_id VARCHAR(255) NOT NULL,
+
+        message_payload JSONB NOT NULL,
+
+        last_error TEXT,
+
+        failed_at TIMESTAMPTZ DEFAULT NOW()
+
+      )
+
+    `);
+
+    console.log('✅ 已檢查/建立 failed_tasks 表格');
     const lastSeenIdCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='last_seen_announcement_id'");
     if (lastSeenIdCol.rows.length === 0) {
         await client.query('ALTER TABLE users ADD COLUMN last_seen_announcement_id INTEGER DEFAULT 0');
