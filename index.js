@@ -4132,7 +4132,24 @@ async function handleEvent(event) {
                     await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
                     await client.query('UPDATE courses SET students = $1 WHERE id = $2', [newStudents, course_id]);
                     await client.query('COMMIT');
-                    
+                    // ... 在 reply 成功訊息之前，加入以下邏輯 ...
+try {
+    // 設定課程開始前 1 小時為提醒時間
+    const reminderTime = new Date(new Date(course.time).getTime() - ONE_HOUR_IN_MS);
+
+    // 確保提醒時間在未來
+    if (reminderTime > new Date()) {
+        const reminderMessage = {
+            type: 'text',
+            text: `🔔 課程提醒 🔔\n您預約的課程「${course.title}」即將在約一小時後開始，請準備好上課囉！`
+        };
+        await enqueuePushTask(userId, reminderMessage, reminderTime);
+    }
+} catch (e) {
+    console.error(`為 user ${userId} 加入課程提醒任務失敗: `, e);
+    // 這邊失敗沒關係，不影響主要預約流程，只需記錄錯誤即可
+}
+
                     await reply(replyToken, `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`);
                 
                 } catch (e) {
