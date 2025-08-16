@@ -2414,7 +2414,8 @@ async function showShopProducts(replyToken, page) {
         const productsRes = await client.query("SELECT * FROM products WHERE status = 'available' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [PAGINATION_SIZE + 1, offset]);
 
         const hasNextPage = productsRes.rows.length > PAGINATION_SIZE;
-        const pageProducts = hasNextPage ? productsRes.rows.slice(0, PAGINATION_SIZE) : res.rows;
+        // 【錯誤修正】下面這一行，原本誤寫為 res.rows，已修正為 productsRes.rows
+        const pageProducts = hasNextPage ? productsRes.rows.slice(0, PAGINATION_SIZE) : productsRes.rows;
 
         if (pageProducts.length === 0 && page === 1) {
             return reply(replyToken, '目前商城沒有任何商品，敬請期待！');
@@ -2433,7 +2434,7 @@ async function showShopProducts(replyToken, page) {
 
             return {
                 type: 'bubble',
-                hero: (p.image_url && p.image_url.startsWith('https')) ? { type: 'image', url: p.image_url, size: 'full', aspectRatio: '20:13', aspectMode: 'fit' } : undefined, // [V23.2 修改] aspectMode -> fit
+                hero: (p.image_url && p.image_url.startsWith('https')) ? { type: 'image', url: p.image_url, size: 'full', aspectRatio: '20:13', aspectMode: 'fit' } : undefined,
                 body: {
                     type: 'box',
                     layout: 'vertical',
