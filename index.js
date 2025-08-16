@@ -270,20 +270,21 @@ async function initializeDatabase() {
     `);
     console.log('✅ 已檢查/建立 products 與 product_orders 表格');
     
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id SERIAL PRIMARY KEY,
-        recipient_id VARCHAR(255) NOT NULL,
-        message_payload JSONB NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, processing, sent, failed
-        send_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        retry_count INTEGER DEFAULT 0,
-        last_error TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    console.log('✅ 已檢查/建立 tasks 表格');
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
+    recipient_id VARCHAR(255) NOT NULL,
+    message_payload JSONB NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, processing, sent, failed
+    send_at TIMESTAM-PTZ NOT NULL DEFAULT NOW(),
+    retry_count INTEGER DEFAULT 0,
+    last_error TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+console.log('✅ 已檢查/建立 tasks 表格 (Worker 相容版本)');
+
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS system_settings (
