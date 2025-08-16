@@ -1,4 +1,4 @@
-// index.js - V26.2 (多人預約功能)
+// index.js - V27 (系統狀態，任務管理)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -3508,8 +3508,7 @@ app.listen(PORT, async () => {
     await initializeDatabase();
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本V27 (系統狀態，失敗任務管理
-)`);
+    console.log(`Bot 版本V27 (系統狀態，任務管理)`);
 
     setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, ONE_HOUR_IN_MS);
