@@ -1241,6 +1241,7 @@ async function handleAdminCommands(event, userId) {
     if (text === COMMANDS.ADMIN.PANEL) {
       const adminMenu = [
         { type: 'action', action: { type: 'message', label: '系統狀態', text:COMMANDS.ADMIN.SYSTEM_STATUS } },
+        { type: 'action', action: { type: 'message', label: '失敗任務管理', text: COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT } },
         { type: 'action', action: { type: 'message', label: '授權老師', text: COMMANDS.ADMIN.ADD_TEACHER } },
         { type: 'action', action: { type: 'message', label: '移除老師', text: COMMANDS.ADMIN.REMOVE_TEACHER } },
         { type: 'action', action: { type: 'message', label: '模擬學員身份', text: COMMANDS.ADMIN.SIMULATE_STUDENT } },
