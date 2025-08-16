@@ -226,6 +226,7 @@ function createPaginationBubble(baseAction, currentPage, hasNext, customParams =
         },
     };
 }
+// 請用這整段程式碼，完整取代您檔案中舊的 initializeDatabase 函式
 async function initializeDatabase() {
   const client = await pgPool.connect();
   try {
@@ -268,7 +269,7 @@ async function initializeDatabase() {
       )
     `);
     console.log('✅ 已檢查/建立 products 與 product_orders 表格');
-    // [V24.0 新增] 建立任務佇列資料表
+    
     await client.query(`
       CREATE TABLE IF NOT EXISTS tasks (
         id SERIAL PRIMARY KEY,
@@ -284,7 +285,6 @@ async function initializeDatabase() {
     `);
     console.log('✅ 已檢查/建立 tasks 表格');
 
-    // [V25.1 新增] 建立系統設定資料表
     await client.query(`
       CREATE TABLE IF NOT EXISTS system_settings (
         setting_key VARCHAR(100) PRIMARY KEY,
@@ -292,24 +292,24 @@ async function initializeDatabase() {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    // [V25.1 新增] 插入預設值，若已存在則不動作
     await client.query(
         `INSERT INTO system_settings (setting_key, setting_value) VALUES ('notifications_enabled', 'true') ON CONFLICT (setting_key) DO NOTHING`
     );
     console.log('✅ 已檢查/建立 system_settings 表格');
 
-       await client.query(`
-      CREATE TABLE IF NOT EXISTS failed_tasks (
-        id SERIAL PRIMARY KEY,
-        original_task_id INTEGER,
-        recipient_id VARCHAR(255) NOT NULL,
-        message_payload JSONB NOT NULL,
-        last_error TEXT,
-        failed_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
+    // 【修正】已將 failed_tasks 表格建立指令放在正確的位置
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS failed_tasks (
+        id SERIAL PRIMARY KEY,
+        original_task_id INTEGER,
+        recipient_id VARCHAR(255) NOT NULL,
+        message_payload JSONB NOT NULL,
+        last_error TEXT,
+        failed_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    console.log('✅ 已檢查/建立 failed_tasks 表格');
 
-    console.log('✅ 已檢查/建立 failed_tasks 表格');
     const lastSeenIdCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='last_seen_announcement_id'");
     if (lastSeenIdCol.rows.length === 0) {
         await client.query('ALTER TABLE users ADD COLUMN last_seen_announcement_id INTEGER DEFAULT 0');
@@ -349,7 +349,6 @@ async function initializeDatabase() {
         await client.query('ALTER TABLE product_orders ADD COLUMN teacher_notes TEXT');
     }
 
-    // [V23.5 新增] 建立資料庫索引以優化查詢效能
     console.log('🔄 正在檢查並建立資料庫索引...');
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_courses_time ON courses (time)`);
@@ -359,7 +358,6 @@ async function initializeDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_product_orders_user_id ON product_orders (user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_courses_students_gin ON courses USING GIN (students)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_courses_waiting_gin ON courses USING GIN (waiting)`);
-    // [V24.0 新增] 為任務佇列建立索引
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_status_send_at ON tasks (status, send_at)`);
 
     console.log('✅ 資料庫索引檢查/建立完成。');
@@ -373,6 +371,7 @@ async function initializeDatabase() {
     if (client) client.release();
   }
 }
+
 // [V25.1 新增] 讀取推播通知狀態的輔助函式與快取
 let notificationStatusCache = {
     value: true,
