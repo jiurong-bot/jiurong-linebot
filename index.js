@@ -1615,7 +1615,7 @@ async function handleTeacherCommands(event, userId) {
                         const courseDate = getNextDate(state.weekday, state.time, currentDate);
                         const course = {
                             id: `${prefix}${String(i + 1).padStart(2, '0')}`,
-                            title: `${state.title} - 第 ${i + 1} 堂`,
+                            title: `${state.title},
                             time: courseDate.toISOString(),
                             capacity: state.capacity,
                             points_cost: state.points_cost,
