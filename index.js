@@ -1712,7 +1712,33 @@ async function handleTeacherCommands(event, userId) {
         return reply(replyToken, menu);
     } else if (text === COMMANDS.TEACHER.PENDING_POINT_ORDERS) {
         return showPendingOrders(replyToken, 1);
-   
+        } else if (text === COMMANDS.TEACHER.STUDENT_MANAGEMENT) {
+        // --- 新增的查詢邏輯 ---
+        const unreadMessagesRes = await pgPool.query("SELECT COUNT(*) FROM feedback_messages WHERE status = 'new'");
+        const unreadCount = parseInt(unreadMessagesRes.rows[0].count, 10);
+        let unreadLabel = '💬 查看未回覆留言';
+        if (unreadCount > 0) {
+            unreadLabel += ` (${unreadCount})`;
+        }
+        // --- 查詢邏輯結束 ---
+
+        const menu = {
+            type: 'flex', altText: '學員管理',
+            contents: {
+                type: 'bubble', size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '👤 學員管理', color: '#ffffff', weight: 'bold', size: 'lg' }], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' },
+                body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
+                    contents: [
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SEARCH_STUDENT)}` } },
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: unreadLabel, data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.VIEW_MESSAGES)}` } }, // 使用動態標籤
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查看歷史留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MESSAGE_SEARCH)}` } }
+                    ]
+                }
+            }
+        };
+        return reply(replyToken, menu);
+    }
+
     /*
     } else if (text === COMMANDS.TEACHER.STUDENT_MANAGEMENT) {
         const menu = { type: 'flex', altText: '學員管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '👤 學員管理', color: '#ffffff', weight: 'bold', size: 'lg' }], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SEARCH_STUDENT)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '💬 查看未回覆留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.VIEW_MESSAGES)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查看歷史留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MESSAGE_SEARCH)}` } } ] } } };
