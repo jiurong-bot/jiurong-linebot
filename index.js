@@ -3863,6 +3863,10 @@ async function handleEvent(event) {
         if (action === 'view_exchange_history') {
             return showStudentExchangeHistory(replyToken, userId, page);
         }
+        if (action === 'view_historical_messages') {
+            const query = decodeURIComponent(data.get('query') || '');
+            return showHistoricalMessages(replyToken, query, page);
+        }
         if (action === 'view_failed_tasks') { 
              const page = parseInt(data.get('page') || '1', 10);
              return showFailedTasks(replyToken, page);
