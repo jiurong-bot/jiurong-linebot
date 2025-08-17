@@ -1,4 +1,4 @@
-// index.js - 測試版 V1
+// index.js - V27.5(測試版）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -3366,7 +3366,7 @@ app.listen(PORT, async () => {
     await initializeDatabase();
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本V27.4 (老師指令優化)`);
+    console.log(`Bot 版本 V27.5 (測試版）`);
 
     setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, ONE_HOUR_IN_MS);
