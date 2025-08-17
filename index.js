@@ -108,7 +108,8 @@ const COMMANDS = {
     CONFIRM_MANUAL_ADJUST: '✅ 確認調整',
     ADD_POINTS: '+ 加點',
     DEDUCT_POINTS: '- 扣點',
-    MESSAGE_SEARCH: '@查看歷史留言',
+    MESSAGE_SEARCH: '@查看歷史留言
+',
     CONFIRM_ADD_ANNOUNCEMENT: '✅ 確認頒佈',
     CONFIRM_DELETE_ANNOUNCEMENT: '✅ 確認刪除',
     CONFIRM_BATCH_CANCEL: '✅ 確認批次取消',
