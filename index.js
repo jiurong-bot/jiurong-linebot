@@ -3360,7 +3360,7 @@ app.listen(PORT, async () => {
     await initializeDatabase();
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本V27.1 (系統狀態，任務管理)`);
+    console.log(`Bot 版本V27.4 (系統狀態，任務管理)`);
 
     setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, ONE_HOUR_IN_MS);
