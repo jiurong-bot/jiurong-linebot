@@ -2425,25 +2425,26 @@ async function showPendingOrders(replyToken, page) {
         if(client) client.release();
     }
 }
+
 async function showAvailableCourses(replyToken, userId, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
     try {
         const sevenDaysLater = new Date(Date.now() + 7 * ONE_DAY_IN_MS);
         
-        /* 可能是多餘程式碼
-        const res = await client.query(
-            `SELECT *, (SELECT COUNT(*) FROM courses c2 WHERE c2.id = c.id) as total_count FROM courses c
+        // 【修正】統一變數名稱為 coursesRes，並移除無用的 total_count 子查詢
+        const coursesRes = await client.query(
+            `SELECT * FROM courses
              WHERE time > NOW() AND time < $1
              AND COALESCE(array_length(students, 1), 0) < capacity
              AND NOT ($2 = ANY(waiting))
              ORDER BY time ASC LIMIT $3 OFFSET $4`,
             [sevenDaysLater, userId, PAGINATION_SIZE + 1, offset]
         );
-        */
-      
-        const hasNextPage = res.rows.length > PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        // 【修正】將 res 改為 coursesRes
+        const hasNextPage = coursesRes.rows.length > PAGINATION_SIZE;
+        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, PAGINATION_SIZE) : coursesRes.rows;
 
         if (pageCourses.length === 0 && page === 1) {
             return reply(replyToken, '抱歉，未來 7 天內沒有可預約的課程。\n您可至「我的課程」查看候補中的課程，或等候老師發布新課程。');
@@ -2505,6 +2506,7 @@ async function showAvailableCourses(replyToken, userId, page) {
         if(client) client.release();
     }
 }
+
 async function showMyCourses(replyToken, userId, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
