@@ -3547,6 +3547,9 @@ async function handleEvent(event) {
         if (action === 'view_shop_products') {
             return showShopProducts(replyToken, page);
         }
+        if (action === 'view_my_messages') {
+            return showMyMessages(replyToken, userId, page);
+        }
         if (action === 'view_products') {
             const filter = data.get('filter');
             return showProductManagementList(replyToken, page, filter);
