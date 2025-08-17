@@ -1681,17 +1681,29 @@ async function handleTeacherCommands(event, userId) {
   } else if (pendingStudentSearchQuery[userId]) {
     const searchQuery = text; delete pendingStudentSearchQuery[userId];
     return showStudentSearchResults(replyToken, searchQuery, 1);
-  } else if (pendingReply[userId]) {
-    const state = pendingReply[userId]; const client = await pgPool.connect();
+    } else if (pendingReply[userId]) {
+    const state = pendingReply[userId];
+    const client = await pgPool.connect();
     try {
-      await client.query("UPDATE feedback_messages SET status = 'replied', teacher_reply = $1 WHERE id = $2", [text, state.msgId]);
-      const studentId = state.studentId; const originalMessage = state.originalMessage; delete pendingReply[userId];
+      // 【修改】在更新時，將 is_student_read 設為 false
+      await client.query("UPDATE feedback_messages SET status = 'replied', teacher_reply = $1, is_student_read = false WHERE id = $2", [text, state.msgId]);
+      
+      const studentId = state.studentId;
+      const originalMessage = state.originalMessage;
+      delete pendingReply[userId];
+
       const notifyMessage = { type: 'text', text: `老師回覆了您的留言：\n\n【您的留言】\n${originalMessage}\n\n【老師的回覆】\n${text}`};
       await enqueuePushTask(studentId, notifyMessage);
       return reply(replyToken, '✅ 已成功回覆學員的留言。');
-    } catch (err) { console.error('❌ 回覆留言失敗:', err); delete pendingReply[userId]; return reply(replyToken, '回覆留言時發生錯誤，請稍後再試。');
-    } finally { if(client) client.release(); }
-  } else if (pendingMessageSearchQuery[userId]) {
+    } catch (err) {
+      console.error('❌ 回覆留言失敗:', err);
+      delete pendingReply[userId];
+      // 未來可以整合 handleError 函式
+      return reply(replyToken, '回覆留言時發生錯誤，請稍後再試。');
+    } finally {
+        if(client) client.release();
+    }
+  }else if (pendingMessageSearchQuery[userId]) {
     const searchQuery = text; delete pendingMessageSearchQuery[userId];
     return showHistoricalMessages(replyToken, searchQuery, 1);
   } else {
