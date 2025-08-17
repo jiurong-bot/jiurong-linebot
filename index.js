@@ -2430,6 +2430,8 @@ async function showAvailableCourses(replyToken, userId, page) {
     const client = await pgPool.connect();
     try {
         const sevenDaysLater = new Date(Date.now() + 7 * ONE_DAY_IN_MS);
+        
+        /* 可能是多餘程式碼
         const res = await client.query(
             `SELECT *, (SELECT COUNT(*) FROM courses c2 WHERE c2.id = c.id) as total_count FROM courses c
              WHERE time > NOW() AND time < $1
@@ -2438,7 +2440,8 @@ async function showAvailableCourses(replyToken, userId, page) {
              ORDER BY time ASC LIMIT $3 OFFSET $4`,
             [sevenDaysLater, userId, PAGINATION_SIZE + 1, offset]
         );
-
+        */
+      
         const hasNextPage = res.rows.length > PAGINATION_SIZE;
         const pageCourses = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
 
