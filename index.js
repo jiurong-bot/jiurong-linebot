@@ -4070,33 +4070,33 @@ async function handleEvent(event) {
                     ]);
                 }
             }
-            if (action === 'select_booking_spots') {
-                const course_id = data.get('course_id');
-                const course = await getCourse(course_id);
-                if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
+           if (action === 'select_booking_spots') {
+                const course_id = data.get('course_id');
+                const course = await getCourse(course_id);
+                if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
 
-                const remainingSpots = course.capacity - course.students.length;
-                if (remainingSpots <= 0) {
-                    return reply(replyToken, '抱歉，此課程名額已滿。');
+                const remainingSpots = course.capacity - course.students.length;
+                if (remainingSpots <= 0) {
+                    return reply(replyToken, '抱歉，此課程名額已滿。');
+                }
+
+                const maxSpots = Math.min(5, remainingSpots);
+                const buttons = [];
+                for (let i = 1; i <= maxSpots; i++) {
+                    const totalCost = course.points_cost * i;
+                    buttons.push({
+                        type: 'button',
+                        style: 'secondary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: `${i} 位 (共 ${totalCost} 點)`,
+                            // 【步驟3: 修改】將 action 改為觸發確認畫面
+                            data: `action=start_booking_confirmation&course_id=${course.id}&spots=${i}`
+                        },
+                        margin: 'sm'
+                    });
                 }
-
-                const maxSpots = Math.min(5, remainingSpots);
-                const buttons = [];
-                for (let i = 1; i <= maxSpots; i++) {
-                    const totalCost = course.points_cost * i;
-                    buttons.push({
-                        type: 'button',
-                        style: 'secondary',
-                        height: 'sm',
-                        action: {
-                            type: 'postback',
-                            label: `${i} 位 (共 ${totalCost} 點)`,
-                            data: `action=confirm_multi_booking&course_id=${course.id}&spots=${i}`
-                        },
-                        margin: 'sm'
-                    });
-                }
-
                 const flexMessage = {
                     type: 'flex',
                     altText: '請選擇預約人數',
