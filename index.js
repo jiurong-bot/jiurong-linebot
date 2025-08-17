@@ -1484,9 +1484,6 @@ async function handleAdminCommands(event, userId) {
   }
 }
 
-// 這是結構優化後的最終版本，可選用。
-// 它將所有 pending... 狀態檢查串連在一起，使邏輯更清晰。
-
 async function handleTeacherCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim().normalize() : '';
@@ -1695,7 +1692,7 @@ async function handleTeacherCommands(event, userId) {
   } else {
     // --- 處理一般指令 ---
     if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT) {
-        const menu = { type: 'flex', altText: '課程管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🗓️ 課程管理', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 新增課程系列', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.ADD_COURSE_SERIES)}` }}, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 課程狀態查詢', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.COURSE_INQUIRY)}` }}, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⚙️ 管理已開課程', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_OPEN_COURSES)}` }} ] } } };
+        const menu = { type: 'flex', altText: '課程管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🗓️ 課程管理', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 新增課程系列', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.ADD_COURSE_SERIES)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 課程狀態查詢', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.COURSE_INQUIRY)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⚙️ 管理已開課程', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_OPEN_COURSES)}` } } ] } } };
         return reply(replyToken, menu);
     } else if (text === COMMANDS.TEACHER.ADD_COURSE_SERIES) {
         pendingCourseCreation[userId] = { step: 'await_title' };
@@ -1712,39 +1709,13 @@ async function handleTeacherCommands(event, userId) {
         return reply(replyToken, menu);
     } else if (text === COMMANDS.TEACHER.PENDING_POINT_ORDERS) {
         return showPendingOrders(replyToken, 1);
-        } else if (text === COMMANDS.TEACHER.STUDENT_MANAGEMENT) {
-        // --- 新增的查詢邏輯 ---
+    } else if (text === COMMANDS.TEACHER.STUDENT_MANAGEMENT) {
         const unreadMessagesRes = await pgPool.query("SELECT COUNT(*) FROM feedback_messages WHERE status = 'new'");
         const unreadCount = parseInt(unreadMessagesRes.rows[0].count, 10);
         let unreadLabel = '💬 查看未回覆留言';
-        if (unreadCount > 0) {
-            unreadLabel += ` (${unreadCount})`;
-        }
-        // --- 查詢邏輯結束 ---
-
-        const menu = {
-            type: 'flex', altText: '學員管理',
-            contents: {
-                type: 'bubble', size: 'giga',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '👤 學員管理', color: '#ffffff', weight: 'bold', size: 'lg' }], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' },
-                body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
-                    contents: [
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SEARCH_STUDENT)}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: unreadLabel, data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.VIEW_MESSAGES)}` } }, // 使用動態標籤
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查看歷史留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MESSAGE_SEARCH)}` } }
-                    ]
-                }
-            }
-        };
+        if (unreadCount > 0) { unreadLabel += ` (${unreadCount})`; }
+        const menu = { type: 'flex', altText: '學員管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '👤 學員管理', color: '#ffffff', weight: 'bold', size: 'lg' }], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SEARCH_STUDENT)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: unreadLabel, data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.VIEW_MESSAGES)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查看歷史留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MESSAGE_SEARCH)}` } } ] } } };
         return reply(replyToken, menu);
-    }
-
-    /*
-    } else if (text === COMMANDS.TEACHER.STUDENT_MANAGEMENT) {
-        const menu = { type: 'flex', altText: '學員管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '👤 學員管理', color: '#ffffff', weight: 'bold', size: 'lg' }], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SEARCH_STUDENT)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '💬 查看未回覆留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.VIEW_MESSAGES)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查看歷史留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MESSAGE_SEARCH)}` } } ] } } };
-        return reply(replyToken, menu);
-    */
-      
     } else if (text === COMMANDS.TEACHER.SEARCH_STUDENT) {
         pendingStudentSearchQuery[userId] = {};
         setupConversationTimeout(userId, pendingStudentSearchQuery, 'pendingStudentSearchQuery', (u) => { if (pendingStudentSearchQuery[u]) { delete pendingStudentSearchQuery[u]; const timeoutMessage = { type: 'text', text: '查詢學員逾時，自動取消。'}; enqueuePushTask(u, timeoutMessage).catch(e => console.error(e)); } });
@@ -1764,52 +1735,13 @@ async function handleTeacherCommands(event, userId) {
         return reply(replyToken, '請輸入要頒佈的公告內容：', getCancelMenu());
     } else if (text === COMMANDS.TEACHER.DELETE_ANNOUNCEMENT) {
         return showAnnouncementsForDeletion(replyToken, 1);
-        } else if (text === COMMANDS.TEACHER.SHOP_MANAGEMENT) {
-        // --- 新增的查詢邏輯 ---
+    } else if (text === COMMANDS.TEACHER.SHOP_MANAGEMENT) {
         const pendingShopOrdersRes = await pgPool.query("SELECT COUNT(*) FROM product_orders WHERE status = 'pending'");
         const pendingShopOrdersCount = parseInt(pendingShopOrdersRes.rows[0].count, 10);
         let pendingShopOrdersLabel = '📋 查看待處理訂單';
-        if (pendingShopOrdersCount > 0) {
-            pendingShopOrdersLabel += ` (${pendingShopOrdersCount})`;
-        }
-        // --- 查詢邏輯結束 ---
-
-        const flexMessage = {
-          type: 'flex',
-          altText: '商城管理',
-          contents: {
-            type: 'bubble',
-            size: 'giga',
-            header: {
-              type: 'box',
-              layout: 'vertical',
-              contents: [ { type: 'text', text: '🛍️ 商城管理', weight: 'bold', size: 'lg', color: '#FFFFFF' } ],
-              backgroundColor: '#343A40',
-              paddingTop: 'lg',
-              paddingBottom: 'lg'
-            },
-            body: {
-              type: 'box',
-              layout: 'vertical',
-              spacing: 'md',
-              paddingAll: 'lg',
-              contents: [
-                { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 上架新商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.ADD_PRODUCT)}` } },
-                { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 管理販售中商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_AVAILABLE_PRODUCTS)}` } },
-                { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 管理已下架商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_UNAVAILABLE_PRODUCTS)}` } },
-                { type: 'separator', margin: 'md'},
-                { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: pendingShopOrdersLabel, data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT)}` } } // 使用動態標籤
-              ]
-            }
-          }
-        };
+        if (pendingShopOrdersCount > 0) { pendingShopOrdersLabel += ` (${pendingShopOrdersCount})`; }
+        const flexMessage = { type: 'flex', altText: '商城管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: '🛍️ 商城管理', weight: 'bold', size: 'lg', color: '#FFFFFF' } ], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 上架新商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.ADD_PRODUCT)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 管理販售中商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_AVAILABLE_PRODUCTS)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 管理已下架商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_UNAVAILABLE_PRODUCTS)}` } }, { type: 'separator', margin: 'md'}, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: pendingShopOrdersLabel, data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT)}` } } ] } } };
         return reply(replyToken, flexMessage);
-    }
-    /*
-    } else if (text === COMMANDS.TEACHER.SHOP_MANAGEMENT) {
-        const flexMessage = { type: 'flex', altText: '商城管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: '🛍️ 商城管理', weight: 'bold', size: 'lg', color: '#FFFFFF' } ], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 上架新商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.ADD_PRODUCT)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 管理販售中商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_AVAILABLE_PRODUCTS)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 管理已下架商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MANAGE_UNAVAILABLE_PRODUCTS)}` } }, { type: 'separator', margin: 'md'}, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📋 查看待處理訂單', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT)}` } } ] } } };
-        return reply(replyToken, flexMessage);
-    */
     } else if (text === COMMANDS.TEACHER.ADD_PRODUCT) {
         pendingProductCreation[userId] = { step: 'await_name' };
         setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', u => { const timeoutMessage = { type: 'text', text: '上架商品操作逾時，自動取消。' }; enqueuePushTask(u, timeoutMessage).catch(e => console.error(e)); });
@@ -1863,6 +1795,7 @@ async function handleTeacherCommands(event, userId) {
     }
   }
 }
+
 
 // index.js - V23.8 (重大修正與功能補齊)
 // [V24.0 補齊] 顯示學員搜尋結果的函式
