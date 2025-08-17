@@ -1943,7 +1943,9 @@ async function handleTeacherCommands(event, userId) {
         if(client) client.release();
     }
   } else if (pendingMessageSearchQuery[userId]) {
-    return;
+    const searchQuery = text;
+    delete pendingMessageSearchQuery[userId];
+    return showHistoricalMessages(replyToken, searchQuery, 1);
   } else {
     // [V23.0] 開始：實作新版卡片式選單 (Postback)
     if (text === COMMANDS.TEACHER.COURSE_MANAGEMENT) {
