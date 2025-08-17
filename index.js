@@ -1246,6 +1246,91 @@ async function showSystemStatus(replyToken) {
   }
 }
 
+async function showTeacherListForRemoval(replyToken, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query(
+            "SELECT id, name, picture_url FROM users WHERE role = 'teacher' ORDER BY name ASC LIMIT $1 OFFSET $2",
+            [PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageTeachers = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+
+        if (pageTeachers.length === 0 && page === 1) {
+            return reply(replyToken, '目前沒有任何已授權的老師可供移除。');
+        }
+        if (pageTeachers.length === 0) {
+            return reply(replyToken, '沒有更多老師了。');
+        }
+
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+        const teacherBubbles = pageTeachers.map(t => ({
+            type: 'bubble',
+            body: {
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'md',
+                contents: [
+                    {
+                        type: 'image',
+                        url: t.picture_url || placeholder_avatar,
+                        size: 'md',
+                        aspectRatio: '1:1',
+                        aspectMode: 'cover'
+                    },
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        flex: 3,
+                        justifyContent: 'center',
+                        contents: [
+                            { type: 'text', text: t.name, weight: 'bold', size: 'lg', wrap: true },
+                            { type: 'text', text: `ID: ${formatIdForDisplay(t.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm', wrap: true }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'primary',
+                    color: '#DE5246', // 紅色按鈕，強調移除操作
+                    height: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: '選擇此老師',
+                        data: `action=select_teacher_for_removal&targetId=${t.id}&targetName=${encodeURIComponent(t.name)}`
+                    }
+                }]
+            }
+        }));
+
+        const paginationBubble = createPaginationBubble('action=list_teachers_for_removal', page, hasNextPage);
+        if (paginationBubble) {
+            teacherBubbles.push(paginationBubble);
+        }
+
+        return reply(replyToken, {
+            type: 'flex',
+            altText: '選擇要移除的老師',
+            contents: {
+                type: 'carousel',
+                contents: teacherBubbles
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ 查詢老師列表失敗:', err);
+        return reply(replyToken, '查詢老師列表時發生錯誤。');
+    } finally {
+        if (client) client.release();
+    }
+}
+
 async function handleAdminCommands(event, userId) {
   const replyToken = event.replyToken;
   const text = event.message.text ? event.message.text.trim() : '';
