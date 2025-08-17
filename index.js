@@ -2578,7 +2578,85 @@ async function showMyCourses(replyToken, userId, page) {
         if(client) client.release();
     }
 }
+async function showMyMessages(replyToken, userId, page) {
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        // 步驟 1: 撈出該使用者的留言
+        const res = await client.query(
+            `SELECT * FROM feedback_messages WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
+            [userId, PAGINATION_SIZE + 1, offset]
+        );
 
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageMessages = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+        
+        // 步驟 2: 將本次所有撈出的「未讀」留言，更新為「已讀」
+        // 這樣下次就不會再計入徽章數量
+        if (pageMessages.length > 0) {
+            await client.query(
+                "UPDATE feedback_messages SET is_student_read = true WHERE user_id = $1 AND status = 'replied' AND is_student_read = false",
+                [userId]
+            );
+        }
+
+        if (pageMessages.length === 0 && page === 1) {
+            return reply(replyToken, '您目前沒有任何留言紀錄。');
+        }
+        if (pageMessages.length === 0) {
+            return reply(replyToken, '沒有更多留言紀錄了。');
+        }
+
+        const statusMap = {
+            new: { text: '🟡 等待回覆', color: '#ffb703' },
+            read: { text: '⚪️ 老師已讀', color: '#adb5bd' },
+            replied: { text: '🟢 老師已回覆', color: '#2a9d8f' },
+        };
+
+        const messageBubbles = pageMessages.map(msg => {
+            const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
+            const bodyContents = [
+                { type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm', contents: [
+                    { type: 'text', text: '【我的留言】', weight: 'bold', size: 'sm', color: '#1A759F'},
+                    { type: 'text', text: msg.message, wrap: true, size: 'md' }
+                ]}
+            ];
+
+            if (msg.teacher_reply) {
+                bodyContents.push({ type: 'separator', margin: 'lg' });
+                bodyContents.push({ type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm', contents: [
+                    { type: 'text', text: '【老師的回覆】', weight: 'bold', size: 'sm', color: '#52B69A'},
+                    { type: 'text', text: msg.teacher_reply, wrap: true, size: 'md' }
+                ]});
+            }
+
+            return {
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'horizontal', paddingAll: 'lg', backgroundColor: statusInfo.color, contents: [
+                    { type: 'text', text: statusInfo.text, color: '#FFFFFF', weight: 'bold' },
+                    { type: 'text', text: formatDateTime(msg.timestamp), size: 'xs', color: '#FFFFFF', align: 'end' }
+                ]},
+                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents }
+            };
+        });
+        
+        const paginationBubble = createPaginationBubble('action=view_my_messages', page, hasNextPage);
+        if (paginationBubble) {
+            messageBubbles.push(paginationBubble);
+        }
+
+        const flexMessage = { type: 'flex', altText: '您的歷史留言紀錄', contents: { type: 'carousel', contents: messageBubbles }};
+        return reply(replyToken, flexMessage);
+
+    } catch (err) {
+        console.error('❌ 查詢個人留言失敗:', err);
+        // 未來可以整合 handleError
+        return reply(replyToken, '查詢留言時發生錯誤，請稍後再試。');
+    } finally {
+        if (client) client.release();
+    }
+                     }
 async function showShopProducts(replyToken, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
