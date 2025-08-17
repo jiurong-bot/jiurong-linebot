@@ -1390,6 +1390,32 @@ async function handleAdminCommands(event, userId) {
         }
     }
   } else {
+        if (text === COMMANDS.ADMIN.PANEL) {
+      // --- 新增的查詢邏輯 ---
+      const failedTasksRes = await pgPool.query("SELECT COUNT(*) FROM failed_tasks");
+      const failedTasksCount = parseInt(failedTasksRes.rows[0].count, 10);
+      let failedTasksLabel = '失敗任務管理';
+      if (failedTasksCount > 0) {
+        failedTasksLabel += ` (${failedTasksCount})`;
+      }
+      // --- 查詢邏輯結束 ---
+
+      const adminMenu = [
+        { type: 'action', action: { type: 'message', label: '系統狀態', text:COMMANDS.ADMIN.SYSTEM_STATUS } },
+        { type: 'action', action: { type: 'message', label: failedTasksLabel, text: COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT } }, // 使用動態標籤
+        { type: 'action', action: { type: 'message', label: '授權老師', text: COMMANDS.ADMIN.ADD_TEACHER } },
+        { type: 'action', action: { type: 'message', label: '移除老師', text: COMMANDS.ADMIN.REMOVE_TEACHER } },
+        { type: 'action', action: { type: 'message', label: '模擬學員身份', text: COMMANDS.ADMIN.SIMULATE_STUDENT } },
+        { type: 'action', action: { type: 'message', label: '模擬老師身份', text: COMMANDS.ADMIN.SIMULATE_TEACHER } },
+        { type: 'action', action: { type: 'message', label: '切換推播通知', text: COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS } }
+      ];
+      const currentStatus = await getNotificationStatus();
+      const statusText = currentStatus ? '【目前為：開啟】' : '【目前為：關閉】';
+      return reply(replyToken, `請選擇管理者功能：\n\n開發者推播通知 ${statusText}`, adminMenu);
+
+    }
+
+    /*
     if (text === COMMANDS.ADMIN.PANEL) {
       const adminMenu = [
         { type: 'action', action: { type: 'message', label: '系統狀態', text:COMMANDS.ADMIN.SYSTEM_STATUS } },
@@ -1405,6 +1431,7 @@ async function handleAdminCommands(event, userId) {
       return reply(replyToken, `請選擇管理者功能：\n\n開發者推播通知 ${statusText}`, adminMenu);
 
     }
+    */
       else if (text === COMMANDS.ADMIN.SYSTEM_STATUS) {
       return showSystemStatus(replyToken);
 
