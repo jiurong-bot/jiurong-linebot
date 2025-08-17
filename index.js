@@ -1334,7 +1334,8 @@ async function showTeacherListForRemoval(replyToken, page) {
 
 async function handleAdminCommands(event, userId) {
   const replyToken = event.replyToken;
-  const text = event.message.text ? event.message.text.trim() : '';
+  const text = event.message.text ? event.message.text.trim().normalize()
+ : '';
   const user = await getUser(userId);
 
   if (pendingTeacherAddition[userId]) {
