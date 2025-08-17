@@ -3571,7 +3571,6 @@ async function handleEvent(event) {
              const page = parseInt(data.get('page') || '1', 10);
              return showFailedTasks(replyToken, page);
         } 
-        
         if (action === 'retry_failed_task') {
             const failedTaskId = data.get('id');
             const db = await pgPool.connect();
@@ -3584,13 +3583,13 @@ async function handleEvent(event) {
                 }
                 const taskToRetry = failedTaskRes.rows[0];
 
-                // [修正] 將所有 VALUES 改為參數化傳入
+                // 【修正】將所有 VALUES 改為參數化傳入，防止 SQL 注入
                 await db.query(
                     `INSERT INTO tasks (recipient_id, message_payload, status, retry_count, last_error)
                      VALUES ($1, $2, $3, $4, $5)`,
                     [
                         taskToRetry.recipient_id,
-                        taskToRetry.message_payload,
+                        taskToRetry.message_payload, // 這邊應為 JSONB，直接傳入即可
                         'pending',
                         0,
                         'Retried from DLQ'
@@ -3610,8 +3609,6 @@ async function handleEvent(event) {
                 if (db) db.release();
             }
         }
-
-
         if (action === 'delete_failed_task') {
             const failedTaskId = data.get('id');
             try {
