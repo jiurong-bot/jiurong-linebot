@@ -2021,7 +2021,7 @@ async function handleTeacherCommands(event, userId) {
                 body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
                     contents: [
                         { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.SEARCH_STUDENT)}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '💬 查看未回覆留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.VIEW_MESSAGES)}` } }
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '💬 查看未回覆留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.VIEW_MESSAGES)}` } },
                         { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查看歷史留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.TEACHER.MESSAGE_SEARCH)}` } }
                     ]
                 }
