@@ -1,4 +1,4 @@
-// index.js - V27.3 (老師指令優化)
+// index.js - V27.4 (老師指令優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
