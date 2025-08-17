@@ -129,6 +129,7 @@ const COMMANDS = {
     BUY_POINTS: '@購買點數',
     PURCHASE_HISTORY: '@購點紀錄',
     // --- 內部觸發或確認指令 ---
+    ADD_NEW_MESSAGE: '@新增一則留言', 
     CANCEL_BOOKING: '@取消預約',
     CANCEL_WAITING: '@取消候補',
     CONFIRM_ADD_COURSE: '確認新增課程',
