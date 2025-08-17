@@ -1990,76 +1990,78 @@ async function showUnreadMessages(replyToken, page) {
 }
 
 async function showHistoricalMessages(replyToken, query, page) {
-    const offset = (page - 1) * PAGINATION_SIZE;
-    const client = await pgPool.connect();
-    try {
-        const searchQuery = `%${query.toLowerCase()}%`;
-        const res = await client.query(
-            `SELECT * FROM feedback_messages 
-             WHERE LOWER(user_name) LIKE $1 OR LOWER(message) LIKE $1 OR LOWER(teacher_reply) LIKE $1
-             ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
-            [searchQuery, PAGINATION_SIZE + 1, offset]
-        );
+    const offset = (page - 1) * PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const searchQuery = `%${query}%`; // 使用 ILIKE 時，查詢本身不需要轉成小寫
+        const res = await client.query(
+            // 【修改】使用 ILIKE 進行不分大小寫的比對，語法更簡潔穩定
+            `SELECT * FROM feedback_messages 
+             WHERE user_name ILIKE $1 OR message ILIKE $1 OR teacher_reply ILIKE $1
+             ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
+            [searchQuery, PAGINATION_SIZE + 1, offset]
+        );
 
-        const hasNextPage = res.rows.length > PAGINATION_SIZE;
-        const pageMessages = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
+        const hasNextPage = res.rows.length > PAGINATION_SIZE;
+        const pageMessages = hasNextPage ? res.rows.slice(0, PAGINATION_SIZE) : res.rows;
 
-        if (pageMessages.length === 0 && page === 1) {
-            return reply(replyToken, `找不到與「${query}」相關的歷史留言。`);
-        }
-        if (pageMessages.length === 0) {
-            return reply(replyToken, '沒有更多搜尋結果了。');
-        }
-        
-        const statusMap = {
-            new: { text: '🟡 新留言', color: '#ffb703' },
-            read: { text: '⚪️ 已讀', color: '#adb5bd' },
-            replied: { text: '🟢 已回覆', color: '#2a9d8f' },
-        };
+        if (pageMessages.length === 0 && page === 1) {
+            return reply(replyToken, `找不到與「${query}」相關的歷史留言。`);
+        }
+        if (pageMessages.length === 0) {
+            return reply(replyToken, '沒有更多搜尋結果了。');
+        }
+        
+        const statusMap = {
+            new: { text: '🟡 新留言', color: '#ffb703' },
+            read: { text: '⚪️ 已讀', color: '#adb5bd' },
+            replied: { text: '🟢 已回覆', color: '#2a9d8f' },
+        };
 
-        const messageBubbles = pageMessages.map(msg => {
-            const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
-            const bodyContents = [
-                { type: 'box', layout: 'horizontal', contents: [
-                    { type: 'text', text: msg.user_name, weight: 'bold', size: 'lg', wrap: true, flex: 5 },
-                    { type: 'box', layout: 'vertical', backgroundColor: statusInfo.color, cornerRadius: 'md', paddingAll: 'sm', flex: 2, alignItems: 'center', justifyContent: 'center', contents: [
-                        { type: 'text', text: statusInfo.text, color: '#FFFFFF', weight: 'bold', size: 'xs' }
-                    ]}
-                ]},
-                { type: 'text', text: formatDateTime(msg.timestamp), size: 'xs', color: '#AAAAAA' },
-                { type: 'separator', margin: 'lg' },
-                { type: 'text', text: '【學員留言】', size: 'sm', color: '#888888', margin: 'md'},
-                { type: 'text', text: msg.message, wrap: true, size: 'md' },
-            ];
+        const messageBubbles = pageMessages.map(msg => {
+            const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
+            const bodyContents = [
+                { type: 'box', layout: 'horizontal', contents: [
+                    { type: 'text', text: msg.user_name, weight: 'bold', size: 'lg', wrap: true, flex: 5 },
+                    { type: 'box', layout: 'vertical', backgroundColor: statusInfo.color, cornerRadius: 'md', paddingAll: 'sm', flex: 2, alignItems: 'center', justifyContent: 'center', contents: [
+                        { type: 'text', text: statusInfo.text, color: '#FFFFFF', weight: 'bold', size: 'xs' }
+                    ]}
+                ]},
+                { type: 'text', text: formatDateTime(msg.timestamp), size: 'xs', color: '#AAAAAA' },
+                { type: 'separator', margin: 'lg' },
+                { type: 'text', text: '【學員留言】', size: 'sm', color: '#888888', margin: 'md'},
+                { type: 'text', text: msg.message, wrap: true, size: 'md' },
+            ];
 
-            if (msg.teacher_reply) {
-                bodyContents.push({ type: 'separator', margin: 'lg' });
-                bodyContents.push({ type: 'text', text: '【您的回覆】', size: 'sm', color: '#888888', margin: 'md'});
-                bodyContents.push({ type: 'text', text: msg.teacher_reply, wrap: true, size: 'md', color: '#495057' });
-            }
+            if (msg.teacher_reply) {
+                bodyContents.push({ type: 'separator', margin: 'lg' });
+                bodyContents.push({ type: 'text', text: '【您的回覆】', size: 'sm', color: '#888888', margin: 'md'});
+                bodyContents.push({ type: 'text', text: msg.teacher_reply, wrap: true, size: 'md', color: '#495057' });
+            }
 
-            return { type: 'bubble', size: 'giga', body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents }};
-        });
-        
-        const paginationBubble = createPaginationBubble('action=view_historical_messages', page, hasNextPage, `&query=${encodeURIComponent(query)}`);
-        if (paginationBubble) {
-            messageBubbles.push(paginationBubble);
-        }
+            return { type: 'bubble', size: 'giga', body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents }};
+        });
+        
+        const paginationBubble = createPaginationBubble('action=view_historical_messages', page, hasNextPage, `&query=${encodeURIComponent(query)}`);
+        if (paginationBubble) {
+            messageBubbles.push(paginationBubble);
+        }
 
-        const flexMessage = { type: 'flex', altText: `歷史留言搜尋結果: ${query}`, contents: { type: 'carousel', contents: messageBubbles }};
+        const flexMessage = { type: 'flex', altText: `歷史留言搜尋結果: ${query}`, contents: { type: 'carousel', contents: messageBubbles }};
 
-        if (page === 1) {
-            return reply(replyToken, [{ type: 'text', text: `以下是關於「${query}」的歷史留言：`}, flexMessage]);
-        }
-        return reply(replyToken, flexMessage);
+        if (page === 1) {
+            return reply(replyToken, [{ type: 'text', text: `以下是關於「${query}」的歷史留言：`}, flexMessage]);
+        }
+        return reply(replyToken, flexMessage);
 
-    } catch (err) {
-        console.error('❌ 搜尋歷史留言失敗:', err);
-        return reply(replyToken, '搜尋歷史留言時發生錯誤。');
-    } finally {
-        if (client) client.release();
-    }
+    } catch (err) {
+        console.error('❌ 搜尋歷史留言失敗:', err);
+        return reply(replyToken, '搜尋歷史留言時發生錯誤。');
+    } finally {
+        if (client) client.release();
+    }
 }
+
 async function showPendingShopOrders(replyToken, page) {
     const offset = (page - 1) * PAGINATION_SIZE;
     const client = await pgPool.connect();
