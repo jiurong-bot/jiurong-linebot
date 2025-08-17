@@ -352,7 +352,11 @@ console.log('✅ 已檢查/建立 tasks 表格 (Worker 相容版本)');
     if (teacherNotesCol.rows.length === 0) {
         await client.query('ALTER TABLE product_orders ADD COLUMN teacher_notes TEXT');
     }
-
+    const studentReadCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='feedback_messages' AND column_name='is_student_read'");
+    if (studentReadCol.rows.length === 0) {
+        await client.query('ALTER TABLE feedback_messages ADD COLUMN is_student_read BOOLEAN NOT NULL DEFAULT FALSE');
+    }
+    
     console.log('🔄 正在檢查並建立資料庫索引...');
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_courses_time ON courses (time)`);
