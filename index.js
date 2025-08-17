@@ -3127,11 +3127,9 @@ async function showCourseRosterDetails(replyToken, courseId) {
     }
 }
 
-
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
-  const text = event.message.text ? event.message.text.trim().normalize()
- : '';
+  const text = event.message.text ? event.message.text.trim().normalize() : '';
   const user = await getUser(userId);
 
   if (await handlePurchaseFlow(event, userId)) {
@@ -3152,65 +3150,43 @@ async function handleStudentCommands(event, userId) {
                 const client = await pgPool.connect();
                 try {
                     await client.query('BEGIN');
-
                     const userForUpdateRes = await client.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
                     const courseForUpdateRes = await client.query('SELECT students, waiting, points_cost, title FROM courses WHERE id = $1 FOR UPDATE', [state.course_id]);
                     const currentCourse = courseForUpdateRes.rows[0];
-
                     const newStudents = [...currentCourse.students];
                     const indexToRemove = newStudents.indexOf(userId);
-                    if (indexToRemove > -1) {
-                        newStudents.splice(indexToRemove, 1);
-                    } else {
-                        await client.query('ROLLBACK');
-                        delete pendingBookingConfirmation[userId];
-                        return reply(replyToken, '您尚未預約此課程。');
-                    }
-
+                    if (indexToRemove > -1) { newStudents.splice(indexToRemove, 1); } 
+                    else { await client.query('ROLLBACK'); delete pendingBookingConfirmation[userId]; return reply(replyToken, '您尚未預約此課程。'); }
                     const newPoints = userForUpdateRes.rows[0].points + currentCourse.points_cost;
                     const historyEntry = { action: `取消預約 (1位)：${getCourseMainTitle(currentCourse.title)}`, pointsChange: +currentCourse.points_cost, time: new Date().toISOString() };
                     const userHistory = userForUpdateRes.rows[0].history || [];
                     const newHistory = [...userHistory, historyEntry];
-
                     await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
-
                     let newWaiting = currentCourse.waiting;
                     if (newWaiting.length > 0) {
                         const promotedUserId = newWaiting.shift();
                         newStudents.push(promotedUserId);
-
                         const promotedUser = await getUser(promotedUserId, client);
                         if (promotedUser) {
                              const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(currentCourse.title)}」已有空位，已為您自動預約成功！`};
                              await enqueuePushTask(promotedUserId, notifyMessage).catch(err => console.error(err));
                         }
                     }
-
                     await client.query('UPDATE courses SET students = $1, waiting = $2 WHERE id = $3', [newStudents, newWaiting, state.course_id]);
                     await client.query('COMMIT');
-                    
                     delete pendingBookingConfirmation[userId];
                     const remainingBookings = newStudents.filter(id => id === userId).length;
                     let replyMsg = `✅ 已為您取消 1 位「${getCourseMainTitle(currentCourse.title)}」的預約，並歸還 ${currentCourse.points_cost} 點。`;
-                    if (remainingBookings > 0) {
-                        replyMsg += `\n您在此課程尚有 ${remainingBookings} 位預約。`;
-                    }
+                    if (remainingBookings > 0) { replyMsg += `\n您在此課程尚有 ${remainingBookings} 位預約。`; }
                     return reply(replyToken, replyMsg);
-
                 } catch (e) {
-                    await client.query('ROLLBACK');
-                    console.error('取消預約失敗:', e);
-                    delete pendingBookingConfirmation[userId];
+                    await client.query('ROLLBACK'); console.error('取消預約失敗:', e); delete pendingBookingConfirmation[userId];
                     return reply(replyToken, '取消預約時發生錯誤，請稍後再試。');
-                } finally {
-                    if(client) client.release();
-                }
+                } finally { if(client) client.release(); }
             } else if (text === COMMANDS.GENERAL.CANCEL) {
-                delete pendingBookingConfirmation[userId];
-                return reply(replyToken, '已放棄取消操作。');
+                delete pendingBookingConfirmation[userId]; return reply(replyToken, '已放棄取消操作。');
             }
             break;
-
         case 'cancel_wait':
             if (text === COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING) {
                 const newWaitingList = course.waiting.filter(id => id !== userId);
@@ -3218,14 +3194,12 @@ async function handleStudentCommands(event, userId) {
                 delete pendingBookingConfirmation[userId];
                 return reply(replyToken, `✅ 已為您取消「${course.title}」的候補。`);
             } else if (text === COMMANDS.GENERAL.CANCEL) {
-                delete pendingBookingConfirmation[userId];
-                return reply(replyToken, '已放棄取消操作。');
+                delete pendingBookingConfirmation[userId]; return reply(replyToken, '已放棄取消操作。');
             }
             break;
         case 'product_purchase':
              if (text === COMMANDS.GENERAL.CANCEL) {
-                delete pendingBookingConfirmation[userId];
-                return reply(replyToken, '已取消兌換。');
+                delete pendingBookingConfirmation[userId]; return reply(replyToken, '已取消兌換。');
             }
             break;
     }
@@ -3241,6 +3215,7 @@ async function handleStudentCommands(event, userId) {
       }
     }
   } else {
+    // --- 處理一般指令 ---
     if (text === COMMANDS.STUDENT.BOOK_COURSE) {
         return showAvailableCourses(replyToken, userId, 1);
     } else if (text === COMMANDS.STUDENT.MY_COURSES) {
@@ -3259,13 +3234,35 @@ async function handleStudentCommands(event, userId) {
         } finally {
             if (client) client.release();
         }
+    } else if (text === COMMANDS.STUDENT.ADD_NEW_MESSAGE) {
+        pendingFeedback[userId] = { step: 'await_message' };
+        setupConversationTimeout(userId, pendingFeedback, 'pendingFeedback', (u) => {
+            const timeoutMessage = { type: 'text', text: '留言逾時，自動取消。'};
+            enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
+        });
+        return reply(replyToken, '請輸入您想對老師說的話，或點選「取消」。', getCancelMenu());
     } else if (text === COMMANDS.STUDENT.CONTACT_US) {
-      pendingFeedback[userId] = { step: 'await_message' };
-      setupConversationTimeout(userId, pendingFeedback, 'pendingFeedback', (u) => {
-          const timeoutMessage = { type: 'text', text: '留言逾時，自動取消。'};
-          enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
-      });
-      return reply(replyToken, '請輸入您想對老師說的話，或點選「取消」。', getCancelMenu());
+      const unreadRes = await pgPool.query("SELECT COUNT(*) FROM feedback_messages WHERE user_id = $1 AND status = 'replied' AND is_student_read = false", [userId]);
+      const unreadCount = parseInt(unreadRes.rows[0].count, 10);
+      let historyLabel = '📜 查看歷史留言';
+      if (unreadCount > 0) {
+        historyLabel += ` (${unreadCount})`;
+      }
+      
+      const menu = {
+        type: 'flex', altText: '聯絡我們',
+        contents: {
+          type: 'bubble', size: 'giga',
+          header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '📞 聯絡我們', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#34A0A4', paddingTop: 'lg', paddingBottom: 'lg' },
+          body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
+              contents: [
+                  { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📝 新增留言', data: `action=run_command&text=${encodeURIComponent(COMMANDS.STUDENT.ADD_NEW_MESSAGE)}` } },
+                  { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: historyLabel, data: `action=view_my_messages&page=1` } }
+              ]
+          }
+        }
+      };
+      return reply(replyToken, menu);
     } else if (text === COMMANDS.STUDENT.POINTS || text === COMMANDS.STUDENT.CHECK_POINTS) {
         if (pendingPurchase[userId]?.step !== 'input_last5' && pendingPurchase[userId]?.step !== 'edit_last5') delete pendingPurchase[userId];
         delete pendingBookingConfirmation[userId];
@@ -3298,8 +3295,8 @@ async function handleStudentCommands(event, userId) {
                 header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🛍️ 活動商城', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#34A0A4', paddingTop: 'lg', paddingBottom: 'lg' },
                 body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
                     contents: [
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 瀏覽商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}` }},
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的兌換紀錄', data: `action=run_command&text=${encodeURIComponent(COMMANDS.STUDENT.EXCHANGE_HISTORY)}` }}
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 瀏覽商品', data: `action=run_command&text=${encodeURIComponent(COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}` } },
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的兌換紀錄', data: `action=run_command&text=${encodeURIComponent(COMMANDS.STUDENT.EXCHANGE_HISTORY)}` } }
                     ]
                 }
             }
@@ -3314,7 +3311,6 @@ async function handleStudentCommands(event, userId) {
         try {
             const statusFilter = text === COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER ? "'pending_confirmation', 'rejected'" : "'pending_payment'";
             const orderRes = await client.query(`SELECT order_id FROM orders WHERE user_id = $1 AND status IN (${statusFilter}) ORDER BY timestamp DESC LIMIT 1`, [userId]);
-
             if (orderRes.rows.length > 0) {
                 const order_id = orderRes.rows[0].order_id;
                 const step = text === COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER ? 'input_last5' : 'edit_last5';
@@ -3344,6 +3340,7 @@ async function handleStudentCommands(event, userId) {
     }
   }
 }
+
 app.use(express.json({ verify: (req, res, buf) => { if (req.headers['x-line-signature']) req.rawBody = buf; } }));
 
 app.post('/webhook', (req, res) => {
