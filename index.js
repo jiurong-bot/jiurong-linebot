@@ -4129,7 +4129,33 @@ async function handleEvent(event) {
                 };
                 return reply(replyToken, flexMessage);
             }
-            if (action === 'confirm_multi_booking') {
+            // 【步驟2: 新增】處理 booking 確認畫面的邏輯
+            if (action === 'start_booking_confirmation') {
+                const course_id = data.get('course_id');
+                const spotsToBook = parseInt(data.get('spots'), 10);
+                const course = await getCourse(course_id);
+
+                if (!course) { return reply(replyToken, '抱歉，找不到該課程。'); }
+
+                const totalCost = course.points_cost * spotsToBook;
+                const remainingSpots = course.capacity - course.students.length;
+
+                // 在產生確認畫面之前，再次檢查名額與點數
+                if (spotsToBook > remainingSpots) {
+                     return reply(replyToken, `抱歉，課程名額不足！\n目前僅剩 ${remainingSpots} 位。`);
+                }
+                if (user.points < totalCost) {
+                     return reply(replyToken, `抱歉，您的點數不足！\n預約 ${spotsToBook} 位需 ${totalCost} 點，您目前有 ${user.points} 點。`);
+                }
+
+                const message = `請確認預約資訊：\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n預約：${spotsToBook} 位\n花費：${totalCost} 點\n\n您目前的點數為：${user.points} 點`;
+                const menu = [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認預約', data: `action=execute_booking&course_id=${course.id}&spots=${spotsToBook}` } },
+                    { type: 'action', action: { type: 'message', label: COMMANDS.GENERAL.CANCEL, text: COMMANDS.GENERAL.CANCEL } }
+                ];
+                return reply(replyToken, message, menu);
+            }
+            if (action === 'execute_booking') {
                 const course_id = data.get('course_id');
                 const spotsToBook = parseInt(data.get('spots'), 10);
 
