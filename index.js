@@ -2187,6 +2187,33 @@ async function handleTeacherCommands(event, userId) {
         });
         return reply(replyToken, '請輸入您想調整點數的學員姓名或 User ID：', getCancelMenu());
     } else {
+            
+      // =================================================================
+      // 【暫時性的除錯區塊 - 開始】
+      // =================================================================
+      if (text.startsWith('@查看歷史留言')) {
+          const commandFromConstant = COMMANDS.TEACHER.MESSAGE_SEARCH;
+          
+          console.log('--- DEBUGGING MISMATCH ---');
+          console.log('Input Text:', text);
+          console.log('Constant  :', commandFromConstant);
+          console.log('--- Character Codes (Input Text) ---');
+          for(let i = 0; i < text.length; i++) {
+              console.log(`'${text[i]}' -> Code: ${text.charCodeAt(i)}`);
+          }
+          console.log('--- Character Codes (Constant) ---');
+          for(let i = 0; i < commandFromConstant.length; i++) {
+              console.log(`'${commandFromConstant[i]}' -> Code: ${commandFromConstant.charCodeAt(i)}`);
+          }
+          console.log('--- Equality Checks ---');
+          console.log('Strict Equality (===):', text === commandFromConstant);
+          console.log('Normalized Equality:', text.normalize() === commandFromConstant.normalize());
+          console.log('--- END DEBUGGING ---');
+      }
+      // =================================================================
+      // 【暫時性的除錯區塊 - 結束】
+      // =================================================================
+
       let teacherSuggestion = '無法識別您的指令🤔\n請直接使用下方的老師專用選單進行操作。';
       if (text.startsWith('@')) {
           const closestCommand = findClosestCommand(text, 'teacher');
