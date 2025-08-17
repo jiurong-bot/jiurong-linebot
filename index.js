@@ -3437,7 +3437,8 @@ async function showCourseRosterDetails(replyToken, courseId) {
 
 async function handleStudentCommands(event, userId) {
   const replyToken = event.replyToken;
-  const text = event.message.text ? event.message.text.trim() : '';
+  const text = event.message.text ? event.message.text.trim().normalize()
+ : '';
   const user = await getUser(userId);
 
   if (await handlePurchaseFlow(event, userId)) {
