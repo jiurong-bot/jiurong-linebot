@@ -3323,7 +3323,54 @@ async function handlePostback(event, user) {
         case 'view_historical_messages': return showHistoricalMessages(decodeURIComponent(data.get('query') || ''), page);
         case 'view_failed_tasks': return showFailedTasks(page);
         case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
+        case 'mark_feedback_read': {
+            const msgId = data.get('msgId');
+            if (!msgId) return '操作失敗，缺少訊息 ID。';
+            
+            // 將訊息狀態從 'new' 更新為 'read'
+            await pgPool.query("UPDATE feedback_messages SET status = 'read' WHERE id = $1 AND status = 'new'", [msgId]);
+            
+            // 回傳一個簡單的確認訊息
+            return '✅ 已將此留言標示為已讀。';
+        }
 
+        case 'reply_feedback': {
+            const msgId = data.get('msgId');
+            const studentId = data.get('userId'); // 從 postback data 中取得學生 ID
+            if (!msgId || !studentId) return '操作失敗，缺少必要資訊。';
+            
+            const client = await pgPool.connect();
+            try {
+                // 為了讓老師知道正在回覆哪則訊息，我們先把它查出來
+                const msgRes = await client.query("SELECT message FROM feedback_messages WHERE id = $1", [msgId]);
+                if (msgRes.rows.length === 0) {
+                    return '找不到這則留言，可能已被其他老師處理。';
+                }
+                const originalMessage = msgRes.rows[0].message;
+
+                // 設定一個「等待老師回覆」的狀態
+                pendingReply[userId] = {
+                    msgId: msgId,
+                    studentId: studentId,
+                    originalMessage: originalMessage
+                };
+
+                // 設定對話超時，避免老師一直卡在回覆狀態
+                setupConversationTimeout(userId, pendingReply, 'pendingReply', (u) => {
+                    const timeoutMessage = { type: 'text', text: '回覆留言操作逾時，自動取消。'};
+                    enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
+                });
+
+                // 提示老師可以開始輸入文字
+                return {
+                    type: 'text',
+                    text: `正在回覆學員的留言：\n「${originalMessage.substring(0, 80)}...」\n\n請直接輸入您要回覆的內容：`,
+                    quickReply: { items: getCancelMenu() }
+                };
+            } finally {
+                if(client) client.release();
+            }
+        }
         // --- [V28.1 修正] 新增學生預約課程的完整流程 ---
         case 'select_booking_spots': {
             const course_id = data.get('course_id');
