@@ -229,128 +229,55 @@ function createPaginationBubble(baseAction, currentPage, hasNext, customParams =
 }
 
 async function initializeDatabase() {
+  console.log('[DEBUG] 1. 進入 initializeDatabase 函式...');
   const client = await pgPool.connect();
+  console.log('[DEBUG] 2. 資料庫連線成功。');
   try {
-    console.log('✅ 成功連接到 PostgreSQL 資料庫');
-
+    console.log('[DEBUG] 3. 準備開始建立/檢查所有表格...');
     await client.query(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, points INTEGER DEFAULT 0, role VARCHAR(50) DEFAULT 'student', history JSONB DEFAULT '[]', last_seen_announcement_id INTEGER DEFAULT 0, picture_url TEXT, approved_by VARCHAR(255))`);
     await client.query(`CREATE TABLE IF NOT EXISTS courses (id VARCHAR(255) PRIMARY KEY, title VARCHAR(255) NOT NULL, time TIMESTAMPTZ NOT NULL, capacity INTEGER NOT NULL, points_cost INTEGER NOT NULL, students TEXT[] DEFAULT '{}', waiting TEXT[] DEFAULT '{}')`);
     await client.query(`CREATE TABLE IF NOT EXISTS orders (order_id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, points INTEGER NOT NULL, amount INTEGER NOT NULL, last_5_digits VARCHAR(5), status VARCHAR(50) NOT NULL, timestamp TIMESTAMPTZ NOT NULL)`);
     await client.query(`CREATE TABLE IF NOT EXISTS feedback_messages (id VARCHAR(255) PRIMARY KEY, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, message TEXT NOT NULL, status VARCHAR(50) DEFAULT 'new', timestamp TIMESTAMPTZ NOT NULL, teacher_reply TEXT)`);
     await client.query(`CREATE TABLE IF NOT EXISTS announcements (id SERIAL PRIMARY KEY, content TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW(), creator_id VARCHAR(255) NOT NULL, creator_name VARCHAR(255) NOT NULL)`);
+    await client.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, description TEXT, price INTEGER NOT NULL, image_url TEXT, inventory INTEGER NOT NULL DEFAULT 0, status VARCHAR(50) DEFAULT 'available', creator_id VARCHAR(255) NOT NULL, creator_name VARCHAR(255) NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())`);
+    await client.query(`CREATE TABLE IF NOT EXISTS product_orders (id SERIAL PRIMARY KEY, order_uid VARCHAR(255) UNIQUE NOT NULL, user_id VARCHAR(255) NOT NULL, user_name VARCHAR(255) NOT NULL, product_id INTEGER NOT NULL, product_name VARCHAR(255) NOT NULL, points_spent INTEGER NOT NULL, status VARCHAR(50) NOT NULL DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ, teacher_notes TEXT)`);
+    await client.query(`CREATE TABLE IF NOT EXISTS tasks (id SERIAL PRIMARY KEY, recipient_id VARCHAR(255) NOT NULL, message_payload JSONB NOT NULL, status VARCHAR(50) NOT NULL DEFAULT 'pending', send_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), retry_count INTEGER DEFAULT 0, last_error TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
+    await client.query(`CREATE TABLE IF NOT EXISTS system_settings (setting_key VARCHAR(100) PRIMARY KEY, setting_value VARCHAR(255) NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+    await client.query(`INSERT INTO system_settings (setting_key, setting_value) VALUES ('notifications_enabled', 'true') ON CONFLICT (setting_key) DO NOTHING`);
+    await client.query(`CREATE TABLE IF NOT EXISTS failed_tasks (id SERIAL PRIMARY KEY, original_task_id INTEGER, recipient_id VARCHAR(255) NOT NULL, message_payload JSONB NOT NULL, last_error TEXT, failed_at TIMESTAMPTZ DEFAULT NOW())`);
+    console.log('[DEBUG] 4. 所有核心表格檢查/建立完畢。');
     
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        price INTEGER NOT NULL,
-        image_url TEXT,
-        inventory INTEGER NOT NULL DEFAULT 0,
-        status VARCHAR(50) DEFAULT 'available',
-        creator_id VARCHAR(255) NOT NULL,
-        creator_name VARCHAR(255) NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS product_orders (
-        id SERIAL PRIMARY KEY,
-        order_uid VARCHAR(255) UNIQUE NOT NULL,
-        user_id VARCHAR(255) NOT NULL,
-        user_name VARCHAR(255) NOT NULL,
-        product_id INTEGER NOT NULL,
-        product_name VARCHAR(255) NOT NULL,
-        points_spent INTEGER NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'pending',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ,
-        teacher_notes TEXT
-      )
-    `);
-    
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS tasks (
-    id SERIAL PRIMARY KEY,
-    recipient_id VARCHAR(255) NOT NULL,
-    message_payload JSONB NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    send_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    retry_count INTEGER DEFAULT 0,
-    last_error TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  )
-`);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS system_settings (
-        setting_key VARCHAR(100) PRIMARY KEY,
-        setting_value VARCHAR(255) NOT NULL,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await client.query(
-        `INSERT INTO system_settings (setting_key, setting_value) VALUES ('notifications_enabled', 'true') ON CONFLICT (setting_key) DO NOTHING`
-    );
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS failed_tasks (
-        id SERIAL PRIMARY KEY,
-        original_task_id INTEGER,
-        recipient_id VARCHAR(255) NOT NULL,
-        message_payload JSONB NOT NULL,
-        last_error TEXT,
-        failed_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    console.log('✅ 已檢查/建立所有核心表格。');
-
-    // --- 檢查並新增欄位 ---
+    console.log('[DEBUG] 5. 準備開始檢查/新增所有欄位...');
     const lastSeenIdCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='last_seen_announcement_id'");
-    if (lastSeenIdCol.rows.length === 0) {
-        await client.query('ALTER TABLE users ADD COLUMN last_seen_announcement_id INTEGER DEFAULT 0');
-    }
+    if (lastSeenIdCol.rows.length === 0) { await client.query('ALTER TABLE users ADD COLUMN last_seen_announcement_id INTEGER DEFAULT 0'); }
     const pictureUrlCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='picture_url'");
-    if (pictureUrlCol.rows.length === 0) {
-        await client.query('ALTER TABLE users ADD COLUMN picture_url TEXT');
-    }
+    if (pictureUrlCol.rows.length === 0) { await client.query('ALTER TABLE users ADD COLUMN picture_url TEXT'); }
     const approvedByCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='approved_by'");
-    if (approvedByCol.rows.length === 0) {
-        await client.query('ALTER TABLE users ADD COLUMN approved_by VARCHAR(255)');
-    }
+    if (approvedByCol.rows.length === 0) { await client.query('ALTER TABLE users ADD COLUMN approved_by VARCHAR(255)'); }
     const creatorIdCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='announcements' AND column_name='creator_id'");
-    if (creatorIdCol.rows.length === 0) {
-        await client.query('ALTER TABLE announcements ADD COLUMN creator_id VARCHAR(255) NOT NULL DEFAULT \'unknown\'');
-    }
+    if (creatorIdCol.rows.length === 0) { await client.query('ALTER TABLE announcements ADD COLUMN creator_id VARCHAR(255) NOT NULL DEFAULT \'unknown\''); }
     const creatorNameCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='announcements' AND column_name='creator_name'");
-    if (creatorNameCol.rows.length === 0) {
-        await client.query('ALTER TABLE announcements ADD COLUMN creator_name VARCHAR(255) NOT NULL DEFAULT \'unknown\'');
-    }
+    if (creatorNameCol.rows.length === 0) { await client.query('ALTER TABLE announcements ADD COLUMN creator_name VARCHAR(255) NOT NULL DEFAULT \'unknown\''); }
     const createdAtCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='announcements' AND column_name='created_at'");
-    if (createdAtCol.rows.length === 0) {
-        await client.query('ALTER TABLE announcements ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()');
-    }
+    if (createdAtCol.rows.length === 0) { await client.query('ALTER TABLE announcements ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()'); }
     const inventoryCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='products' AND column_name='inventory'");
-    if (inventoryCol.rows.length === 0) {
-        await client.query('ALTER TABLE products ADD COLUMN inventory INTEGER NOT NULL DEFAULT 0');
-    }
+    if (inventoryCol.rows.length === 0) { await client.query('ALTER TABLE products ADD COLUMN inventory INTEGER NOT NULL DEFAULT 0'); }
     const updatedAtCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='product_orders' AND column_name='updated_at'");
-    if (updatedAtCol.rows.length === 0) {
-        await client.query('ALTER TABLE product_orders ADD COLUMN updated_at TIMESTAMPTZ');
-    }
+    if (updatedAtCol.rows.length === 0) { await client.query('ALTER TABLE product_orders ADD COLUMN updated_at TIMESTAMPTZ'); }
     const teacherNotesCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='product_orders' AND column_name='teacher_notes'");
-    if (teacherNotesCol.rows.length === 0) {
-        await client.query('ALTER TABLE product_orders ADD COLUMN teacher_notes TEXT');
-    }
+    if (teacherNotesCol.rows.length === 0) { await client.query('ALTER TABLE product_orders ADD COLUMN teacher_notes TEXT'); }
+    
     const studentReadCol = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='feedback_messages' AND column_name='is_student_read'");
     if (studentReadCol.rows.length === 0) {
+        console.log('[DEBUG] 5a. is_student_read 欄位不存在，準備新增...');
         await client.query('ALTER TABLE feedback_messages ADD COLUMN is_student_read BOOLEAN NOT NULL DEFAULT FALSE');
+        console.log('[DEBUG] 5b. is_student_read 欄位新增成功。');
+    } else {
+        console.log('[DEBUG] 5a. is_student_read 欄位已存在，無需新增。');
     }
-    
-    // --- 建立索引 ---
-    console.log('🔄 正在檢查並建立資料庫索引...');
+    console.log('[DEBUG] 6. 所有欄位檢查/新增完畢。');
+
+    console.log('[DEBUG] 7. 準備開始建立索引...');
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_courses_time ON courses (time)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)`);
@@ -360,17 +287,22 @@ async function initializeDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_courses_students_gin ON courses USING GIN (students)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_courses_waiting_gin ON courses USING GIN (waiting)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_status_send_at ON tasks (status, send_at)`);
-    console.log('✅ 資料庫索引檢查/建立完成。');
+    console.log('[DEBUG] 8. 索引建立完畢。');
 
     await cleanCoursesDB(client);
+    console.log('[DEBUG] 9. cleanCoursesDB 執行完畢。');
     console.log('✅ 資料庫初始化完成。');
   } catch (err) {
-    console.error('❌ 資料庫初始化失敗:', err.stack);
+    console.error('❌ 資料庫初始化在此處發生致命錯誤:', err.stack);
     process.exit(1);
   } finally {
-    if (client) client.release();
+    if (client) {
+      client.release();
+      console.log('[DEBUG] 10. 釋放資料庫連線。');
+    }
   }
 }
+
 // [V25.1 新增] 讀取推播通知狀態的輔助函式與快取
 let notificationStatusCache = {
     value: true,
