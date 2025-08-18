@@ -3301,8 +3301,8 @@ async function handlePostback(event, user) {
     const userId = user.id;
     const page = parseInt(data.get('page') || '1', 10);
 
-    // [V28.0] 大部分 show... 函式現在不再需要 replyToken
     switch (action) {
+        // --- 頁面檢視 (View) ---
         case 'view_course_series': return showCourseSeries(page);
         case 'view_course_roster_summary': return showCourseRosterSummary(page);
         case 'view_course_roster_details': return showCourseRosterDetails(data.get('course_id'));
@@ -3322,6 +3322,123 @@ async function handlePostback(event, user) {
         case 'view_exchange_history': return showStudentExchangeHistory(userId, page);
         case 'view_historical_messages': return showHistoricalMessages(decodeURIComponent(data.get('query') || ''), page);
         case 'view_failed_tasks': return showFailedTasks(page);
+        case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
+
+        // --- [V28.1 修正] 新增學生預約課程的完整流程 ---
+        case 'select_booking_spots': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) { return '抱歉，找不到該課程。'; }
+
+            const remainingSpots = course.capacity - course.students.length;
+            if (remainingSpots <= 0) {
+                return '抱歉，此課程名額已滿。';
+            }
+
+            const maxSpots = Math.min(5, remainingSpots);
+            const buttons = [];
+            for (let i = 1; i <= maxSpots; i++) {
+                const totalCost = course.points_cost * i;
+                buttons.push({
+                    type: 'button', style: 'secondary', height: 'sm', margin: 'sm',
+                    action: { type: 'postback', label: `${i} 位 (共 ${totalCost} 點)`, data: `action=start_booking_confirmation&course_id=${course.id}&spots=${i}` }
+                });
+            }
+            return {
+                type: 'flex', altText: '請選擇預約人數',
+                contents: {
+                    type: 'bubble',
+                    header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '選擇預約人數', weight: 'bold', size: 'lg', color: '#FFFFFF' }], backgroundColor: '#52b69a' },
+                    body: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: course.title, wrap: true, weight: 'bold', size: 'md' }, { type: 'text', text: `剩餘名額：${remainingSpots} 位`, size: 'sm', color: '#666666', margin: 'md' }, { type: 'separator', margin: 'lg' } ] },
+                    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: buttons }
+                }
+            };
+        }
+        case 'start_booking_confirmation': {
+            const course_id = data.get('course_id');
+            const spotsToBook = parseInt(data.get('spots'), 10);
+            const course = await getCourse(course_id);
+            if (!course) { return '抱歉，找不到該課程。'; }
+
+            const totalCost = course.points_cost * spotsToBook;
+            const remainingSpots = course.capacity - course.students.length;
+
+            if (spotsToBook > remainingSpots) { return `抱歉，課程名額不足！\n目前僅剩 ${remainingSpots} 位。`; }
+            if (user.points < totalCost) { return `抱歉，您的點數不足！\n預約 ${spotsToBook} 位需 ${totalCost} 點，您目前有 ${user.points} 點。`; }
+
+            const message = `請確認預約資訊：\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n預約：${spotsToBook} 位\n花費：${totalCost} 點\n\n您目前的點數為：${user.points} 點`;
+            return {
+                type: 'text',
+                text: message,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認預約', data: `action=execute_booking&course_id=${course.id}&spots=${spotsToBook}` } },
+                    { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                ]}
+            };
+        }
+        case 'execute_booking': {
+            const course_id = data.get('course_id');
+            const spotsToBook = parseInt(data.get('spots'), 10);
+            const clientDB = await pgPool.connect();
+            try {
+                await clientDB.query('BEGIN');
+                const userForUpdate = await clientDB.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
+                const courseForUpdate = await clientDB.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
+                
+                const course = courseForUpdate.rows[0];
+                const student = userForUpdate.rows[0];
+
+                if (!course) { await clientDB.query('ROLLBACK'); return '抱歉，找不到該課程，可能已被老師取消。'; }
+
+                const remainingSpots = course.capacity - course.students.length;
+                if (spotsToBook > remainingSpots) { await clientDB.query('ROLLBACK'); return `預約失敗，課程名額不足！\n目前剩餘 ${remainingSpots} 位，您想預約 ${spotsToBook} 位。`; }
+
+                const totalCost = course.points_cost * spotsToBook;
+                if (student.points < totalCost) { await clientDB.query('ROLLBACK'); return `預約失敗，您的點數不足！\n需要點數：${totalCost}\n您目前有：${student.points}`; }
+
+                const newPoints = student.points - totalCost;
+                const newStudents = [...course.students];
+                for (let i = 0; i < spotsToBook; i++) { newStudents.push(userId); }
+                
+                const historyEntry = { action: `預約課程 (共${spotsToBook}位)：${course.title}`, pointsChange: -totalCost, time: new Date().toISOString() };
+                const newHistory = student.history ? [...student.history, historyEntry] : [historyEntry];
+
+                await clientDB.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
+                await clientDB.query('UPDATE courses SET students = $1 WHERE id = $2', [newStudents, course_id]);
+                await clientDB.query('COMMIT');
+                
+                try {
+                    const reminderTime = new Date(new Date(course.time).getTime() - CONSTANTS.TIME.ONE_HOUR_IN_MS);
+                    if (reminderTime > new Date()) {
+                        const reminderMessage = { type: 'text', text: `🔔 課程提醒 🔔\n您預約的課程「${course.title}」即將在約一小時後開始，請準備好上課囉！` };
+                        await enqueuePushTask(userId, reminderMessage, reminderTime);
+                    }
+                } catch (e) { console.error(`為 user ${userId} 加入課程提醒任務失敗: `, e); }
+
+                return `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`;
+            
+            } catch (e) {
+                await clientDB.query('ROLLBACK');
+                console.error('多人預約課程失敗:', e);
+                return '預約時發生錯誤，請稍後再試。';
+            } finally {
+                if(clientDB) clientDB.release();
+            }
+        }
+
+        // --- 其他指令 ---
+        case 'run_command': {
+            const commandText = decodeURIComponent(data.get('text'));
+            if (commandText) {
+                const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
+                if (user.role === 'admin') return handleAdminCommands(simulatedEvent, userId);
+                if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, userId);
+                return handleStudentCommands(simulatedEvent, userId);
+            }
+            break;
+        }
+        
+        // --- 系統管理 ---
         case 'retry_failed_task':
         case 'delete_failed_task': {
             const failedTaskId = data.get('id');
@@ -3348,35 +3465,42 @@ async function handlePostback(event, user) {
                 if (db) db.release();
             }
         }
-        case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
-        // ... (其他 postback 邏輯)
+        
+        default:
+            // 對於那些需要設定 pending state 的 postback，回傳 null 讓 handleEvent 接手
+            // 在這個版本中，所有 action 都在此處處理完畢，故 default 直接回傳 null
+            return null;
     }
-
-    // --- 以下為需要 replyToken 或 event 物件的特定邏輯 ---
-
-    if (action === 'run_command') {
-        const commandText = decodeURIComponent(data.get('text'));
-        if (commandText) {
-            const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: 'simulated_message_id', text: commandText } };
-            // 這裡不直接 await，讓 handleEvent 的主流程去處理
-            if (user.role === 'admin') return handleAdminCommands(simulatedEvent, userId);
-            if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, userId);
-            return handleStudentCommands(simulatedEvent, userId);
-        }
-    }
-    
-    // ... 其他需要 event 的 postback 處理 ...
 }
 
-
 async function handleEvent(event) {
-    if (event.type === 'follow' || event.type === 'unfollow' || event.type === 'leave') {
-        // ... (follow/unfollow 邏輯維持不變)
+    // 1. 過濾非必要事件
+    if (event.type === 'unfollow' || event.type === 'leave') {
+        console.log(`用戶 ${event.source.userId} 已封鎖或離開`);
+        return;
+    }
+    if (!event.replyToken && event.type !== 'follow') {
         return;
     }
 
-    if (!event.replyToken) return;
+    // 2. 處理新加入的好友
+    if (event.type === 'follow') {
+        try {
+            const profile = await client.getProfile(event.source.userId);
+            const user = { id: event.source.userId, name: profile.displayName, points: 0, role: 'student', history: [], picture_url: profile.pictureUrl };
+            await saveUser(user);
+            userProfileCache.set(event.source.userId, { timestamp: Date.now(), name: profile.displayName, pictureUrl: profile.pictureUrl });
+            
+            const welcomeMessage = { type: 'text', text: `歡迎 ${user.name}！感謝您加入九容瑜伽。`};
+            await enqueuePushTask(event.source.userId, welcomeMessage).catch(err => console.error(`發送歡迎詞給新用戶 ${event.source.userId} 失敗:`, err.message));
+            if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(event.source.userId, STUDENT_RICH_MENU_ID);
+        } catch (error) {
+            console.error(`[Follow Event] 處理新用戶 ${event.source.userId} 時出錯:`, error.message);
+        }
+        return;
+    }
 
+    // 3. 防止重覆處理 Webhook
     const token = event.replyToken;
     if (repliedTokens.has(token)) {
       console.log('🔄️ 偵測到重複的 Webhook 事件，已忽略。');
@@ -3385,12 +3509,34 @@ async function handleEvent(event) {
     repliedTokens.add(token);
     setTimeout(() => repliedTokens.delete(token), 60000);
 
+    // 4. 獲取使用者資料並更新快取
     const userId = event.source.userId;
     let user = await getUser(userId);
-
-    // ... (使用者註冊與資料更新邏輯維持不變)
+    if (!user) {
+        try {
+            const profile = await client.getProfile(userId);
+            user = { id: userId, name: profile.displayName, points: 0, role: 'student', history: [], picture_url: profile.pictureUrl };
+            await saveUser(user);
+            userProfileCache.set(userId, { timestamp: Date.now(), name: profile.displayName, pictureUrl: profile.pictureUrl });
+            const welcomeMessage = { type: 'text', text: `歡迎 ${user.name}！感謝您加入九容瑜伽。`};
+            await enqueuePushTask(userId, welcomeMessage);
+            if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+        } catch (error) { console.error(`創建新用戶時出錯: `, error); return; }
+    } else {
+        const cachedData = userProfileCache.get(userId);
+        const now = Date.now();
+        if (!cachedData || (now - cachedData.timestamp > 10 * 60 * 1000)) {
+            try {
+                const profile = await client.getProfile(userId);
+                if (profile.displayName !== user.name || (profile.pictureUrl && profile.pictureUrl !== user.picture_url)) {
+                    user.name = profile.displayName; user.picture_url = profile.pictureUrl; await saveUser(user);
+                }
+                userProfileCache.set(userId, { timestamp: now, name: profile.displayName, pictureUrl: profile.pictureUrl });
+            } catch (e) { console.error(`[Cache] 更新用戶 ${userId} 資料時出錯:`, e.message); }
+        }
+    }
     
-    // [V28.0] 智慧回覆機制核心邏輯
+    // 5. 智慧回覆核心機制
     const now = Date.now();
     const lastInteraction = userLastInteraction[userId] || 0;
     const isNewSession = (now - lastInteraction) > CONSTANTS.INTERVALS.SESSION_TIMEOUT_MS;
@@ -3406,49 +3552,72 @@ async function handleEvent(event) {
         if (notifications.unreadReplies > 0) notificationMessages.push({ type: 'text', text: `🔔 學員提醒：您有 ${notifications.unreadReplies} 則老師的新回覆，請至「聯絡我們」查看！`});
     }
 
+    // 6. 指令路由與執行
     let mainReplyContent;
-    let contextForError = '處理使用者訊息';
+    let contextForError = '處理使用者指令';
 
     try {
-        if (event.type === 'message' && event.message.type === 'text' && event.message.text.trim() === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
-            // ... (取消邏輯)
+        const text = (event.type === 'message' && event.message.type === 'text') ? event.message.text.trim() : '';
+
+        // 智慧取消邏輯
+        if (text && text.startsWith('@') || event.type === 'postback') {
+            const wasCleared = clearPendingConversations(userId);
+            if (wasCleared) console.log(`使用者 ${userId} 的待辦任務已由新操作自動取消。`);
         }
         
-        // ... (智慧取消邏輯)
-        
-        if ((event.type === 'message' && (event.message.type === 'text' || event.message.type === 'image'))) {
-            const text = event.message.type === 'text' ? event.message.text.trim() : '';
-            if (userId === ADMIN_USER_ID && text === CONSTANTS.COMMANDS.ADMIN.PANEL) {
-                // ... (切換管理員身份邏輯)
-                mainReplyContent = await handleAdminCommands(event, userId);
-            } else {
-                switch(user.role) {
-                    case 'admin': mainReplyContent = await handleAdminCommands(event, userId); break;
-                    case 'teacher': mainReplyContent = await handleTeacherCommands(event, userId); break;
-                    default: mainReplyContent = await handleStudentCommands(event, userId); break;
-                }
+        if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
+            const wasCleared = clearPendingConversations(userId);
+            mainReplyContent = wasCleared ? '已取消先前的操作。' : '目前沒有可取消的操作。';
+        } 
+        // Admin 入口優先權最高
+        else if (userId === ADMIN_USER_ID && text === CONSTANTS.COMMANDS.ADMIN.PANEL) {
+            contextForError = '進入管理模式';
+            if (user.role !== 'admin') {
+                user.role = 'admin';
+                await saveUser(user);
             }
-        } else if (event.type === 'postback') {
-            contextForError = `處理 Postback Action: ${new URLSearchParams(event.postback.data).get('action')}`;
-            mainReplyContent = await handlePostback(event, user);
+            mainReplyContent = await handleAdminCommands(event, userId);
         }
+        // 依照使用者身份路由
+        else if (event.type === 'message') {
+            contextForError = `處理訊息: ${text}`;
+            switch(user.role) {
+                case 'admin': mainReplyContent = await handleAdminCommands(event, userId); break;
+                case 'teacher': mainReplyContent = await handleTeacherCommands(event, userId); break;
+                default: mainReplyContent = await handleStudentCommands(event, userId); break;
+            }
+        } 
+        else if (event.type === 'postback') {
+            const action = new URLSearchParams(event.postback.data).get('action');
+            contextForError = `處理 Postback: ${action}`;
+            mainReplyContent = await handlePostback(event, user);
+            // 如果 handlePostback 回傳 null，代表是需要設定 pending state 的操作，交由下方邏輯處理
+            if(mainReplyContent === null) {
+                // 在這裡處理那些需要設定 pending state 的 postback actions
+                // 由於目前所有 postback 都在 handlePostback 中處理完畢，這裡暫時留空
+                // 範例：if (action === 'some_action_needing_state') { ... }
+            }
+        }
+
     } catch(err) {
         await handleError(err, event.replyToken, contextForError);
-        return; // 錯誤已處理，結束執行
+        return;
     }
     
+    // 7. 組合訊息並統一回覆
     const finalMessages = [...notificationMessages];
     if (mainReplyContent) {
-        if (Array.isArray(mainReplyContent)) {
-            finalMessages.push(...mainReplyContent);
-        } else {
-            finalMessages.push(mainReplyContent);
-        }
+        const contentArray = Array.isArray(mainReplyContent) ? mainReplyContent : [mainReplyContent];
+        finalMessages.push(...contentArray);
     }
 
     if (finalMessages.length > 0) {
-        // 將字串轉換為 LINE 訊息物件
-        const formattedMessages = finalMessages.map(m => (typeof m === 'string' ? { type: 'text', text: m } : m));
-        await reply(event.replyToken, formattedMessages);
+        const formattedMessages = finalMessages
+            .filter(Boolean) // 過濾掉 null 或 undefined 的內容
+            .map(m => (typeof m === 'string' ? { type: 'text', text: m } : m));
+        
+        if (formattedMessages.length > 0) {
+            await reply(event.replyToken, formattedMessages);
+        }
     }
 }
