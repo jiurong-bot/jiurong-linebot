@@ -3426,6 +3426,55 @@ async function handlePostback(event, user) {
                 }
             };
         }
+        case 'select_purchase_plan': {
+            const pointsStr = data.get('plan');
+            const points = parseInt(pointsStr, 10);
+            if (isNaN(points)) {
+                return '無效的購買方案。';
+            }
+
+            // 從預設方案列表中找到對應的方案資料
+            const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+            if (!plan) {
+                return '找不到您選擇的購買方案。';
+            }
+            
+            // 檢查使用者是否處於購買流程中
+            const purchaseState = pendingPurchase[userId];
+            if (!purchaseState || purchaseState.step !== 'select_plan') {
+                return '您的購買流程已逾時或被中斷，請重新點擊「購買點數」開始。';
+            }
+
+            // 更新購買狀態，進入到下一步「等待確認」
+            purchaseState.step = 'confirm_purchase';
+            purchaseState.data = { points: plan.points, amount: plan.amount };
+            
+            // 回傳確認訊息，並附上快速回覆按鈕
+            return {
+                type: 'text',
+                text: `您選擇了購買「${plan.label}」。\n金額為 ${plan.amount} 元。\n\n請確認是否繼續購買？`,
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS,
+                                text: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS
+                            }
+                        },
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: CONSTANTS.COMMANDS.GENERAL.CANCEL,
+                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                            }
+                        }
+                    ]
+                }
+            };
+        }
         // --- [V28.1 修正] 新增學生預約課程的完整流程 ---
         case 'select_booking_spots': {
             const course_id = data.get('course_id');
