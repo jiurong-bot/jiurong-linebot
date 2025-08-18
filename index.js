@@ -3475,6 +3475,120 @@ async function handlePostback(event, user) {
                 }
             };
         }
+        // 步驟一：處理使用者初次點擊「我要兌換」，跳出確認視窗
+        case 'confirm_product_purchase': {
+            const productId = data.get('product_id');
+            if (!productId) return '操作失敗，缺少商品 ID。';
+            
+            const product = await getProduct(productId);
+            if (!product) return '找不到此商品，可能已下架。';
+            if (product.inventory <= 0) return '抱歉，此商品庫存不足，無法兌換。';
+            if (user.points < product.price) {
+                return `抱歉，您的點數不足！\n兌換此商品需要 ${product.price} 點，您目前擁有 ${user.points} 點。`;
+            }
+
+            const confirmationMessage = `您確定要兌換「${product.name}」嗎？\n\n將會花費：${product.price} 點\n您目前的點數：${user.points} 點\n兌換後剩餘：${user.points - product.price} 點`;
+
+            // 回傳一個 Flex Message 作為確認視窗
+            return {
+                type: 'flex',
+                altText: '確認兌換商品',
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: '請確認兌換資訊', weight: 'bold', size: 'lg' },
+                            { type: 'separator', margin: 'md' },
+                            { type: 'text', text: confirmationMessage, wrap: true, margin: 'md' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                color: '#52B69A',
+                                action: {
+                                    type: 'postback',
+                                    label: '✅ 確認兌換',
+                                    data: `action=execute_product_purchase&product_id=${product.id}`
+                                }
+                            },
+                            {
+                                type: 'button',
+                                style: 'secondary',
+                                action: {
+                                    type: 'message',
+                                    label: '❌ 取消',
+                                    text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                }
+                            }
+                        ]
+                    }
+                }
+            };
+        }
+
+        // 步驟二：處理使用者按下「確認兌換」，執行交易
+        case 'execute_product_purchase': {
+            const productId = data.get('product_id');
+            const client = await pgPool.connect();
+            try {
+                // 使用資料庫交易，確保資料一致性
+                await client.query('BEGIN');
+
+                // 鎖定資料列，防止在多人同時兌換時發生庫存或點數計算錯誤 (Race Condition)
+                const productRes = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [productId]);
+                const userRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [user.id]);
+
+                const product = productRes.rows[0];
+                const student = userRes.rows[0];
+
+                // 在交易中再次驗證兌換條件，確保萬無一失
+                if (!product) { await client.query('ROLLBACK'); return '兌換失敗，找不到此商品。'; }
+                if (product.inventory <= 0) { await client.query('ROLLBACK'); return '抱歉，您慢了一步！商品已被兌換完畢。'; }
+                if (student.points < product.price) { await client.query('ROLLBACK'); return `抱歉，您的點數不足以兌換！需要 ${product.price} 點。`; }
+
+                // 執行更新
+                const newInventory = product.inventory - 1;
+                const newPoints = student.points - product.price;
+                const orderUID = `PROD-${Date.now()}-${userId.slice(-4)}`;
+
+                await client.query('UPDATE products SET inventory = $1 WHERE id = $2', [newInventory, productId]);
+                await client.query('UPDATE users SET points = $1 WHERE id = $2', [newPoints, userId]);
+                await client.query(
+                    `INSERT INTO product_orders (order_uid, user_id, user_name, product_id, product_name, points_spent, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [orderUID, userId, student.name, productId, product.name, product.price, 'pending']
+                );
+
+                // 確認所有操作都成功，提交交易
+                await client.query('COMMIT');
+
+                // 兌換成功後，通知老師有新訂單
+                const notifyMessage = {
+                    type: 'text',
+                    text: `🔔 商城新訂單通知\n學員 ${student.name} 兌換了「${product.name}」。\n請至「商城管理」->「訂單管理」查看並處理。`
+                };
+                await enqueuePushTask(TEACHER_ID, notifyMessage).catch(e => console.error(e));
+
+                // 回覆學生兌換成功
+                return `✅ 兌換成功！\n您已成功使用 ${product.price} 點兌換「${product.name}」。\n後續請等待老師的通知，您也可以在「我的兌換紀錄」中查看訂單狀態。`;
+
+            } catch (err) {
+                // 若過程中發生任何錯誤，則復原所有操作
+                await client.query('ROLLBACK');
+                console.error('❌ 商品兌換執行失敗:', err);
+                return '抱歉，兌換過程中發生錯誤，您的點數未被扣除，請稍後再試。';
+            } finally {
+                if (client) client.release();
+            }
+        }
         // --- [V28.1 修正] 新增學生預約課程的完整流程 ---
         case 'select_booking_spots': {
             const course_id = data.get('course_id');
