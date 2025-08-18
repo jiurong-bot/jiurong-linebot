@@ -3371,6 +3371,61 @@ async function handlePostback(event, user) {
                 if(client) client.release();
             }
         }
+        case 'confirm_cancel_booking_start':
+        case 'confirm_cancel_waiting_start': {
+            const course_id = data.get('course_id');
+            if (!course_id) return '操作失敗，缺少課程 ID。';
+            
+            const course = await getCourse(course_id);
+            if (!course) {
+                return '找不到該課程，可能已被老師取消或已結束。';
+            }
+
+            const isBooking = action === 'confirm_cancel_booking_start';
+            
+            // 設定一個「等待使用者確認取消」的狀態
+            pendingBookingConfirmation[userId] = {
+                type: isBooking ? 'cancel_book' : 'cancel_wait',
+                course_id: course_id
+            };
+
+            // 設定對話超時，若使用者久未回應則自動放棄
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                const timeoutMessage = { type: 'text', text: '取消操作已逾時，自動放棄。'};
+                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
+            });
+
+            const actionText = isBooking ? '取消預約' : '取消候補';
+            const confirmCommand = isBooking 
+                ? CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING 
+                : CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING;
+
+            // 回傳確認訊息給使用者
+            return {
+                type: 'text',
+                text: `您確定要「${actionText}」以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`,
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: `✅ 確認${actionText}`,
+                                text: confirmCommand
+                            }
+                        },
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: CONSTANTS.COMMANDS.GENERAL.CANCEL,
+                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                            }
+                        }
+                    ]
+                }
+            };
+        }
         // --- [V28.1 修正] 新增學生預約課程的完整流程 ---
         case 'select_booking_spots': {
             const course_id = data.get('course_id');
