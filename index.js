@@ -3067,74 +3067,8 @@ async function handleStudentCommands(event, userId) {
       return purchaseFlowResult.reply;
   }
 
-  if (pendingBookingConfirmation[userId]) {
-    const state = pendingBookingConfirmation[userId];
-    const course = await getCourse(state.course_id);
-    if (!course && state.type !== 'product_purchase') {
-        delete pendingBookingConfirmation[userId];
-        return '抱歉，找不到該課程，可能已被老師取消。';
-    }
-
-    switch (state.type) {
-        case 'cancel_book':
-            if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING) {
-                const client = await pgPool.connect();
-                try {
-                    await client.query('BEGIN');
-                    const userForUpdateRes = await client.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
-                    const courseForUpdateRes = await client.query('SELECT students, waiting, points_cost, title FROM courses WHERE id = $1 FOR UPDATE', [state.course_id]);
-                    const currentCourse = courseForUpdateRes.rows[0];
-                    const newStudents = [...currentCourse.students];
-                    const indexToRemove = newStudents.indexOf(userId);
-                    if (indexToRemove > -1) { newStudents.splice(indexToRemove, 1); } 
-                    else { await client.query('ROLLBACK'); delete pendingBookingConfirmation[userId]; return '您尚未預約此課程。'; }
-                    const newPoints = userForUpdateRes.rows[0].points + currentCourse.points_cost;
-                    const historyEntry = { action: `取消預約 (1位)：${getCourseMainTitle(currentCourse.title)}`, pointsChange: +currentCourse.points_cost, time: new Date().toISOString() };
-                    const userHistory = userForUpdateRes.rows[0].history || [];
-                    const newHistory = [...userHistory, historyEntry];
-                    await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
-                    let newWaiting = currentCourse.waiting;
-                    if (newWaiting.length > 0) {
-                        const promotedUserId = newWaiting.shift();
-                        newStudents.push(promotedUserId);
-                        const promotedUser = await getUser(promotedUserId, client);
-                        if (promotedUser) {
-                             const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(currentCourse.title)}」已有空位，已為您自動預約成功！`};
-                             await enqueuePushTask(promotedUserId, notifyMessage).catch(err => console.error(err));
-                        }
-                    }
-                    await client.query('UPDATE courses SET students = $1, waiting = $2 WHERE id = $3', [newStudents, newWaiting, state.course_id]);
-                    await client.query('COMMIT');
-                    delete pendingBookingConfirmation[userId];
-                    const remainingBookings = newStudents.filter(id => id === userId).length;
-                    let replyMsg = `✅ 已為您取消 1 位「${getCourseMainTitle(currentCourse.title)}」的預約，並歸還 ${currentCourse.points_cost} 點。`;
-                    if (remainingBookings > 0) { replyMsg += `\n您在此課程尚有 ${remainingBookings} 位預約。`; }
-                    return replyMsg;
-                } catch (e) {
-                    await client.query('ROLLBACK'); console.error('取消預約失敗:', e); delete pendingBookingConfirmation[userId];
-                    return '取消預約時發生錯誤，請稍後再試。';
-                } finally { if(client) client.release(); }
-            } else if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
-                delete pendingBookingConfirmation[userId]; return '已放棄取消操作。';
-            }
-            break;
-        case 'cancel_wait':
-            if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING) {
-                const newWaitingList = course.waiting.filter(id => id !== userId);
-                await saveCourse({ ...course, waiting: newWaitingList });
-                delete pendingBookingConfirmation[userId];
-                return `✅ 已為您取消「${course.title}」的候補。`;
-            } else if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
-                delete pendingBookingConfirmation[userId]; return '已放棄取消操作。';
-            }
-            break;
-        case 'product_purchase':
-             if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
-                delete pendingBookingConfirmation[userId]; return '已取消兌換。';
-            }
-            break;
-    }
-  } else if (pendingFeedback[userId]) {
+  // [V28.1 修正] 移除舊的 pendingBookingConfirmation 邏輯，因其已移至 handlePostback
+  if (pendingFeedback[userId]) {
     const feedbackState = pendingFeedback[userId];
     if (feedbackState.step === 'await_message') {
       await pgPool.query('INSERT INTO feedback_messages (id, user_id, user_name, message, timestamp) VALUES ($1, $2, $3, $4, NOW())', [`F${Date.now()}`, userId, user.name, text]);
@@ -3265,36 +3199,6 @@ async function handleStudentCommands(event, userId) {
   }
 }
 
-app.use(express.json({ verify: (req, res, buf) => { if (req.headers['x-line-signature']) req.rawBody = buf; } }));
-
-app.post('/webhook', (req, res) => {
-  const signature = crypto.createHmac('SHA256', config.channelSecret).update(req.rawBody).digest('base64');
-  if (req.headers['x-line-signature'] !== signature) {
-    return res.status(401).send('Unauthorized');
-  }
-  res.status(200).send('OK');
-  Promise.all(req.body.events.map(event => handleEvent(event)));
-});
-
-app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
-
-app.listen(PORT, async () => {
-  try {
-    checkEnvironmentVariables();
-    await initializeDatabase();
-
-    console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V28.0 (智慧回覆機制)`);
-
-    setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
-    setInterval(cancelExpiredPendingOrders, CONSTANTS.TIME.ONE_HOUR_IN_MS);
-
-  } catch (error) {
-    console.error('❌ 應用程式啟動失敗:', error);
-    process.exit(1);
-  }
-});
-
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
@@ -3324,16 +3228,14 @@ async function handlePostback(event, user) {
         case 'view_failed_tasks': return showFailedTasks(page);
         case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
 
-        // --- [V28.1 修正] 新增學生預約課程的完整流程 ---
+        // --- 學生預約課程流程 ---
         case 'select_booking_spots': {
             const course_id = data.get('course_id');
             const course = await getCourse(course_id);
             if (!course) { return '抱歉，找不到該課程。'; }
 
             const remainingSpots = course.capacity - course.students.length;
-            if (remainingSpots <= 0) {
-                return '抱歉，此課程名額已滿。';
-            }
+            if (remainingSpots <= 0) { return '抱歉，此課程名額已滿。'; }
 
             const maxSpots = Math.min(5, remainingSpots);
             const buttons = [];
@@ -3368,8 +3270,7 @@ async function handlePostback(event, user) {
 
             const message = `請確認預約資訊：\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n預約：${spotsToBook} 位\n花費：${totalCost} 點\n\n您目前的點數為：${user.points} 點`;
             return {
-                type: 'text',
-                text: message,
+                type: 'text', text: message,
                 quickReply: { items: [
                     { type: 'action', action: { type: 'postback', label: '✅ 確認預約', data: `action=execute_booking&course_id=${course.id}&spots=${spotsToBook}` } },
                     { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
@@ -3384,29 +3285,21 @@ async function handlePostback(event, user) {
                 await clientDB.query('BEGIN');
                 const userForUpdate = await clientDB.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
                 const courseForUpdate = await clientDB.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
-                
                 const course = courseForUpdate.rows[0];
                 const student = userForUpdate.rows[0];
-
                 if (!course) { await clientDB.query('ROLLBACK'); return '抱歉，找不到該課程，可能已被老師取消。'; }
-
                 const remainingSpots = course.capacity - course.students.length;
                 if (spotsToBook > remainingSpots) { await clientDB.query('ROLLBACK'); return `預約失敗，課程名額不足！\n目前剩餘 ${remainingSpots} 位，您想預約 ${spotsToBook} 位。`; }
-
                 const totalCost = course.points_cost * spotsToBook;
                 if (student.points < totalCost) { await clientDB.query('ROLLBACK'); return `預約失敗，您的點數不足！\n需要點數：${totalCost}\n您目前有：${student.points}`; }
-
                 const newPoints = student.points - totalCost;
                 const newStudents = [...course.students];
                 for (let i = 0; i < spotsToBook; i++) { newStudents.push(userId); }
-                
                 const historyEntry = { action: `預約課程 (共${spotsToBook}位)：${course.title}`, pointsChange: -totalCost, time: new Date().toISOString() };
                 const newHistory = student.history ? [...student.history, historyEntry] : [historyEntry];
-
                 await clientDB.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
                 await clientDB.query('UPDATE courses SET students = $1 WHERE id = $2', [newStudents, course_id]);
                 await clientDB.query('COMMIT');
-                
                 try {
                     const reminderTime = new Date(new Date(course.time).getTime() - CONSTANTS.TIME.ONE_HOUR_IN_MS);
                     if (reminderTime > new Date()) {
@@ -3414,16 +3307,80 @@ async function handlePostback(event, user) {
                         await enqueuePushTask(userId, reminderMessage, reminderTime);
                     }
                 } catch (e) { console.error(`為 user ${userId} 加入課程提醒任務失敗: `, e); }
-
                 return `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`;
-            
             } catch (e) {
-                await clientDB.query('ROLLBACK');
-                console.error('多人預約課程失敗:', e);
-                return '預約時發生錯誤，請稍後再試。';
-            } finally {
-                if(clientDB) clientDB.release();
-            }
+                await clientDB.query('ROLLBACK'); console.error('多人預約課程失敗:', e); return '預約時發生錯誤，請稍後再試。';
+            } finally { if(clientDB) clientDB.release(); }
+        }
+
+        // --- [V28.1 修正] 新增學生取消預約/候補的完整流程 ---
+        case 'confirm_cancel_booking_start': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) { return '抱歉，找不到該課程。'; }
+            const message = `您確定要取消預約以下課程嗎？ (一次取消1位)\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n取消後將歸還 ${course.points_cost} 點，確認嗎？`;
+            return {
+                type: 'text', text: message,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認取消預約', data: `action=execute_cancel_booking&course_id=${course.id}` } },
+                    { type: 'action', action: { type: 'message', label: '返回', text: '@我的課程' } }
+                ]}
+            };
+        }
+        case 'execute_cancel_booking': {
+            const course_id = data.get('course_id');
+            const clientDB = await pgPool.connect();
+            try {
+                await clientDB.query('BEGIN');
+                const userForUpdateRes = await clientDB.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
+                const courseForUpdateRes = await clientDB.query('SELECT students, waiting, points_cost, title FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
+                const currentCourse = courseForUpdateRes.rows[0];
+                const newStudents = [...currentCourse.students];
+                const indexToRemove = newStudents.indexOf(userId);
+                if (indexToRemove === -1) { await clientDB.query('ROLLBACK'); return '您尚未預約此課程或已取消。'; }
+                newStudents.splice(indexToRemove, 1);
+                const newPoints = userForUpdateRes.rows[0].points + currentCourse.points_cost;
+                const historyEntry = { action: `取消預約 (1位)：${getCourseMainTitle(currentCourse.title)}`, pointsChange: +currentCourse.points_cost, time: new Date().toISOString() };
+                const newHistory = [...(userForUpdateRes.rows[0].history || []), historyEntry];
+                await clientDB.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
+                let newWaiting = currentCourse.waiting;
+                if (newWaiting.length > 0) {
+                    const promotedUserId = newWaiting.shift();
+                    newStudents.push(promotedUserId);
+                    const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(currentCourse.title)}」已有空位，已為您自動預約成功！`};
+                    await enqueuePushTask(promotedUserId, notifyMessage).catch(err => console.error(err));
+                }
+                await clientDB.query('UPDATE courses SET students = $1, waiting = $2 WHERE id = $3', [newStudents, newWaiting, course_id]);
+                await clientDB.query('COMMIT');
+                const remainingBookings = newStudents.filter(id => id === userId).length;
+                let replyMsg = `✅ 已為您取消 1 位「${getCourseMainTitle(currentCourse.title)}」的預約，並歸還 ${currentCourse.points_cost} 點。`;
+                if (remainingBookings > 0) { replyMsg += `\n您在此課程尚有 ${remainingBookings} 位預約。`; }
+                return replyMsg;
+            } catch (e) {
+                await clientDB.query('ROLLBACK'); console.error('取消預約失敗:', e); return '取消預約時發生錯誤，請稍後再試。';
+            } finally { if(clientDB) clientDB.release(); }
+        }
+        case 'confirm_cancel_waiting_start': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) { return '抱歉，找不到該課程。'; }
+            const message = `您確定要取消候補以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`;
+             return {
+                type: 'text', text: message,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認取消候補', data: `action=execute_cancel_waiting&course_id=${course.id}` } },
+                    { type: 'action', action: { type: 'message', label: '返回', text: '@我的課程' } }
+                ]}
+            };
+        }
+        case 'execute_cancel_waiting': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) return '找不到該課程或已被取消。';
+            const newWaitingList = course.waiting.filter(id => id !== userId);
+            if (newWaitingList.length === course.waiting.length) { return '您已不在該課程的候補名單中。'; }
+            await saveCourse({ ...course, waiting: newWaitingList });
+            return `✅ 已為您取消「${course.title}」的候補。`;
         }
 
         // --- 其他指令 ---
@@ -3467,8 +3424,6 @@ async function handlePostback(event, user) {
         }
         
         default:
-            // 對於那些需要設定 pending state 的 postback，回傳 null 讓 handleEvent 接手
-            // 在這個版本中，所有 action 都在此處處理完畢，故 default 直接回傳 null
             return null;
     }
 }
