@@ -3313,7 +3313,7 @@ async function handlePostback(event, user) {
             } finally { if(clientDB) clientDB.release(); }
         }
 
-        // --- [V28.1 修正] 新增學生取消預約/候補的完整流程 ---
+        // --- 學生取消預約/候補的流程 ---
         case 'confirm_cancel_booking_start': {
             const course_id = data.get('course_id');
             const course = await getCourse(course_id);
@@ -3546,12 +3546,6 @@ async function handleEvent(event) {
             const action = new URLSearchParams(event.postback.data).get('action');
             contextForError = `處理 Postback: ${action}`;
             mainReplyContent = await handlePostback(event, user);
-            // 如果 handlePostback 回傳 null，代表是需要設定 pending state 的操作，交由下方邏輯處理
-            if(mainReplyContent === null) {
-                // 在這裡處理那些需要設定 pending state 的 postback actions
-                // 由於目前所有 postback 都在 handlePostback 中處理完畢，這裡暫時留空
-                // 範例：if (action === 'some_action_needing_state') { ... }
-            }
         }
 
     } catch(err) {
@@ -3568,7 +3562,7 @@ async function handleEvent(event) {
 
     if (finalMessages.length > 0) {
         const formattedMessages = finalMessages
-            .filter(Boolean) // 過濾掉 null 或 undefined 的內容
+            .filter(Boolean)
             .map(m => (typeof m === 'string' ? { type: 'text', text: m } : m));
         
         if (formattedMessages.length > 0) {
