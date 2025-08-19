@@ -366,8 +366,6 @@ console.log('✅ 已檢查/建立 tasks 表格 (Worker 相容版本)');
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_status_send_at ON tasks (status, send_at)`);
 
     console.log('✅ 資料庫索引檢查/建立完成。');
-
-    await cleanCoursesDB(client);
     console.log('✅ 資料庫初始化完成。');
   } catch (err) {
     console.error('❌ 資料庫初始化失敗:', err.stack);
