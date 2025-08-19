@@ -701,6 +701,27 @@ async function cleanCoursesDB(dbClient) {
     if (shouldReleaseClient && client) client.release();
   }
 }
+
+
+/**
+ * [V27.6 新增] 共用的錯誤處理函式
+ * @param {Error} error - 捕獲到的錯誤物件
+ * @param {string} replyToken - 用於回覆的 token
+ * @param {string} context - 錯誤發生的情境，例如 "查詢我的課程"
+ */
+async function handleError(error, replyToken, context = '未知操作') {
+    console.error(`❌ 在執行 [${context}] 時發生錯誤:`, error.stack);
+    try {
+        if (replyToken) {
+            await reply(replyToken, `抱歉，在執行 ${context} 時發生了預期外的錯誤，請稍後再試。`);
+        }
+    } catch (replyError) {
+        console.error(`❌ 連錯誤回覆都失敗了:`, replyError.message);
+    }
+}
+
+// 請用這整段程式碼，取代您檔案中原有的 reply 函式
+
 async function reply(replyToken, content, menu = null) {
   let messages = Array.isArray(content) ? content : (typeof content === 'string' ? [{ type: 'text', text: content }] : [content]);
   if (menu !== null && menu !== undefined) {
@@ -719,24 +740,23 @@ async function reply(replyToken, content, menu = null) {
           messages[messages.length - 1].quickReply.items.push(...validMenuItems);
       }
   }
-  try { await client.replyMessage(replyToken, messages); } catch (error) { console.error(`❌ reply 函式發送失敗:`, error.originalError ? error.originalError.response.data : error.message); throw error; }
-}
-
-/**
- * [V27.6 新增] 共用的錯誤處理函式
- * @param {Error} error - 捕獲到的錯誤物件
- * @param {string} replyToken - 用於回覆的 token
- * @param {string} context - 錯誤發生的情境，例如 "查詢我的課程"
- */
-async function handleError(error, replyToken, context = '未知操作') {
-    console.error(`❌ 在執行 [${context}] 時發生錯誤:`, error.stack);
-    try {
-        if (replyToken) {
-            await reply(replyToken, `抱歉，在執行 ${context} 時發生了預期外的錯誤，請稍後再試。`);
-        }
-    } catch (replyError) {
-        console.error(`❌ 連錯誤回覆都失敗了:`, replyError.message);
-    }
+  try { 
+      await client.replyMessage(replyToken, messages); 
+  } catch (error) { 
+      // ======================= 我們修改了這裡的錯誤處理 =======================
+      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      console.error('‼️‼️‼️ 在 reply 函式中捕捉到 API 錯誤 ‼️‼️‼️');
+      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      // 判斷並印出 LINE API 回應的詳細錯誤內容
+      if (error.originalError && error.originalError.response && error.originalError.response.data) {
+          console.error('【LINE API 回應的詳細錯誤】:', JSON.stringify(error.originalError.response.data, null, 2));
+      } else {
+          console.error('【捕獲到的基本錯誤訊息】:', error.message);
+      }
+      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      throw error; 
+      // ======================================================================
+  }
 }
 
 function formatIdForDisplay(id) {
