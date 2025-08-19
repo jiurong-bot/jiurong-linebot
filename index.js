@@ -3423,13 +3423,6 @@ async function handlePostback(event, user) {
     const userId = user.id;
     const page = parseInt(data.get('page') || '1', 10);
 
-    // 在處理任何動作前，先清除可能存在的舊對話狀態
-    // 這是為了防止使用者在一個流程中途，點擊了另一個功能的按鈕
-    const isContinuationAction = ['select_purchase_plan', 'set_course_weekday'].includes(action);
-    if (!isContinuationAction) {
-        clearPendingConversations(userId);
-    }
-
     switch (action) {
 
         // ==================================
