@@ -3408,7 +3408,10 @@ app.listen(PORT, async () => {
 
     setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, CONSTANTS.TIME.ONE_HOUR_IN_MS);
-
+    // 每 6 小時執行一次清理過期課程的任務
+    const CLEANUP_INTERVAL_MS = CONSTANTS.TIME.ONE_HOUR_IN_MS * 6;
+    setInterval(cleanCoursesDB, CLEANUP_INTERVAL_MS);
+    console.log(`🧹 已設定定期清理任務，每 ${CLEANUP_INTERVAL_MS / 3600000} 小時執行一次。`);
   } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
     process.exit(1);
