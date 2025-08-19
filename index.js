@@ -3991,10 +3991,17 @@ async function handleEvent(event) {
         if (event.type === 'postback') {
             const postbackData = new URLSearchParams(event.postback.data);
             const action = postbackData.get('action');
-            // 定義哪些 postback action 是多步驟流程的「一部分」，不應該觸發清除
-            const continuationActions = [
-                'set_course_weekday'
-            ];
+            
+          // 定義哪些 postback action 是多步驟流程的「一部分」，不應該觸發清除
+const continuationActions = [
+    'set_course_weekday',      // 課程建立流程
+    'confirm_add_product',     // 商品上架流程
+    'edit_product_field',      // 商品編輯流程
+    'start_booking_confirmation', // 學員預約課程流程
+    'execute_booking',            // 學員預約課程流程
+    'execute_product_purchase'    // 學員兌換商品流程
+];
+
             if (continuationActions.includes(action)) {
                 shouldClear = false;
             }
