@@ -1,4 +1,4 @@
-// index.js - V29.0 (測試穩定版)
+// index.js - V29.0 (測試優化版)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -1047,13 +1047,15 @@ async function buildPointsMenuFlex(userId) {
         }
     };
 }
+/* =====可能是沒用的參數=====
 const teacherMenu = [];
 const studentMenu = [
     { type: 'action', action: { type: 'postback', label: '點數查詢', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.POINTS)}` } },
     { type: 'action', action: { type: 'postback', label: '預約課程', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.BOOK_COURSE)}` } },
     { type: 'action', action: { type: 'postback', label: '我的課程', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.MY_COURSES)}` } },
     { type: 'action', action: { type: 'postback', label: '最新公告', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.LATEST_ANNOUNCEMENT)}` } }
-];
+]; 
+*/
 const WEEKDAYS = [
     { label: '週日', value: 0 }, { label: '週一', value: 1 }, { label: '週二', value: 2 },
     { label: '週三', value: 3 }, { label: '週四', value: 4 }, { label: '週五', value: 5 },
