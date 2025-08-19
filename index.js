@@ -4016,11 +4016,8 @@ async function handleEvent(event) {
             const action = new URLSearchParams(event.postback.data).get('action');
             contextForError = `處理 Postback: ${action}`;
             mainReplyContent = await handlePostback(event, user);
-            // 如果 handlePostback 回傳 null，代表是需要設定 pending state 的操作，交由下方邏輯處理
             if(mainReplyContent === null) {
-                // 在這裡處理那些需要設定 pending state 的 postback actions
-                // 由於目前所有 postback 都在 handlePostback 中處理完畢，這裡暫時留空
-                // 範例：if (action === 'some_action_needing_state') { ... }
+                // 未來若有 postback 需要設定 pending state 可在此處理
             }
         }
 
@@ -4038,23 +4035,20 @@ async function handleEvent(event) {
 
     if (finalMessages.length > 0) {
         const formattedMessages = finalMessages
-            .filter(Boolean) // 過濾掉 null 或 undefined 的內容
+            .filter(Boolean)
             .map(m => (typeof m === 'string' ? { type: 'text', text: m } : m));
         
-              if (formattedMessages.length > 0) {
-            // ================== 請在這裡加入我們的追蹤日誌 ==================
+        if (formattedMessages.length > 0) {
+            // ****** 我們加入追蹤日誌的區塊 ******
             console.log(`[DEBUG] 準備回覆給 ${userId}。Token: ${event.replyToken.slice(0, 10)}...。訊息數量: ${formattedMessages.length}`);
             try {
-                // 將要回覆的訊息內容也印出來看看
                 console.log('[DEBUG] 訊息內容:', JSON.stringify(formattedMessages, null, 2));
-                
                 await reply(event.replyToken, formattedMessages);
-                
                 console.log(`[DEBUG] 成功呼叫 reply 函式 for ${userId}。`);
             } catch (e) {
-                // 如果 reply 函式本身拋出錯誤，這裡會捕捉到
                 console.error(`[DEBUG] 在 handleEvent 中捕捉到 reply 函式的嚴重錯誤 for ${userId}:`, e);
             }
-            // ================================================================
+            // **********************************
         }
     }
+}
