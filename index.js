@@ -3327,11 +3327,7 @@ async function handleStudentCommands(event, userId) {
                 const flexMenu = await buildPointsMenuFlex(userId);
                 return [{type: 'text', text: '您目前尚有未完成的訂單，請先處理該筆訂單。'}, flexMenu];
             }
-            pendingPurchase[userId] = { step: 'select_plan', data: {} };
-            setupConversationTimeout(userId, pendingPurchase, 'pendingPurchase', (u) => {
-                const timeoutMessage = { type: 'text', text: '購點流程逾時，自動取消。請重新購點。'};
-                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
-            });
+          
             return buildBuyPointsFlex();
         } finally {
             if(client) client.release();
