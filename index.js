@@ -3756,7 +3756,57 @@ async function handlePostback(event, user) {
                 if (client) client.release();
             }
         }
-           // 處理「確認訂單」
+        case 'select_purchase_plan': {
+            const points = parseInt(data.get('plan'), 10);
+            const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+
+            if (!plan) {
+                return '無效的購買方案，請重新操作。';
+            }
+
+            // 設定進入下一個對話步驟：「等待確認購買」
+            // 這個狀態將由 handlePurchaseFlow 函式處理
+            pendingPurchase[userId] = {
+                step: 'confirm_purchase',
+                data: {
+                    points: plan.points,
+                    amount: plan.amount
+                }
+            };
+            setupConversationTimeout(userId, pendingPurchase, 'pendingPurchase', (u) => {
+                const timeoutMessage = { type: 'text', text: '確認購買操作已逾時，請重新開始。' };
+                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
+            });
+
+            const replyText = `您已選擇購買 ${plan.points} 點，金額為 ${plan.amount} 元。\n\n請點擊「✅ 確認購買」以成立訂單。`;
+            
+            // 回覆確認訊息，並提供快速回覆按鈕
+            return {
+                type: 'text',
+                text: replyText,
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS,
+                                text: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS
+                            }
+                        },
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: CONSTANTS.COMMANDS.GENERAL.CANCEL,
+                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                            }
+                        }
+                    ]
+                }
+            };
+        }  
+        // 處理「確認訂單」
         case 'confirm_shop_order': {
             const orderUID = data.get('orderUID');
             if (!orderUID) return '操作失敗，缺少訂單 ID。';
