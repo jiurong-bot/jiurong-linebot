@@ -3092,113 +3092,18 @@ async function showCourseRosterDetails(courseId) {
         if (client) client.release();
     }
 }
-// 請用這個【無照片測試版本】的函式，取代舊的 showStudentDetails 函式
+// 請用這個【純文字測試版本】的函式，取代舊的 showStudentDetails 函式
 
 async function showStudentDetails(studentId) {
-    const client = await pgPool.connect();
-    try {
-        const userRes = await client.query('SELECT name, picture_url, points FROM users WHERE id = $1', [studentId]);
-        if (userRes.rows.length === 0) {
-            return '找不到該學員的資料。';
-        }
-        const student = userRes.rows[0];
-
-        const coursesRes = await client.query(
-            `SELECT title, time FROM courses WHERE $1 = ANY(students) AND time > NOW() ORDER BY time ASC LIMIT 3`,
-            [studentId]
-        );
-
-        const ordersRes = await client.query(
-            `SELECT points, status, timestamp FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 3`,
-            [studentId]
-        );
-
-        const createListItem = (text, size = 'sm', color = '#666666') => ({ type: 'text', text, size, color, wrap: true });
-
-        const coursesContents = [];
-        if (coursesRes.rows.length > 0) {
-            coursesRes.rows.forEach(course => {
-                coursesContents.push(createListItem(`- ${getCourseMainTitle(course.title)} (${formatDateTime(course.time)})`));
-            });
-        } else {
-            coursesContents.push(createListItem('無', 'sm', '#aaaaaa'));
-        }
-
-        const ordersContents = [];
-        if (ordersRes.rows.length > 0) {
-            const statusMap = { 'completed': '✅', 'pending_confirmation': '🕒', 'pending_payment': '❗', 'rejected': '❌' };
-            ordersRes.rows.forEach(order => {
-                const statusIcon = statusMap[order.status] || '❓';
-                ordersContents.push(createListItem(`${statusIcon} ${order.points}點 (${formatDateTime(order.timestamp)})`));
-            });
-        } else {
-            ordersContents.push(createListItem('無', 'sm', '#aaaaaa'));
-        }
-
-        return {
-            type: 'flex',
-            altText: `學員 ${student.name} 的詳細資料`,
-            contents: {
-                type: 'bubble',
-                size: 'giga',
-                header: {
-                    type: 'box',
-                    layout: 'vertical',
-                    paddingAll: 'lg',
-                    spacing: 'sm',
-                    backgroundColor: '#F0F4F8',
-                    contents: [
-                        // 已將照片元件移除，並將文字置中顯示
-                        { type: 'text', text: student.name, weight: 'bold', size: 'xl', wrap: true, align: 'center' },
-                        { type: 'text', text: `剩餘 ${student.points} 點`, size: 'lg', color: '#1A759F', margin: 'md', align: 'center' }
-                    ]
-                },
-                body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    padding: 'lg',
-                    spacing: 'xl',
-                    contents: [
-                        {
-                            type: 'box', layout: 'vertical', spacing: 'sm',
-                            contents: [
-                                { type: 'text', text: '📅 近期預約課程', weight: 'bold', color: '#343A40' },
-                                ...coursesContents
-                            ]
-                        },
-                        { type: 'separator' },
-                        {
-                            type: 'box', layout: 'vertical', spacing: 'sm',
-                            contents: [
-                                { type: 'text', text: '💰 近期購點紀錄', weight: 'bold', color: '#343A40' },
-                                ...ordersContents
-                            ]
-                        }
-                    ]
-                },
-                footer: {
-                    type: 'box',
-                    layout: 'vertical',
-                    spacing: 'sm',
-                    contents: [
-                        {
-                            type: 'button',
-                            style: 'secondary',
-                            height: 'sm',
-                            action: {
-                                type: 'postback',
-                                label: '✍️ 手動調整點數',
-                                data: `action=select_student_for_adjust&studentId=${studentId}`
-                            }
-                        }
-                    ]
-                }
-            }
-        };
-    } finally {
-        if (client) client.release();
+    const student = await getUser(studentId);
+    if (!student) {
+        return '找不到該學員的資料。';
     }
+    
+    // 暫時只回傳一個簡單的純文字訊息來做最終測試
+    return `[TEST] 成功取得學員資料！\n姓名：${student.name}\n剩餘點數：${student.points}`;
 }
+
 
 async function handleStudentCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
