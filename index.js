@@ -2612,6 +2612,46 @@ async function showMyMessages(userId, page) {
         return { type: 'flex', altText: '您的歷史留言紀錄', contents: { type: 'carousel', contents: messageBubbles }};
     });
 }
+async function showSingleCoursesForCancellation(prefix, page) {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return withDatabaseClient(async (client) => {
+        const coursesRes = await client.query("SELECT * FROM courses WHERE id LIKE $1 AND time > NOW() ORDER BY time ASC LIMIT $2 OFFSET $3", [`${prefix}%`, CONSTANTS.PAGINATION_SIZE + 1, offset]);
+
+        const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageCourses.length === 0 && page === 1) {
+          return "此系列沒有可取消的未來課程。";
+        }
+        if (pageCourses.length === 0) {
+            return '沒有更多課程了。';
+        }
+
+        const courseBubbles = pageCourses.map(c => ({
+            type: 'bubble',
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    { type: 'text', text: c.title, wrap: true, weight: 'bold' },
+                    { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'md'}
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{ type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: '取消此堂課', data: `action=confirm_single_course_cancel&course_id=${c.id}` } }]
+            }
+        }));
+
+        const paginationBubble = createPaginationBubble('action=manage_course_group', page, hasNextPage, `&prefix=${prefix}`);
+        if (paginationBubble) {
+            courseBubbles.push(paginationBubble);
+        }
+
+        return { type: 'flex', altText: '請選擇要單次取消的課程', contents: { type: 'carousel', contents: courseBubbles } };
+    });
+}
 async function showShopProducts(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
