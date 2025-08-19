@@ -690,17 +690,24 @@ async function deleteOrder(orderId, dbClient) {
         if (shouldReleaseClient && client) client.release();
     }
 }
-async function cleanCoursesDB(dbClient) {
-  const shouldReleaseClient = !dbClient;
-  const client = dbClient || await pgPool.connect();
+async function cleanCoursesDB() {
+  const client = await pgPool.connect();
   try {
-    const now = Date.now();
-    await client.query(`DELETE FROM courses WHERE time < $1`, [new Date(now - CONSTANTS.TIME.ONE_DAY_IN_MS)]);
+    const now = new Date();
+    // 刪除一天前的課程
+    const pastDate = new Date(now.getTime() - CONSTANTS.TIME.ONE_DAY_IN_MS);
+    
+    const result = await client.query(`DELETE FROM courses WHERE time < $1`, [pastDate]);
+    
+    if (result.rowCount > 0) {
+      console.log(`🧹 定期清理：已成功移除 ${result.rowCount} 筆過期的課程。`);
+    }
+  } catch (err) {
+    console.error('❌ 定期清理過期課程時發生錯誤:', err);
   } finally {
-    if (shouldReleaseClient && client) client.release();
+    if (client) client.release();
   }
 }
-
 
 /**
  * [V27.6 新增] 共用的錯誤處理函式
