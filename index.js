@@ -3756,6 +3756,113 @@ async function handlePostback(event, user) {
                 if (client) client.release();
             }
         }
+           // 處理「確認訂單」
+        case 'confirm_shop_order': {
+            const orderUID = data.get('orderUID');
+            if (!orderUID) return '操作失敗，缺少訂單 ID。';
+
+            const client = await pgPool.connect();
+            try {
+                const orderRes = await client.query("SELECT * FROM product_orders WHERE order_uid = $1", [orderUID]);
+                if (orderRes.rows.length === 0) {
+                    return '找不到該筆訂單，可能已被處理。';
+                }
+                const order = orderRes.rows[0];
+
+                if (order.status !== 'pending') {
+                    return `此訂單狀態為「${order.status}」，無法再次確認。`;
+                }
+
+                // 更新訂單狀態為「已完成」
+                await client.query(
+                    "UPDATE product_orders SET status = 'completed', updated_at = NOW() WHERE order_uid = $1",
+                    [orderUID]
+                );
+
+                // 發送通知給學員
+                const notifyMessage = {
+                    type: 'text',
+                    text: `🛍️ 訂單更新通知\n您兌換的「${order.product_name}」訂單已處理完成！\n請隨時與我們聯繫領取商品，謝謝。`
+                };
+                await enqueuePushTask(order.user_id, notifyMessage).catch(e => console.error(e));
+
+                // 回覆老師操作成功
+                return `✅ 已成功確認訂單 (ID: ...${orderUID.slice(-6)})。\n系統已發送通知給學員 ${order.user_name}。`;
+
+            } catch (err) {
+                console.error('❌ 確認商城訂單失敗:', err);
+                return '確認訂單時發生錯誤，請稍後再試。';
+            } finally {
+                if (client) client.release();
+            }
+        }
+        
+        // 處理「取消訂單」的第一步：跳出確認視窗
+        case 'cancel_shop_order_start': {
+            const orderUID = data.get('orderUID');
+            const order = await getProductOrder(orderUID); // 使用現有的 getProductOrder 輔助函式
+            if (!order) return '找不到該訂單。';
+
+            return {
+                type: 'text',
+                text: `您確定要取消學員 ${order.user_name} 的訂單「${order.product_name}」嗎？\n\n⚠️ 此操作將會歸還 ${order.points_spent} 點給學員，並將商品庫存加回 1。`,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_shop_order_execute&orderUID=${orderUID}` } },
+                        { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } }
+                    ]
+                }
+            };
+        }
+
+        // 處理「取消訂單」的第二步：執行取消與退款
+        case 'cancel_shop_order_execute': {
+            const orderUID = data.get('orderUID');
+            const client = await pgPool.connect();
+            try {
+                // 使用資料庫交易，確保所有操作都成功或都失敗
+                await client.query('BEGIN');
+
+                const orderRes = await client.query("SELECT * FROM product_orders WHERE order_uid = $1 FOR UPDATE", [orderUID]);
+                if (orderRes.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return '找不到該訂單，可能已被處理。';
+                }
+                const order = orderRes.rows[0];
+
+                if (order.status !== 'pending') {
+                    await client.query('ROLLBACK');
+                    return `此訂單狀態為「${order.status}」，無法取消。`;
+                }
+
+                // 1. 歸還點數給學員
+                await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [order.points_spent, order.user_id]);
+
+                // 2. 將商品庫存加回 1
+                await client.query("UPDATE products SET inventory = inventory + 1 WHERE id = $1", [order.product_id]);
+                
+                // 3. 更新訂單狀態為「已取消」
+                await client.query("UPDATE product_orders SET status = 'cancelled', updated_at = NOW() WHERE order_uid = $1", [orderUID]);
+                
+                await client.query('COMMIT');
+
+                // 發送通知給學員
+                const notifyMessage = {
+                    type: 'text',
+                    text: `❗️ 訂單取消通知\n您兌換的「${order.product_name}」訂單已被老師取消。\n已將花費的 ${order.points_spent} 點歸還至您的帳戶。`
+                };
+                await enqueuePushTask(order.user_id, notifyMessage).catch(e => console.error(e));
+
+                return `✅ 已成功取消訂單 (ID: ...${orderUID.slice(-6)}) 並歸還點數及庫存。`;
+
+            } catch (err) {
+                await client.query('ROLLBACK');
+                console.error('❌ 取消商城訂單失敗:', err);
+                return '取消訂單時發生錯誤，操作已復原。';
+            } finally {
+                if (client) client.release();
+            }
+        }
         // --- [V28.1 修正] 新增學生預約課程的完整流程 ---
         case 'select_booking_spots': {
             const course_id = data.get('course_id');
