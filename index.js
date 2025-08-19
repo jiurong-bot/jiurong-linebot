@@ -3092,16 +3092,117 @@ async function showCourseRosterDetails(courseId) {
         if (client) client.release();
     }
 }
-// 請用這個【純文字測試版本】的函式，取代舊的 showStudentDetails 函式
+// 請用這個【全新穩定版本】的函式，取代用於測試的 showStudentDetails 函式
 
 async function showStudentDetails(studentId) {
-    const student = await getUser(studentId);
-    if (!student) {
-        return '找不到該學員的資料。';
+    const client = await pgPool.connect();
+    try {
+        const userRes = await client.query('SELECT name, picture_url, points FROM users WHERE id = $1', [studentId]);
+        if (userRes.rows.length === 0) {
+            return '找不到該學員的資料。';
+        }
+        const student = userRes.rows[0];
+
+        const coursesRes = await client.query(
+            `SELECT title, time FROM courses WHERE $1 = ANY(students) AND time > NOW() ORDER BY time ASC LIMIT 3`,
+            [studentId]
+        );
+
+        const ordersRes = await client.query(
+            `SELECT points, status, timestamp FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 3`,
+            [studentId]
+        );
+
+        const createListItem = (text, size = 'sm', color = '#666666') => ({ type: 'text', text, size, color, wrap: true, margin: 'sm' });
+
+        const coursesContents = [];
+        if (coursesRes.rows.length > 0) {
+            coursesRes.rows.forEach(course => {
+                coursesContents.push(createListItem(`- ${getCourseMainTitle(course.title)} (${formatDateTime(course.time)})`));
+            });
+        } else {
+            coursesContents.push(createListItem('無', 'sm', '#aaaaaa'));
+        }
+        
+        const statusMap = { 'completed': '✅', 'pending_confirmation': '🕒', 'pending_payment': '❗', 'rejected': '❌' };
+        const ordersContents = [];
+        if (ordersRes.rows.length > 0) {
+            ordersRes.rows.forEach(order => {
+                const statusIcon = statusMap[order.status] || '❓';
+                ordersContents.push(createListItem(`${statusIcon} ${order.points}點 (${formatDateTime(order.timestamp)})`));
+            });
+        } else {
+            ordersContents.push(createListItem('無', 'sm', '#aaaaaa'));
+        }
+
+        return {
+            type: 'flex',
+            altText: `學員 ${student.name} 的詳細資料`,
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'lg',
+                    backgroundColor: '#343A40',
+                    contents: [
+                        { type: 'text', text: student.name, weight: 'bold', size: 'xl', color: '#FFFFFF', align: 'center' },
+                        {
+                            type: 'box', layout: 'baseline', margin: 'md', justifyContent: 'center',
+                            contents: [
+                                { type: 'text', text: '剩餘點數', size: 'sm', color: '#FFFFFF' },
+                                { type: 'text', text: `${student.points}`, weight: 'bold', size: 'xxl', color: '#52B69A', margin: 'sm' },
+                                { type: 'text', text: '點', size: 'sm', color: '#FFFFFF' }
+                            ]
+                        }
+                    ]
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingTop: 'lg',
+                    spacing: 'xl',
+                    contents: [
+                        {
+                            type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                            contents: [
+                                { type: 'text', text: '📅 近期預約課程', weight: 'bold', size: 'md', color: '#333333' },
+                                ...coursesContents
+                            ]
+                        },
+                        { type: 'separator', margin: 'xl' },
+                        {
+                            type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                            contents: [
+                                { type: 'text', text: '💰 近期購點紀錄', weight: 'bold', size: 'md', color: '#333333' },
+                                ...ordersContents
+                            ]
+                        }
+                    ]
+                },
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'sm',
+                    contents: [
+                        {
+                            type: 'button',
+                            style: 'secondary',
+                            height: 'sm',
+                            action: {
+                                type: 'postback',
+                                label: '✍️ 手動調整點數',
+                                data: `action=select_student_for_adjust&studentId=${studentId}`
+                            }
+                        }
+                    ]
+                }
+            }
+        };
+    } finally {
+        if (client) client.release();
     }
-    
-    // 暫時只回傳一個簡單的純文字訊息來做最終測試
-    return `[TEST] 成功取得學員資料！\n姓名：${student.name}\n剩餘點數：${student.points}`;
 }
 
 
