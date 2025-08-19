@@ -4041,8 +4041,21 @@ async function handleEvent(event) {
             .filter(Boolean) // 過濾掉 null 或 undefined 的內容
             .map(m => (typeof m === 'string' ? { type: 'text', text: m } : m));
         
-        if (formattedMessages.length > 0) {
-            await reply(event.replyToken, formattedMessages);
+              if (formattedMessages.length > 0) {
+            // ================== 請在這裡加入我們的追蹤日誌 ==================
+            console.log(`[DEBUG] 準備回覆給 ${userId}。Token: ${event.replyToken.slice(0, 10)}...。訊息數量: ${formattedMessages.length}`);
+            try {
+                // 將要回覆的訊息內容也印出來看看
+                console.log('[DEBUG] 訊息內容:', JSON.stringify(formattedMessages, null, 2));
+                
+                await reply(event.replyToken, formattedMessages);
+                
+                console.log(`[DEBUG] 成功呼叫 reply 函式 for ${userId}。`);
+            } catch (e) {
+                // 如果 reply 函式本身拋出錯誤，這裡會捕捉到
+                console.error(`[DEBUG] 在 handleEvent 中捕捉到 reply 函式的嚴重錯誤 for ${userId}:`, e);
+            }
+            // ================================================================
         }
-    }
+
 }
