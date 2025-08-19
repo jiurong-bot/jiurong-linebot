@@ -3993,10 +3993,23 @@ async function handleEvent(event) {
     try {
         const text = (event.type === 'message' && event.message.type === 'text') ? event.message.text.trim() : '';
 
-        // 智慧取消邏輯
-        if (text && text.startsWith('@') || event.type === 'postback') {
-            const wasCleared = clearPendingConversations(userId);
-            if (wasCleared) console.log(`使用者 ${userId} 的待辦任務已由新操作自動取消。`);
+         // 智慧取消邏輯 (V2 - 修正版)
+        let shouldClear = true;
+        if (event.type === 'postback') {
+            const postbackData = new URLSearchParams(event.postback.data);
+            const action = postbackData.get('action');
+            // 定義哪些 postback action 是多步驟流程的「一部分」，不應該觸發清除
+            const continuationActions = [
+                'set_course_weekday'
+            ];
+            if (continuationActions.includes(action)) {
+                shouldClear = false;
+            }
+        }
+
+        if (shouldClear && (text && text.startsWith('@') || event.type === 'postback')) {
+            const wasCleared = clearPendingConversations(userId);
+            if (wasCleared) console.log(`使用者 ${userId} 的待辦任務已由新操作自動取消。`);
         }
         
         if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
