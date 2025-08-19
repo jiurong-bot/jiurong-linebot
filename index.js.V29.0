@@ -1,4 +1,4 @@
-// index.js - V28.0 (智慧回覆機制)
+// index.js - V29.0 (測試穩定版)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
