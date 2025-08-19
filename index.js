@@ -3389,13 +3389,13 @@ async function handleStudentCommands(event, userId) {
 
 app.use(express.json({ verify: (req, res, buf) => { if (req.headers['x-line-signature']) req.rawBody = buf; } }));
 
-app.post('/webhook', (req, res) => {
-  const signature = crypto.createHmac('SHA256', config.channelSecret).update(req.rawBody).digest('base64');
-  if (req.headers['x-line-signature'] !== signature) {
-    return res.status(401).send('Unauthorized');
-  }
-  res.status(200).send('OK');
-  Promise.all(req.body.events.map(event => handleEvent(event)));
+app.post('/webhook', line.middleware(config), (req, res) => {
+  Promise.all(req.body.events.map(handleEvent))
+    .then((result) => res.json(result))
+    .catch((err) => {
+      console.error(err);
+      res.status(500).end();
+    });
 });
 
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
