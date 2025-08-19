@@ -4,7 +4,7 @@ const line = require('@line/bot-sdk');
 const express = require('express');
 const { Pool } = require('pg');
 const crypto =require('crypto');
-const { default: fetch } = require('node-fetch');
+//const { default: fetch } = require('node-fetch');
 const axios = require('axios');
 const ImageKit = require("imagekit");
 
@@ -3408,7 +3408,7 @@ app.listen(PORT, async () => {
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
     console.log(`Bot 版本 V29.0 (測試穩定版)`);
 
-    setInterval(() => { if(SELF_URL.startsWith('https')) fetch(SELF_URL).catch(err => console.error("Ping self failed:", err.message)); }, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
+    setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, CONSTANTS.TIME.ONE_HOUR_IN_MS);
 
   } catch (error) {
