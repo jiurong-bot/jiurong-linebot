@@ -3425,6 +3425,47 @@ async function handlePostback(event, user) {
         case 'view_course_series': return showCourseSeries(page);
         case 'view_course_roster_summary': return showCourseRosterSummary(page);
         case 'view_course_roster_details': return showCourseRosterDetails(data.get('course_id'));
+           // 處理「查看詳細資料」按鈕，呼叫我們剛才建立的新函式
+        case 'view_student_details': {
+            const studentId = data.get('studentId');
+            if (!studentId) return '操作失敗，缺少學員 ID。';
+            return showStudentDetails(studentId);
+        }
+
+        // (這個是為了一併修復「手動調整點數」流程)
+        // 處理選擇學員後，準備進入調點操作的步驟
+        case 'select_student_for_adjust': {
+            const studentId = data.get('studentId');
+            const student = await getUser(studentId);
+            if (!student) return '找不到該學員的資料。';
+        
+            // 設定「等待老師操作」的狀態，並指定目標學員
+            pendingManualAdjust[userId] = {
+                step: 'await_operation',
+                targetStudent: {
+                    id: student.id,
+                    name: student.name
+                }
+            };
+        
+            setupConversationTimeout(userId, pendingManualAdjust, 'pendingManualAdjust', (u) => {
+                const timeoutMessage = { type: 'text', text: '手動調整點數逾時，自動取消。'};
+                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
+            });
+        
+            // 提示老師下一步是加點或扣點
+            return {
+                type: 'text',
+                text: `已選擇學員：「${student.name}」。\n請問您要為他加點或扣點？`,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS, text: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS } },
+                        { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS, text: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS } },
+                        { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
         case 'list_teachers_for_removal': return showTeacherListForRemoval(page);
         case 'view_pending_orders':
         case 'view_pending_orders_page': return showPendingOrders(page);
