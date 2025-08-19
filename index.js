@@ -1395,25 +1395,72 @@ async function handleAdminCommands(event, userId) {
     const state = pendingTeacherAddition[userId];
     switch (state.step) {
       case 'await_student_info':
-        const studentRes = await withDatabaseClient(client => 
-            client.query(`SELECT id, name, role FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2)`, [`%${text.toLowerCase()}%`, text])
-        );
-        if (studentRes.rows.length === 0) {
-          return { type: 'text', text: `找不到名為「${text}」的學員。請重新輸入或取消操作。`, quickReply: { items: getCancelMenu() } };
-        } else if (studentRes.rows.length === 1) {
-          state.targetUser = studentRes.rows[0];
-          state.step = 'await_confirmation';
-          return {
-            type: 'text',
-            text: `您確定要授權學員「${state.targetUser.name}」成為老師嗎？`,
-            quickReply: { items: [
-                { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER } },
-                { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
-            ]}
-          };
-        } else {
-          return { type: 'text', text: `找到多位名為「${text}」的學員，請提供更完整的姓名或直接使用 User ID 進行授權。`, quickReply: { items: getCancelMenu() } };
+      case 'await_student_info':
+      const studentSearchRes = await withDatabaseClient(client => 
+        client.query(`SELECT id, name, role, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 25`, [`%${text.toLowerCase()}%`, text])
+    );
+
+    if (studentSearchRes.rows.length === 0) {
+      return { type: 'text', text: `找不到與「${text}」相關的學員。請重新輸入或取消操作。`, quickReply: { items: getCancelMenu() } };
+    }
+
+    // 無論找到多少結果，都以頭像列表呈現
+    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+    const userBubbles = studentSearchRes.rows.map(s => ({
+        type: 'bubble',
+        body: {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'md',
+            contents: [
+                {
+                    type: 'image',
+                    url: s.picture_url || placeholder_avatar,
+                    size: 'md',
+                    aspectRatio: '1:1',
+                    aspectMode: 'cover'
+                },
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 3,
+                    justifyContent: 'center',
+                    contents: [
+                        { type: 'text', text: s.name, weight: 'bold', size: 'lg', wrap: true },
+                        { type: 'text', text: `ID: ${formatIdForDisplay(s.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm', wrap: true }
+                    ]
+                }
+            ]
+        },
+        footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [{
+                type: 'button',
+                style: 'primary',
+                color: '#52B69A',
+                height: 'sm',
+                action: {
+                    type: 'postback',
+                    label: '選擇此學員',
+                    data: `action=select_student_for_auth&targetId=${s.id}&targetName=${encodeURIComponent(s.name)}`
+                }
+            }]
         }
+    }));
+    
+    // 清除等待輸入的狀態，因為已經進入選擇階段
+    delete pendingTeacherAddition[userId];
+
+    return {
+        type: 'flex',
+        altText: '請選擇要授權的學員',
+        contents: {
+            type: 'carousel',
+            contents: userBubbles
+        }
+    };
+
       case 'await_confirmation':
         if (text === CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER) {
           const targetUser = await getUser(state.targetUser.id);
