@@ -1,3 +1,7 @@
+console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+console.log('>>> JIURONG-LINEBOT CODE VERSION: August 19, 1:40 PM <<<');
+console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+
 // index.js - V28.0 (智慧回覆機制)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
