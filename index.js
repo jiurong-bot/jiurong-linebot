@@ -3434,9 +3434,6 @@ async function handlePostback(event, user) {
             if (!studentId) return '操作失敗，缺少學員 ID。';
             return showStudentDetails(studentId);
         }
-
-        // (這個是為了一併修復「手動調整點數」流程)
-        // 處理選擇學員後，準備進入調點操作的步驟
         case 'select_student_for_adjust': {
             const studentId = data.get('studentId');
             const student = await getUser(studentId);
@@ -3472,6 +3469,87 @@ async function handlePostback(event, user) {
         case 'list_teachers_for_removal': return showTeacherListForRemoval(page);
         case 'view_pending_orders':
         case 'view_pending_orders_page': return showPendingOrders(page);
+                // --- 請將以下整段程式碼貼到您的 switch (action) 區塊中 ---
+
+        case 'confirm_order': {
+            const order_id = data.get('order_id');
+            const client = await pgPool.connect();
+            try {
+                await client.query('BEGIN'); // 開始交易
+
+                const orderRes = await client.query("SELECT * FROM orders WHERE order_id = $1 FOR UPDATE", [order_id]);
+                if (orderRes.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return '找不到此訂單，可能已被其他老師處理。';
+                }
+                const order = orderRes.rows[0];
+
+                if (order.status !== 'pending_confirmation') {
+                    await client.query('ROLLBACK');
+                    return `此訂單狀態為「${order.status}」，無法重複核准。`;
+                }
+                
+                // 1. 更新訂單狀態
+                await client.query("UPDATE orders SET status = 'completed' WHERE order_id = $1", [order_id]);
+                
+                // 2. 為學員加上點數
+                const userRes = await client.query("SELECT points FROM users WHERE id = $1 FOR UPDATE", [order.user_id]);
+                const newPoints = userRes.rows[0].points + order.points;
+                await client.query("UPDATE users SET points = $1 WHERE id = $2", [newPoints, order.user_id]);
+
+                await client.query('COMMIT'); // 提交交易
+
+                // 3. 通知學員
+                const notifyMessage = {
+                    type: 'text',
+                    text: `✅ 您的點數購買已核准！\n\n已為您帳戶加入 ${order.points} 點，您目前的總點數為 ${newPoints} 點。`
+                };
+                await enqueuePushTask(order.user_id, notifyMessage).catch(e => console.error(e));
+
+                return `✅ 已核准 ${order.user_name} 的訂單，並已通知對方。`;
+
+            } catch (err) {
+                await client.query('ROLLBACK');
+                console.error('❌ 核准訂單時發生錯誤:', err);
+                return '處理訂單時發生錯誤，操作已取消。';
+            } finally {
+                if (client) client.release();
+            }
+        }
+
+        case 'reject_order': {
+            const order_id = data.get('order_id');
+            const client = await pgPool.connect();
+            try {
+                const orderRes = await client.query("SELECT * FROM orders WHERE order_id = $1", [order_id]);
+                if (orderRes.rows.length === 0) {
+                    return '找不到此訂單，可能已被其他老師處理。';
+                }
+                const order = orderRes.rows[0];
+
+                if (order.status !== 'pending_confirmation') {
+                    return `此訂單狀態為「${order.status}」，無法退回。`;
+                }
+
+                // 更新訂單狀態為 'rejected'
+                await client.query("UPDATE orders SET status = 'rejected' WHERE order_id = $1", [order_id]);
+                
+                // 通知學員
+                const notifyMessage = {
+                    type: 'text',
+                    text: `❗️ 您的點數購買申請被退回。\n\n請檢查您的匯款金額或後五碼是否有誤，並至「點數查詢」選單中重新提交資訊。如有疑問請聯絡我們，謝謝。`
+                };
+                await enqueuePushTask(order.user_id, notifyMessage).catch(e => console.error(e));
+
+                return `✅ 已退回 ${order.user_name} 的訂單，並已通知對方。`;
+
+            } catch (err) {
+                console.error('❌ 退回訂單時發生錯誤:', err);
+                return '處理訂單時發生錯誤，請稍後再試。';
+            } finally {
+                if (client) client.release();
+            }
+        }
         case 'student_search_results': return showStudentSearchResults(decodeURIComponent(data.get('query') || ''), page);
         case 'view_unread_messages': return showUnreadMessages(page);
         case 'view_announcements_for_deletion': return showAnnouncementsForDeletion(page);
