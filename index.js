@@ -3088,6 +3088,7 @@ async function showCourseRosterDetails(courseId) {
         if (client) client.release();
     }
 }
+// 請用這個【無照片測試版本】的函式，取代舊的 showStudentDetails 函式
 
 async function showStudentDetails(studentId) {
     const client = await pgPool.connect();
@@ -3098,24 +3099,18 @@ async function showStudentDetails(studentId) {
         }
         const student = userRes.rows[0];
 
-        // 查詢未來3堂已預約課程
         const coursesRes = await client.query(
             `SELECT title, time FROM courses WHERE $1 = ANY(students) AND time > NOW() ORDER BY time ASC LIMIT 3`,
             [studentId]
         );
 
-        // 查詢最近3筆購點紀錄
         const ordersRes = await client.query(
             `SELECT points, status, timestamp FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 3`,
             [studentId]
         );
 
-        const placeholderAvatar = 'https://i.imgur.com/8l1Yd2S.png';
-
-        // 建立列表內容的小幫手函式
         const createListItem = (text, size = 'sm', color = '#666666') => ({ type: 'text', text, size, color, wrap: true });
 
-        // 建立課程列表
         const coursesContents = [];
         if (coursesRes.rows.length > 0) {
             coursesRes.rows.forEach(course => {
@@ -3125,7 +3120,6 @@ async function showStudentDetails(studentId) {
             coursesContents.push(createListItem('無', 'sm', '#aaaaaa'));
         }
 
-        // 建立購點紀錄列表
         const ordersContents = [];
         if (ordersRes.rows.length > 0) {
             const statusMap = { 'completed': '✅', 'pending_confirmation': '🕒', 'pending_payment': '❗', 'rejected': '❌' };
@@ -3137,7 +3131,6 @@ async function showStudentDetails(studentId) {
             ordersContents.push(createListItem('無', 'sm', '#aaaaaa'));
         }
 
-        // 組合完整的 Flex Message
         return {
             type: 'flex',
             altText: `學員 ${student.name} 的詳細資料`,
@@ -3146,19 +3139,14 @@ async function showStudentDetails(studentId) {
                 size: 'giga',
                 header: {
                     type: 'box',
-                    layout: 'horizontal',
+                    layout: 'vertical',
                     paddingAll: 'lg',
-                    spacing: 'lg',
+                    spacing: 'sm',
                     backgroundColor: '#F0F4F8',
                     contents: [
-                        { type: 'image', url: student.picture_url || placeholderAvatar, aspectRatio: '1:1', size: 'md', flex: 0 },
-                        {
-                            type: 'box', layout: 'vertical', justifyContent: 'center',
-                            contents: [
-                                { type: 'text', text: student.name, weight: 'bold', size: 'xl', wrap: true },
-                                { type: 'text', text: `剩餘 ${student.points} 點`, size: 'lg', color: '#1A759F', margin: 'md' }
-                            ]
-                        }
+                        // 已將照片元件移除，並將文字置中顯示
+                        { type: 'text', text: student.name, weight: 'bold', size: 'xl', wrap: true, align: 'center' },
+                        { type: 'text', text: `剩餘 ${student.points} 點`, size: 'lg', color: '#1A759F', margin: 'md', align: 'center' }
                     ]
                 },
                 body: {
