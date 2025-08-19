@@ -3589,7 +3589,58 @@ async function handlePostback(event, user) {
                 }
             };
         }
-                          
+
+        case 'select_purchase_plan':
+    case 'select_purchase_plan': {
+        const pointsStr = data.get('plan');
+        const points = parseInt(pointsStr, 10);
+        if (isNaN(points)) {
+            return '無效的購買方案。';
+        }
+
+        const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+        if (!plan) {
+            return '找不到您選擇的購買方案。';
+        }
+        
+        // 在這裡才開始建立對話狀態
+        pendingPurchase[userId] = {
+            step: 'confirm_purchase',
+            data: { points: plan.points, amount: plan.amount }
+        };
+        
+        // 設定下一步驟的超時
+        setupConversationTimeout(userId, pendingPurchase, 'pendingPurchase', (u) => {
+            const timeoutMessage = { type: 'text', text: '您的購買確認操作已逾時，請重新點擊「購買點數」開始。' };
+            enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
+        });
+
+        // 回傳確認訊息給使用者
+        return {
+            type: 'text',
+            text: `您選擇了購買「${plan.label}」。\n金額為 ${plan.amount} 元。\n\n請確認是否繼續購買？`,
+            quickReply: {
+                items: [
+                    {
+                        type: 'action',
+                        action: {
+                            type: 'message',
+                            label: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS,
+                            text: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS
+                        }
+                    },
+                    {
+                        type: 'action',
+                        action: {
+                            type: 'message',
+                            label: CONSTANTS.COMMANDS.GENERAL.CANCEL,
+                            text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                        }
+                    }
+                ]
+            }
+        };
+    }
         // 步驟一：處理使用者初次點擊「我要兌換」，跳出確認視窗
         case 'confirm_product_purchase': {
             const productId = data.get('product_id');
