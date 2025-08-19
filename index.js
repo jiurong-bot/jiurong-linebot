@@ -3416,9 +3416,7 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
-// ==========================================================================================
-// 請用這個全新的、完整的 handlePostback 函式，取代掉您檔案中舊的整個函式
-// ==========================================================================================
+
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
