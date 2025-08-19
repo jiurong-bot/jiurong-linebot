@@ -3859,6 +3859,30 @@ async function handlePostback(event, user) {
         // ==================================
         // 管理員與老師權限 (Admin & Teacher Roles)
         // ==================================
+         case 'select_student_for_auth': {
+            const targetId = data.get('targetId');
+            const targetName = decodeURIComponent(data.get('targetName'));
+            if (!targetId || !targetName) return '操作失敗，缺少目標學員資訊。';
+
+            // 設定 pending 狀態，以進行最終確認
+            pendingTeacherAddition[userId] = {
+                step: 'await_confirmation',
+                targetUser: { id: targetId, name: targetName }
+            };
+            setupConversationTimeout(userId, pendingTeacherAddition, 'pendingTeacherAddition', u => {
+                enqueuePushTask(u, { type: 'text', text: '授權老師操作逾時。' }).catch(e => console.error(e));
+            });
+
+            // 回傳確認訊息
+            return {
+                type: 'text',
+                text: `您確定要授權學員「${targetName}」成為老師嗎？`,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER } },
+                    { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                ]}
+            };
+        }
         case 'select_teacher_for_removal': {
             const targetId = data.get('targetId');
             const targetName = decodeURIComponent(data.get('targetName'));
