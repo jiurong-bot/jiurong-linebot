@@ -3550,6 +3550,84 @@ async function handlePostback(event, user) {
                 if (client) client.release();
             }
         }
+          case 'generate_report': {
+            const reportType = data.get('type');
+            const period = data.get('period');
+            const periodMap = { week: '本週', month: '本月', quarter: '本季', year: '今年' };
+            const periodText = periodMap[period] || period;
+
+            const generateReportTask = async () => {
+                const { start, end } = getDateRange(period);
+                const client = await pgPool.connect();
+                try {
+                    if (reportType === 'course') {
+                        const res = await client.query(
+                            "SELECT capacity, students FROM courses WHERE time BETWEEN $1 AND $2",
+                            [start, end]
+                        );
+                        if (res.rows.length === 0) return `📊 ${periodText}課程報表 📊\n\n此期間內沒有任何課程。`;
+                        
+                        let totalStudents = 0;
+                        let totalCapacity = 0;
+                        res.rows.forEach(course => {
+                            totalCapacity += course.capacity;
+                            totalStudents += (course.students || []).length;
+                        });
+
+                        const attendanceRate = totalCapacity > 0 ? (totalStudents / totalCapacity * 100).toFixed(1) : 0;
+                        return `
+📊 ${periodText} 課程報表 📊
+
+- 課程總數：${res.rows.length} 堂
+- 總計名額：${totalCapacity} 人
+- 預約人次：${totalStudents} 人
+- **整體出席率：${attendanceRate}%**
+                        `.trim();
+
+                    } else if (reportType === 'order') {
+                        const res = await client.query(
+                            "SELECT COUNT(*), SUM(amount) FROM orders WHERE status = 'completed' AND timestamp BETWEEN $1 AND $2",
+                            [start, end]
+                        );
+                        const count = parseInt(res.rows[0].count, 10) || 0;
+                        const sum = parseInt(res.rows[0].sum, 10) || 0;
+
+                        return `
+💰 ${periodText} 訂單報表 💰
+
+- 已完成訂單：${count} 筆
+- **點數總收入：${sum} 元**
+                        `.trim();
+                    }
+                } finally {
+                    if (client) client.release();
+                }
+            };
+            
+            // 超時處理
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 8000));
+            try {
+                const result = await Promise.race([generateReportTask(), timeoutPromise]);
+                if (result === 'timeout') {
+                    // 如果計算時間太久，先告知使用者，然後在背景完成任務並推播
+                    (async () => {
+                        try {
+                            const reportText = await generateReportTask();
+                            await enqueuePushTask(userId, { type: 'text', text: reportText });
+                        } catch (bgErr) {
+                            console.error('❌ 背景生成報表失敗:', bgErr);
+                            await enqueuePushTask(userId, { type: 'text', text: `抱歉，產生 ${periodText} 報表時發生錯誤。` });
+                        }
+                    })();
+                    return '📊 報表生成中，資料量較大，請稍候... 完成後將會推播通知您。';
+                } else {
+                    return result; // 如果很快完成，直接回傳結果
+                }
+            } catch (err) {
+                console.error(`❌ 即時生成 ${reportType} 報表失敗:`, err);
+                return `❌ 產生 ${periodText} 報表時發生錯誤，請稍後再試。`;
+            }
+          }
         case 'student_search_results': return showStudentSearchResults(decodeURIComponent(data.get('query') || ''), page);
         case 'view_unread_messages': return showUnreadMessages(page);
         case 'view_announcements_for_deletion': return showAnnouncementsForDeletion(page);
