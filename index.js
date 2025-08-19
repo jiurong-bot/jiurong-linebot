@@ -3092,7 +3092,6 @@ async function showCourseRosterDetails(courseId) {
         if (client) client.release();
     }
 }
-// 請用這個【全新穩定版本】的函式，取代用於測試的 showStudentDetails 函式
 
 async function showStudentDetails(studentId) {
     const client = await pgPool.connect();
@@ -3180,31 +3179,14 @@ async function showStudentDetails(studentId) {
                             ]
                         }
                     ]
-                },
-                footer: {
-                    type: 'box',
-                    layout: 'vertical',
-                    spacing: 'sm',
-                    contents: [
-                        {
-                            type: 'button',
-                            style: 'secondary',
-                            height: 'sm',
-                            action: {
-                                type: 'postback',
-                                label: '✍️ 手動調整點數',
-                                data: `action=select_student_for_adjust&studentId=${studentId}`
-                            }
-                        }
-                    ]
                 }
+                // --- 已將 footer 區塊整個移除 ---
             }
         };
     } finally {
         if (client) client.release();
     }
 }
-
 
 async function handleStudentCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
