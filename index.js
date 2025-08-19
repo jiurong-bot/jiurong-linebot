@@ -1,4 +1,4 @@
-// index.js - V30 (資料庫連線重構)
+// index.js - V30.1 (資料庫連線重構)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
