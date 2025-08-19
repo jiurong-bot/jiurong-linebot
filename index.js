@@ -720,8 +720,6 @@ async function handleError(error, replyToken, context = '未知操作') {
     }
 }
 
-// 請用這整段程式碼，取代您檔案中原有的 reply 函式
-
 async function reply(replyToken, content, menu = null) {
   let messages = Array.isArray(content) ? content : (typeof content === 'string' ? [{ type: 'text', text: content }] : [content]);
   if (menu !== null && menu !== undefined) {
@@ -740,14 +738,28 @@ async function reply(replyToken, content, menu = null) {
           messages[messages.length - 1].quickReply.items.push(...validMenuItems);
       }
   }
-  try { 
-      await client.replyMessage(replyToken, messages); 
+
+  try {
+    console.log(`[REPLY-DEBUG] 準備呼叫 client.replyMessage...`);
+    // 執行 API 呼叫並儲存回傳結果
+    const result = await client.replyMessage(replyToken, messages);
+    console.log('[REPLY-DEBUG] client.replyMessage 呼叫已完成。');
+    
+    // 【雙保險第一層】檢查回傳結果是否隱含錯誤
+    // 有些情況下，錯誤不會被拋出，而是作為結果回傳
+    if (result && result.response && result.response.status >= 400) {
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+        console.error('‼️‼️‼️ API 呼叫回傳了非成功的狀態碼 ‼️‼️‼️');
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+        console.error('【LINE API 回應的詳細錯誤】:', JSON.stringify(result.response.data, null, 2));
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    }
+
   } catch (error) { 
-      // ======================= 我們修改了這裡的錯誤處理 =======================
+      // 【雙保險第二層】捕捉直接拋出的錯誤
       console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-      console.error('‼️‼️‼️ 在 reply 函式中捕捉到 API 錯誤 ‼️‼️‼️');
+      console.error('‼️‼️‼️ 在 reply 的 CATCH 中捕捉到 API 錯誤 ‼️‼️‼️');
       console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-      // 判斷並印出 LINE API 回應的詳細錯誤內容
       if (error.originalError && error.originalError.response && error.originalError.response.data) {
           console.error('【LINE API 回應的詳細錯誤】:', JSON.stringify(error.originalError.response.data, null, 2));
       } else {
@@ -755,7 +767,6 @@ async function reply(replyToken, content, menu = null) {
       }
       console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
       throw error; 
-      // ======================================================================
   }
 }
 
