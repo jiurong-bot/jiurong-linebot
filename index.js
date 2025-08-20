@@ -3291,12 +3291,6 @@ app.listen(PORT, async () => {
 
     // --- 執行資料庫遷移 ---
     console.log('🔄 正在檢查並執行資料庫遷移...');
-     // --- ↓↓↓ 新增的偵錯日誌 ↓↓↓ ---
-    console.log('--- DEBUG: Checking migrate variable ---');
-    console.log('Type of migrate is:', typeof migrate);
-    console.log('Content of migrate is:', migrate);
-    console.log('------------------------------------');
-    // --- ↑↑↑ 新增的偵錯日誌 ↑↑↑ ---
     await migrate ({
       dbClient: pgPool, // 直接使用我們已建立的連線池
       dir: 'migrations',
