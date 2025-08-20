@@ -3428,21 +3428,32 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 });
 
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
+// index.js (最下方)
 
 app.listen(PORT, async () => {
   try {
     checkEnvironmentVariables();
-    await initializeDatabase();
+
+    // --- 執行資料庫遷移 ---
+    console.log('🔄 正在檢查並執行資料庫遷移...');
+    await migrate.default({
+      dbClient: pgPool, // 直接使用我們已建立的連線池
+      dir: 'migrations',
+      direction: 'up',
+      migrationsTable: 'pgmigrations', // 這會是記錄遷移版本的表格名稱
+      log: (msg) => console.log(`[MIGRATE] ${msg}`)
+    });
+    console.log('✅ 資料庫遷移完成。');
+    // ---------------------
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
     console.log(`Bot 版本 V30.1 (資料庫連線重構)`);
 
     setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, CONSTANTS.TIME.ONE_HOUR_IN_MS);
-    // 每 6 小時執行一次清理過期課程的任務
-    const CLEANUP_INTERVAL_MS = CONSTANTS.TIME.ONE_HOUR_IN_MS * 6;
-    setInterval(cleanCoursesDB, CLEANUP_INTERVAL_MS);
-    console.log(`🧹 已設定定期清理任務，每 ${CLEANUP_INTERVAL_MS / 3600000} 小時執行一次。`);
+    const CLEANUP_INTERVAL_MS = CONSTANTS.TIME.ONE_HOUR_IN_MS * 6;
+    setInterval(cleanCoursesDB, CLEANUP_INTERVAL_MS);
+    console.log(`🧹 已設定定期清理任務，每 ${CLEANUP_INTERVAL_MS / 3600000} 小時執行一次。`);
   } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
     process.exit(1);
