@@ -3648,7 +3648,12 @@ async function handlePostback(event, user) {
         case 'view_historical_messages': return showHistoricalMessages(decodeURIComponent(data.get('query') || ''), page);
         case 'view_failed_tasks': return showFailedTasks(page);
         case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
-        
+        // ==================================
+        // [V34.0 新增] 師資管理
+        // ==================================
+        case 'list_all_teachers': {
+            return showAllTeachersList(page);
+        }
         // ==================================
         // 點數與訂單 (Points & Orders)
         // ==================================
