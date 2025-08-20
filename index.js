@@ -1897,110 +1897,82 @@ async function handleTeacherCommands(event, userId) {
   }else if (pendingMessageSearchQuery[userId]) {
     const searchQuery = text; delete pendingMessageSearchQuery[userId];
     return showHistoricalMessages(searchQuery, 1);
-  } else if (pendingTeacherProfileEdit[userId]) { 
-    } else if (pendingTeacherProfileEdit[userId]) {
-    const state = pendingTeacherProfileEdit[userId];
+    } else if (pendingTeacherProfileEdit[userId]) {
+    const state = pendingTeacherProfileEdit[userId];
+    const step = state.step;
 
-    // --- 流程一：處理首次建立檔案的設定精靈 ---
-    if (state.type === 'create') {
-        switch (state.step) {
-            case 'await_name':
-                state.profileData.name = text;
-                state.step = 'await_bio';
-                setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
-                    enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
-                });
-                return { type: 'text', text: '姓名已收到！\n接下來，請輸入您的個人簡介（例如您的教學風格、專業認證等），或輸入「無」表示留空：', quickReply: { items: getCancelMenu() } };
-            
-            case 'await_bio':
-                state.profileData.bio = text.trim().toLowerCase() === '無' ? null : text;
-                state.step = 'await_image';
-                setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
-                    enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
-                });
-                return { type: 'text', text: '簡介已收到！\n最後，請直接上傳一張您想顯示的個人照片，或輸入「無」使用預設頭像：', quickReply: { items: getCancelMenu() } };
+    // --- 處理「建立檔案」的流程 ---
+    if (state.type === 'create') {
+        switch (step) {
+            case 'await_name':
+                state.profileData.name = text;
+                state.step = 'await_bio';
+                setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
+                    enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
+                });
+                return { type: 'text', text: '姓名已收到！\n接下來，請輸入您的個人簡介（例如您的教學風格、專業認證等），或輸入「無」表示留空：', quickReply: { items: getCancelMenu() } };
+            
+            case 'await_bio':
+                state.profileData.bio = text.trim().toLowerCase() === '無' ? null : text;
+                state.step = 'await_image';
+                setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
+                    enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
+                });
+                return { type: 'text', text: '簡介已收到！\n最後，請直接上傳一張您想顯示的個人照片，或輸入「無」使用預設頭像：', quickReply: { items: getCancelMenu() } };
 
-            case 'await_image':
-                let imageUrl = null;
-                if (event.message.type === 'image') {
-                    try {
-                        const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
-                        const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                        const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
-                        imageUrl = uploadResponse.url;
-                    } catch (err) {
-                        logger.error('上傳老師照片至 ImageKit 失敗', err);
-                        delete pendingTeacherProfileEdit[userId];
-                        return '❌ 圖片上傳失敗，請重新開始建立檔案流程。';
-                    }
-                } else if (text.trim().toLowerCase() !== '無') {
-                    return { type: 'text', text: '格式錯誤，請直接上傳一張照片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
-                }
-                
-                state.profileData.image_url = imageUrl;
+            case 'await_image':
+                let imageUrl = null;
+                if (event.message.type === 'image') {
+                    try {
+                        const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
+                        const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+                        const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
+                        imageUrl = uploadResponse.url;
+                    } catch (err) {
+                        logger.error('上傳老師照片至 ImageKit 失敗', err);
+                        delete pendingTeacherProfileEdit[userId];
+                        return '❌ 圖片上傳失敗，請重新開始建立檔案流程。';
+                    }
+                } else if (text.trim().toLowerCase() !== '無') {
+                    return { type: 'text', text: '格式錯誤，請直接上傳一張照片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
+                }
+                
+                state.profileData.image_url = imageUrl;
+                
+                // 所有資料收集完畢，呼叫確認訊息產生器
+                state.step = 'await_confirmation'; // 和編輯流程共用一個確認步驟
+                state.newData = state.profileData;
+                return buildProfileConfirmationMessage(userId, state.newData);
+        }
+    } 
+    // --- 處理「編輯單一欄位」的流程 ---
+    else if (state.type === 'edit') {
+        const field = step.replace('await_', '');
+        let value;
 
-                // --- 所有資料收集完畢，一次性寫入資料庫 ---
-                const client = await pgPool.connect();
-                try {
-                    await client.query(
-                        `INSERT INTO teachers (line_user_id, name, bio, image_url) VALUES ($1, $2, $3, $4)
-                         ON CONFLICT (line_user_id) DO UPDATE SET name = $2, bio = $3, image_url = $4, updated_at = NOW()`,
-                        [userId, state.profileData.name, state.profileData.bio, state.profileData.image_url]
-                    );
-                } finally {
-                    if (client) client.release();
-                }
-                
-                delete pendingTeacherProfileEdit[userId];
-                return '✅ 恭喜！您的師資檔案已成功建立！\n您可以隨時點擊「我的個人資訊」來查看或修改。';
-        }
-    } 
-    // --- 流程二：處理單一欄位的快速編輯 ---
-    else if (state.type === 'edit') {
-        const field = state.step.replace('await_', '');
-        let value = text;
-        let successMessage = '';
-        
-        // 專門處理圖片上傳
-        if (field === 'image_url') {
-            if (event.message.type !== 'image') {
-                return { type: 'text', text: '格式錯誤，請直接上傳一張照片。', quickReply: { items: getCancelMenu() } };
-            }
-            try {
-                const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
-                const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
-                value = uploadResponse.url;
-            } catch (err) {
-                logger.error('更新老師照片至 ImageKit 失敗', err);
-                delete pendingTeacherProfileEdit[userId];
-                return '❌ 圖片上傳失敗，請稍後再試。';
-            }
-        }
+        if (field === 'image_url') {
+            if (event.message.type !== 'image') return { type: 'text', text: '格式錯誤，請直接上傳一張照片。', quickReply: { items: getCancelMenu() } };
+            try {
+                const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
+                const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+                const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
+                value = uploadResponse.url;
+            } catch (err) {
+                logger.error('更新老師照片至 ImageKit 失敗', err);
+                delete pendingTeacherProfileEdit[userId];
+                return '❌ 圖片上傳失敗，請稍後再試。';
+            }
+        } else {
+            value = text;
+        }
 
-        // --- 將單一欄位更新寫入資料庫 ---
-        const client = await pgPool.connect();
-        try {
-            // 確保老師記錄存在
-            const teacherRes = await client.query('SELECT id FROM teachers WHERE line_user_id = $1', [userId]);
-            if (teacherRes.rows.length === 0) {
-                delete pendingTeacherProfileEdit[userId];
-                return '找不到您的檔案，無法編輯。請先建立檔案。';
-            }
-
-            // 更新欄位
-            await client.query(`UPDATE teachers SET ${field} = $1, updated_at = NOW() WHERE line_user_id = $2`, [value, userId]);
-
-            if (field === 'name') successMessage = '✅ 姓名已更新！';
-            else if (field === 'bio') successMessage = '✅ 個人簡介已更新！';
-            else if (field === 'image_url') successMessage = '✅ 照片已更新！';
-        } finally {
-            if(client) client.release();
-        }
-
-        delete pendingTeacherProfileEdit[userId];
-        return successMessage;
-    }
+        // 將收集到的資料存入 state，並轉換到確認步驟
+        state.newData = { [field]: value };
+        state.step = 'await_confirmation';
+        
+        // 呼叫確認訊息產生器
+        return buildProfileConfirmationMessage(userId, state.newData);
+    }
   } else {
    
     // --- 處理一般指令 ---
