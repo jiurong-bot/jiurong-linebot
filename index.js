@@ -285,11 +285,6 @@ async function withDatabaseClient(callback) {
   }
 }
 
-let notificationStatusCache = {
-    value: true,
-    timestamp: 0
-};
-
 async function getNotificationStatus() {
     const now = Date.now();
     if (now - notificationStatusCache.timestamp < CONSTANTS.INTERVALS.NOTIFICATION_CACHE_DURATION_MS) {
