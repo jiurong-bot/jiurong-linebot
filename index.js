@@ -2068,6 +2068,69 @@ async function showStudentSearchResults(query, page) {
         return { type: 'flex', altText: `學員搜尋結果：${query}`, contents: { type: 'carousel', contents: userBubbles } };
     });
 }
+/**
+ * [V34.0 新增] 顯示所有老師的公開資訊列表
+ * @param {number} page - 頁碼
+ */
+async function showAllTeachersList(page) {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return withClient(null, async (client) => {
+        const res = await client.query(
+            "SELECT name, bio, image_url FROM teachers ORDER BY name ASC LIMIT $1 OFFSET $2",
+            [CONSTANTS.PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageTeachers = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageTeachers.length === 0 && page === 1) {
+            return '目前尚未建立任何老師的公開資訊檔案。';
+        }
+        if (pageTeachers.length === 0) {
+            return '沒有更多老師的資訊了。';
+        }
+        
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png'; // 通用頭像
+
+        const teacherBubbles = pageTeachers.map(t => ({
+            type: 'bubble',
+            hero: {
+                type: 'image',
+                url: t.image_url || placeholder_avatar,
+                size: 'full',
+                aspectRatio: '1:1',
+                aspectMode: 'cover',
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                padding: 'lg',
+                contents: [
+                    { type: 'text', text: t.name, weight: 'bold', size: 'xl', wrap: true },
+                    { 
+                        type: 'text', 
+                        text: t.bio || '這位老師尚未留下簡介。', 
+                        wrap: true, 
+                        size: 'sm', 
+                        color: '#666666', 
+                        margin: 'md' 
+                    },
+                ],
+            },
+        }));
+
+        const paginationBubble = createPaginationBubble('action=list_all_teachers', page, hasNextPage);
+        if (paginationBubble) {
+            teacherBubbles.push(paginationBubble);
+        }
+
+        return { 
+            type: 'flex', 
+            altText: '師資列表', 
+            contents: { type: 'carousel', contents: teacherBubbles } 
+        };
+    });
+}
 
 async function showPurchaseHistory(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
