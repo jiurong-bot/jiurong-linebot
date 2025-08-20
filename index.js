@@ -1854,9 +1854,42 @@ async function handleTeacherCommands(event, userId) {
     const searchQuery = text; delete pendingMessageSearchQuery[userId];
     return showHistoricalMessages(searchQuery, 1);
   } else {
+   // 在 handleTeacherCommands 函式中...
+
     // --- 處理一般指令 ---
     if (text === CONSTANTS.COMMANDS.TEACHER.COURSE_MANAGEMENT) {
-        const menu = { type: 'flex', altText: '課程管理', contents: { type: 'bubble', size: 'giga', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🗓️ 課程管理', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#343A40', paddingTop: 'lg', paddingBottom: 'lg' }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 新增課程系列', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.ADD_COURSE_SERIES)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 課程狀態查詢', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.COURSE_INQUIRY)}` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⚙️ 管理已開課程', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_OPEN_COURSES)}` } } ] } } };
+        const menu = { 
+            type: 'flex', 
+            altText: '課程與師資管理', 
+            contents: { 
+                type: 'bubble', 
+                size: 'giga', 
+                header: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    contents: [{ type: 'text', text: '🗓️ 課程與師資管理', color: '#ffffff', weight: 'bold', size: 'lg'}], 
+                    backgroundColor: '#343A40', 
+                    paddingTop: 'lg', 
+                    paddingBottom: 'lg' 
+                }, 
+                body: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    spacing: 'md', 
+                    paddingAll: 'lg', 
+                    contents: [ 
+                        { type: 'text', text: '課程功能', size: 'sm', color: '#888888', weight: 'bold' },
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 新增課程系列', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.ADD_COURSE_SERIES)}` } }, 
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 課程狀態查詢', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.COURSE_INQUIRY)}` } }, 
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⚙️ 管理已開課程', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_OPEN_COURSES)}` } },
+                        { type: 'separator', margin: 'xl' },
+                        { type: 'text', text: '師資功能', size: 'sm', color: '#888888', weight: 'bold', margin: 'lg' },
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📋 師資查詢', data: 'action=list_all_teachers&page=1' } },
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '👤 我的個人資訊', data: 'action=manage_personal_profile' } }
+                    ] 
+                } 
+            } 
+        };
         return menu;
     } else if (text === CONSTANTS.COMMANDS.TEACHER.ADD_COURSE_SERIES) {
         pendingCourseCreation[userId] = { step: 'await_title' };
