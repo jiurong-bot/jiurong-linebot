@@ -3756,7 +3756,7 @@ async function handlePostback(event, user) {
                     return {
                         type: 'text',
                         text: '您好！您尚未建立您的公開師資檔案。\n建立檔案後，您的資訊將會顯示在「師資查詢」列表中。',
-                        quickReply: { items: [{ type: 'action', action: { type:p: 'postback', label: '➕ 開始建立檔案', data: 'action=create_teacher_profile_start' } }] }
+                        quickReply: { items: [{ type: 'action', action: { type:'postback', label: '➕ 開始建立檔案', data: 'action=create_teacher_profile_start' } }] }
                     };
                 }
             });
