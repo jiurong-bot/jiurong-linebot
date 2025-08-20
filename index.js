@@ -359,7 +359,9 @@ async function enqueueBatchPushTasks(tasks) {
 }
 
 /**
+ /**
  * [V24.0] 取消超過 24 小時未付款的訂單
+ * [V31.1] 優化為批次處理通知任務
  */
 async function cancelExpiredPendingOrders() {
     try {
@@ -372,18 +374,30 @@ async function cancelExpiredPendingOrders() {
 
             if (res.rows.length > 0) {
                 console.log(`🧹 已自動取消 ${res.rows.length} 筆逾時訂單。`);
-                for (const order of res.rows) {
-                    const message = { type: 'text', text: `訂單取消通知：\n您的訂單 (ID: ...${order.order_id.slice(-6)}) 因超過24小時未完成付款，系統已自動為您取消。\n如有需要請重新購買，謝謝。` };
-                    await enqueuePushTask(order.user_id, message).catch(e => {
-                        console.error(`將逾時訂單取消通知加入佇列時失敗 for ${order.user_name} (${order.user_id})`);
-                    });
-                }
+                
+                // 步驟 1: 使用 .map() 準備所有要發送的通知任務
+                const notificationTasks = res.rows.map(order => {
+                    const message = { 
+                        type: 'text', 
+                        text: `訂單取消通知：\n您的訂單 (ID: ...${order.order_id.slice(-6)}) 因超過24小時未完成付款，系統已自動為您取消。\n如有需要請重新購買，謝謝。` 
+                    };
+                    return {
+                        recipientId: order.user_id,
+                        message: message
+                    };
+                });
+                
+                // 步驟 2: 一次性將所有任務加入佇列
+                await enqueueBatchPushTasks(notificationTasks).catch(e => {
+                    console.error(`將批次逾時訂單取消通知加入佇列時失敗`);
+                });
             }
         });
     } catch (err) {
         console.error("❌ 自動取消逾時訂單時發生錯誤:", err);
     }
 }
+ 
 /**
  * [V28.0 新增] 智慧回覆機制：取得使用者的待辦事項通知
  * @param {object} user - 使用者物件，包含 id 和 role
