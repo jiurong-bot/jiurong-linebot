@@ -16,7 +16,7 @@
     "express": "^4.19.2",
     "imagekit": "^6.0.0",
     "node-fetch": "^3.3.2",
-    "node-pg-migrate": "^8.0.3",
+    "node-pg-migrate": "^7.5.2",
     "pg": "^8.16.3",
     "pg-pool": "^3.10.1"
   }
