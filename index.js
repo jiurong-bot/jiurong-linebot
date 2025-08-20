@@ -1089,6 +1089,7 @@ const pendingTeacherAddition = {};
 const pendingTeacherRemoval = {};
 const pendingProductCreation = {};
 const pendingCourseCancellation = {};
+const pendingTeacherProfileEdit = {}; // [V34.0 新增]
 const pendingReportGeneration = {};
 const pendingAnnouncementCreation = {};
 const pendingAnnouncementDeletion = {};
