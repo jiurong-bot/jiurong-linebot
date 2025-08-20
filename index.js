@@ -2070,11 +2070,13 @@ async function showStudentSearchResults(query, page) {
 }
 /**
  * [V34.0 新增] 顯示所有老師的公開資訊列表
- * @param {number} page - 頁碼
- */
+*/
 async function showAllTeachersList(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-    return withClient(null, async (client) => {
+    
+    // 使用你專案中既有的標準連線方式
+    const client = await pgPool.connect();
+    try {
         const res = await client.query(
             "SELECT name, bio, image_url FROM teachers ORDER BY name ASC LIMIT $1 OFFSET $2",
             [CONSTANTS.PAGINATION_SIZE + 1, offset]
@@ -2129,7 +2131,9 @@ async function showAllTeachersList(page) {
             altText: '師資列表', 
             contents: { type: 'carousel', contents: teacherBubbles } 
         };
-    });
+    } finally {
+        if (client) client.release();
+    }
 }
 
 async function showPurchaseHistory(userId, page) {
