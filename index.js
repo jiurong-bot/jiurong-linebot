@@ -3722,7 +3722,8 @@ async function handlePostback(event, user) {
             return showAllTeachersList(page);
         }
         case 'manage_personal_profile': {
-            return withClient(null, async (client) => {
+            const client = await pgPool.connect();
+            try {
                 const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
                 if (res.rows.length > 0) {
                     // --- 如果已存在個人檔案，顯示資訊並提供編輯按鈕 ---
@@ -3756,10 +3757,19 @@ async function handlePostback(event, user) {
                     return {
                         type: 'text',
                         text: '您好！您尚未建立您的公開師資檔案。\n建立檔案後，您的資訊將會顯示在「師資查詢」列表中。',
-                        quickReply: { items: [{ type: 'action', action: { type:'postback', label: '➕ 開始建立檔案', data: 'action=create_teacher_profile_start' } }] }
+                        quickReply: { items: [{ 
+                            type: 'action', 
+                            action: { 
+                                type: 'postback',
+                                label: '➕ 開始建立檔案', 
+                                data: 'action=create_teacher_profile_start' 
+                            } 
+                        }] }
                     };
                 }
-            });
+            } finally {
+                if (client) client.release();
+            }
         }
         case 'create_teacher_profile_start': {
             pendingTeacherProfileEdit[userId] = { step: 'await_name' };
