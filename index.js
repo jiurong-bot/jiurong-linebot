@@ -659,53 +659,79 @@ async function handleError(error, replyToken, context = '未知操作') {
         console.error(`❌ 連錯誤回覆都失敗了:`, replyError.message);
     }
 }
+/**
+ * [V31.2 新增] 將不同格式的內容轉換為 LINE 訊息物件陣列。
+ * @param {string|object|Array<string|object>} content - 要發送的內容。
+ * @returns {Array<object>} - 標準的 LINE 訊息物件陣列。
+ */
+function buildMessages(content) {
+  const contentArray = Array.isArray(content) ? content : [content];
+  
+  return contentArray
+    .filter(item => item !== null && item !== undefined) // 過濾掉無效內容
+    .map(item => (typeof item === 'string' ? { type: 'text', text: item } : item));
+}
 
-async function reply(replyToken, content, menu = null) {
-  let messages = Array.isArray(content) ? content : (typeof content === 'string' ? [{ type: 'text', text: content }] : [content]);
-  if (menu !== null && menu !== undefined) {
-      const menuItems = Array.isArray(menu) ? menu : [];
-      const validMenuItems = menuItems.slice(0, 13).map(item => {
-          if (item.type === 'action' && (item.action.type === 'message' || item.action.type === 'postback')) {
-              return item;
-          }
-          return null;
-      }).filter(Boolean);
-
-      if (validMenuItems.length > 0 && messages.length > 0) {
-          if (!messages[messages.length - 1].quickReply) {
-              messages[messages.length - 1].quickReply = { items: [] };
-          }
-          messages[messages.length - 1].quickReply.items.push(...validMenuItems);
-      }
+/**
+ * [V31.2 新增] 將 Quick Reply 選單附加到訊息陣列的最後一則訊息上。
+ * @param {Array<object>} messages - 由 buildMessages 產生的訊息陣列。
+ * @param {Array<object>|null} menu - Quick Reply 的項目陣列。
+ * @returns {Array<object>} - 附加完 Quick Reply 的訊息陣列。
+ */
+function attachQuickReply(messages, menu) {
+  if (!menu || !Array.isArray(menu) || menu.length === 0 || messages.length === 0) {
+    return messages;
   }
 
+  // 驗證並過濾有效的 Quick Reply 項目
+  const validMenuItems = menu
+    .slice(0, 13) // Quick Reply 最多支援 13 個項目
+    .filter(item => item && item.type === 'action' && (item.action.type === 'message' || item.action.type === 'postback'));
+
+  if (validMenuItems.length > 0) {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage.quickReply) {
+      lastMessage.quickReply = { items: [] };
+    }
+    lastMessage.quickReply.items.push(...validMenuItems);
+  }
+
+  return messages;
+}
+/**
+ * [V31.2 重構] 透過組合輔助函式來回覆訊息，結構更清晰。
+ */
+async function reply(replyToken, content, menu = null) {
+  // 步驟 1: 建立標準的訊息陣列
+  let messages = buildMessages(content);
+  
+  // 步驟 2: 如果有選單，就附加 Quick Reply
+  messages = attachQuickReply(messages, menu);
+
+  // 如果最終沒有任何有效訊息，就直接返回，避免呼叫空的 API
+  if (messages.length === 0) {
+    console.log('[REPLY-DEBUG] 沒有有效的訊息可以發送，已取消操作。');
+    return;
+  }
+
+  // 步驟 3: 執行 API 呼叫
   try {
     console.log(`[REPLY-DEBUG] 準備呼叫 client.replyMessage...`);
-    // 執行 API 呼叫並儲存回傳結果
     const result = await client.replyMessage(replyToken, messages);
     console.log('[REPLY-DEBUG] client.replyMessage 呼叫已完成。');
     
-    // 【雙保險第一層】檢查回傳結果是否隱含錯誤
-    // 有些情況下，錯誤不會被拋出，而是作為結果回傳
+    // API 錯誤的雙重檢查
     if (result && result.response && result.response.status >= 400) {
-        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-        console.error('‼️‼️‼️ API 呼叫回傳了非成功的狀態碼 ‼️‼️‼️');
-        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-        console.error('【LINE API 回應的詳細錯誤】:', JSON.stringify(result.response.data, null, 2));
-        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+        console.error('‼️ API 呼叫回傳了非成功的狀態碼 ‼️', JSON.stringify(result.response.data, null, 2));
     }
 
   } catch (error) { 
-      // 【雙保險第二層】捕捉直接拋出的錯誤
-      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-      console.error('‼️‼️‼️ 在 reply 的 CATCH 中捕捉到 API 錯誤 ‼️‼️‼️');
-      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      console.error('‼️ 在 reply 的 CATCH 中捕捉到 API 錯誤 ‼️');
       if (error.originalError && error.originalError.response && error.originalError.response.data) {
           console.error('【LINE API 回應的詳細錯誤】:', JSON.stringify(error.originalError.response.data, null, 2));
       } else {
           console.error('【捕獲到的基本錯誤訊息】:', error.message);
       }
-      console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
       throw error; 
   }
 }
