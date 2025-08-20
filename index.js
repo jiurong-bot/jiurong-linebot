@@ -1,6 +1,5 @@
 // index.js - V30.1 (資料庫連線重構)
 require('dotenv').config();
-const migrate = require('node-pg-migrate');
 const line = require('@line/bot-sdk');
 const express = require('express');
 const { Pool } = require('pg');
