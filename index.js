@@ -141,6 +141,50 @@ const CONSTANTS = {
     }
   }
 };
+// =======================================================
+// [V31.3 新增] 通用快取工具
+// =======================================================
+const simpleCache = {
+  _cache: new Map(),
+
+  /**
+   * 設定一筆快取資料
+   * @param {string} key - 快取的鍵
+   * @param {*} value - 要快取的值
+   * @param {number} ttlMs - 快取的存活時間 (毫秒)
+   */
+  set(key, value, ttlMs) {
+    const expires = Date.now() + ttlMs;
+    this._cache.set(key, { value, expires });
+  },
+
+  /**
+   * 讀取一筆快取資料
+   * @param {string} key - 快取的鍵
+   * @returns {*} - 如果快取存在且未過期，則回傳其值，否則回傳 null
+   */
+  get(key) {
+    const entry = this._cache.get(key);
+    // 檢查是否存在，且尚未過期
+    if (entry && Date.now() < entry.expires) {
+      return entry.value;
+    }
+    // 如果已過期，可以順便清除它 (可選)
+    if (entry) {
+        this._cache.delete(key);
+    }
+    return null;
+  },
+
+  /**
+   * 清除一筆指定的快取
+   * @param {string} key - 快取的鍵
+   */
+  clear(key) {
+    this._cache.delete(key);
+  }
+};
+
 /**
  * 檢查所有必要的環境變數是否已設定。
  * 如果有任何缺少的變數，將記錄錯誤並終止應用程式。
