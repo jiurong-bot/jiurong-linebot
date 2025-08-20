@@ -1572,7 +1572,9 @@ async function handleTeacherCommands(event, userId) {
         delete pendingAnnouncementDeletion[userId];
         return '✅ 公告已成功刪除。';
     } else { return '請點擊「確認刪除」或「取消操作」。'; }
-  } else if (pendingCourseCancellation[userId]) {
+  } else 
+    ############
+    if (pendingCourseCancellation[userId]) {
     const state = pendingCourseCancellation[userId];
     switch(state.type) {
       case 'batch':
@@ -1617,6 +1619,7 @@ async function handleTeacherCommands(event, userId) {
         break;
     }
   }
+      ##############
   else if (pendingCourseCreation[userId]) {
     const state = pendingCourseCreation[userId];
     switch (state.step) {
