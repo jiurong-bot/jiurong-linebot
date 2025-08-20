@@ -3856,7 +3856,7 @@ async function handlePostback(event, user) {
             });
             return { type: 'text', text: '好的，我們開始建立您的師資檔案。\n\n首先，請輸入您希望顯示的姓名或暱稱：', quickReply: { items: getCancelMenu() } };
         }
-        case 'edit_teacher_profile_field': {
+                case 'edit_teacher_profile_field': {
             const field = data.get('field');
             const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
             const promptMap = {
@@ -3865,12 +3865,33 @@ async function handlePostback(event, user) {
                 image_url: '請直接上傳一張您想更換的個人照片：'
             };
 
+            // 我們只處理編輯流程
             pendingTeacherProfileEdit[userId] = { type: 'edit', step: `await_${field}` };
             setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
                 enqueuePushTask(u, { type: 'text', text: `編輯${fieldMap[field]}操作逾時，自動取消。` });
             });
 
             return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
+        }
+        case 'confirm_teacher_profile_update': {
+            const state = pendingTeacherProfileEdit[userId];
+            if (!state || state.step !== 'await_confirmation' || !state.newData) {
+                return '確認操作已逾時或無效，請重新操作。';
+            }
+            const newData = state.newData;
+            const client = await pgPool.connect();
+            try {
+                const fields = Object.keys(newData);
+                const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+                const values = Object.values(newData);
+                
+                await client.query(`UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`, [...values, userId]);
+            } finally {
+                if(client) client.release();
+            }
+
+            delete pendingTeacherProfileEdit[userId];
+            return '✅ 您的個人檔案已成功更新！';
         }
         case 'confirm_teacher_profile_update': {
             const state = pendingTeacherProfileEdit[userId];
