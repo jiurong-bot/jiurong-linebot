@@ -284,25 +284,39 @@ async function withDatabaseClient(callback) {
     if (client) client.release();
   }
 }
-
+/**
+ * [V31.3 重構] 使用通用快取工具來讀取推播設定
+ */
 async function getNotificationStatus() {
-    const now = Date.now();
-    if (now - notificationStatusCache.timestamp < CONSTANTS.INTERVALS.NOTIFICATION_CACHE_DURATION_MS) {
-        return notificationStatusCache.value;
+    const cacheKey = 'notifications_enabled';
+    const ttl = CONSTANTS.INTERVALS.NOTIFICATION_CACHE_DURATION_MS;
+
+    // 步驟 1: 嘗試從快取中讀取
+    const cachedStatus = simpleCache.get(cacheKey);
+    if (cachedStatus !== null) {
+        // 快取命中，直接回傳
+        return cachedStatus;
     }
-    
+
+    // 步驟 2: 快取未命中，從資料庫讀取
     try {
+        let isEnabled = true; // 預設值為 true，以防資料庫查詢失敗時卡住所有通知
         await withDatabaseClient(async (db) => {
             const res = await db.query("SELECT setting_value FROM system_settings WHERE setting_key = 'notifications_enabled'");
             if (res.rows.length > 0) {
-                const isEnabled = res.rows[0].setting_value === 'true';
-                notificationStatusCache = { value: isEnabled, timestamp: now };
+                isEnabled = res.rows[0].setting_value === 'true';
             }
         });
+        
+        // 步驟 3: 將從資料庫讀取到的新值寫入快取
+        simpleCache.set(cacheKey, isEnabled, ttl);
+        return isEnabled;
+
     } catch (err) {
         console.error('❌ 讀取推播設定失敗:', err);
+        // 在發生錯誤時回傳一個安全的預設值
+        return true;
     }
-    return notificationStatusCache.value;
 }
 
 /**
