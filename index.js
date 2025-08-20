@@ -3762,7 +3762,7 @@ async function handlePostback(event, user) {
         case 'list_all_teachers': {
             return showAllTeachersList(page);
         }
-        case 'manage_personal_profile': {
+                case 'manage_personal_profile': {
             const client = await pgPool.connect();
             try {
                 const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
@@ -3777,14 +3777,16 @@ async function handlePostback(event, user) {
                             type: 'bubble',
                             hero: { type: 'image', url: profile.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
                             body: {
-                                type: 'box', layout: 'vertical', padding: 'lg', spacing: 'md',
+                                type: 'box', layout: 'vertical', spacing: 'md',
+                                paddingAll: 'lg', // <--- 修正點 1
                                 contents: [
                                     { type: 'text', text: profile.name, weight: 'bold', size: 'xl' },
                                     { type: 'text', text: profile.bio || '尚未填寫簡介', wrap: true, size: 'sm', color: '#666666' }
                                 ]
                             },
                             footer: {
-                                type: 'box', layout: 'vertical', spacing: 'sm', padding: 'lg',
+                                type: 'box', layout: 'vertical', spacing: 'sm',
+                                paddingAll: 'lg', // <--- 修正點 2
                                 contents: [
                                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯姓名', data: `action=edit_teacher_profile_field&field=name` } },
                                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯簡介', data: `action=edit_teacher_profile_field&field=bio` } },
