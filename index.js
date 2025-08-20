@@ -1068,6 +1068,49 @@ async function buildPointsMenuFlex(userId) {
         }
     };
 }
+/**
+ * [V34.1 新增] 建立一個顯示老師個人資訊變更並請求確認的 Flex Message
+ * @param {string} userId - 使用者的 ID
+ * @param {object} newData - 一個包含待更新欄位和值的物件，例如 { name: '新名字' }
+ */
+async function buildProfileConfirmationMessage(userId, newData) {
+    const fieldMap = { name: '姓名', bio: '簡介', image_url: '照片' };
+    const updatedFields = Object.keys(newData).map(key => fieldMap[key] || key).join('、');
+
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
+        const currentProfile = res.rows[0] || { name: '新老師', bio: '尚未填寫簡介', image_url: null };
+        const previewProfile = { ...currentProfile, ...newData };
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+        
+        return {
+            type: 'flex',
+            altText: `確認更新您的${updatedFields}`,
+            contents: {
+                type: 'bubble',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `⚠️ 請確認更新內容`, weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#FFC107' },
+                hero: { type: 'image', url: previewProfile.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                body: {
+                    type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md',
+                    contents: [
+                        { type: 'text', text: previewProfile.name, weight: 'bold', size: 'xl' },
+                        { type: 'text', text: previewProfile.bio || '尚未填寫簡介', wrap: true, size: 'sm', color: '#666666' }
+                    ]
+                },
+                footer: {
+                    type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg',
+                    contents: [
+                        { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: `✅ 確認更新${updatedFields}`, data: 'action=confirm_teacher_profile_update' } },
+                        { type: 'button', style: 'secondary', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            }
+        };
+    } finally {
+        if (client) client.release();
+    }
+}
 
 const WEEKDAYS = [
     { label: '週日', value: 0 }, { label: '週一', value: 1 }, { label: '週二', value: 2 },
