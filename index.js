@@ -303,6 +303,62 @@ async function enqueuePushTask(recipientId, message, sendAt = null) {
   }
 }
 /**
+ * [V31.1 新增] 將多個推播任務批次加入到資料庫佇列中
+ * @param {Array<object>} tasks - 任務物件的陣列，每個物件應包含 { recipientId: string, message: object|object[] }
+ */
+async function enqueueBatchPushTasks(tasks) {
+  if (!tasks || tasks.length === 0) {
+    return;
+  }
+
+  // 與單一任務函式一樣，檢查系統推播設定
+  const systemRecipients = [TEACHER_ID, ADMIN_USER_ID];
+  let tasksToEnqueue = tasks;
+
+  // 只有在任務列表中包含系統管理員/老師時，才需要檢查推播開關
+  if (tasks.some(t => systemRecipients.includes(t.recipientId))) {
+    const notificationsEnabled = await getNotificationStatus();
+    if (!notificationsEnabled) {
+      console.log(`[DEV MODE] 系統推播功能已關閉，已過濾掉傳送給老師/管理員的批次通知。`);
+      tasksToEnqueue = tasks.filter(t => !systemRecipients.includes(t.recipientId));
+      if (tasksToEnqueue.length === 0) return; // 如果過濾後沒有任務了，就直接返回
+    }
+  }
+
+  try {
+    const recipientIds = [];
+    const messagePayloads = [];
+    const sendTimestamps = [];
+    const now = new Date().toISOString();
+
+    tasksToEnqueue.forEach(task => {
+      const messagePayload = Array.isArray(task.message) ? task.message : [task.message];
+      const validMessages = messagePayload.filter(m => typeof m === 'object' && m !== null && m.type);
+      if (validMessages.length > 0) {
+        recipientIds.push(task.recipientId);
+        messagePayloads.push(JSON.stringify(validMessages));
+        sendTimestamps.push(now); // 所有批次任務使用相同的時間戳
+      } else {
+        console.error(`[enqueueBatchPushTasks] 嘗試為 ${task.recipientId} 加入無效的訊息 payload`, task.message);
+      }
+    });
+
+    if (recipientIds.length === 0) return;
+
+    await withDatabaseClient(async (db) => {
+      // 使用 unnest 進行高效的批次插入
+      await db.query(
+        `INSERT INTO tasks (recipient_id, message_payload, send_at)
+         SELECT * FROM unnest($1::text[], $2::jsonb[], $3::timestamp[])`,
+        [recipientIds, messagePayloads, sendTimestamps]
+      );
+    });
+  } catch (err) {
+    console.error(`❌ enqueueBatchPushTasks 批次寫入任務失敗:`, err);
+  }
+}
+
+/**
  * [V24.0] 取消超過 24 小時未付款的訂單
  */
 async function cancelExpiredPendingOrders() {
