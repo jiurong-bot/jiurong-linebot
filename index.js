@@ -1854,9 +1854,71 @@ async function handleTeacherCommands(event, userId) {
   }else if (pendingMessageSearchQuery[userId]) {
     const searchQuery = text; delete pendingMessageSearchQuery[userId];
     return showHistoricalMessages(searchQuery, 1);
-  } else {
-   // 在 handleTeacherCommands 函式中...
+  } else if (pendingTeacherProfileEdit[userId]) { 
+    const state = pendingTeacherProfileEdit[userId];
+    const client = await pgPool.connect();
+    try {
+        await client.query('BEGIN');
+        // 確保 teachers 記錄存在，若不存在則建立一筆
+        let teacherRes = await client.query('SELECT * FROM teachers WHERE line_user_id = $1 FOR UPDATE', [userId]);
+        if (teacherRes.rows.length === 0) {
+            const user = await getUser(userId, client); // 取得使用者在 users 表的預設名稱
+            await client.query('INSERT INTO teachers (name, line_user_id) VALUES ($1, $2)', [user.name, userId]);
+            teacherRes = await client.query('SELECT * FROM teachers WHERE line_user_id = $1 FOR UPDATE', [userId]);
+        }
+        const teacherProfile = teacherRes.rows[0];
 
+        switch (state.step) {
+            case 'await_name':
+                teacherProfile.name = text;
+                await client.query('UPDATE teachers SET name = $1, updated_at = NOW() WHERE id = $2', [text, teacherProfile.id]);
+                await client.query('COMMIT');
+                delete pendingTeacherProfileEdit[userId];
+                return '✅ 姓名已更新！\n您可以隨時點擊「我的個人資訊」查看或修改其他項目。';
+
+            case 'await_bio':
+                teacherProfile.bio = text;
+                await client.query('UPDATE teachers SET bio = $1, updated_at = NOW() WHERE id = $2', [text, teacherProfile.id]);
+                await client.query('COMMIT');
+                delete pendingTeacherProfileEdit[userId];
+                return '✅ 個人簡介已更新！';
+
+            case 'await_image_url':
+                let imageUrl = null;
+                if (event.message.type !== 'image') {
+                    await client.query('ROLLBACK');
+                    return { type: 'text', text: '格式錯誤，請直接上傳一張照片，或點擊「取消操作」。', quickReply: { items: getCancelMenu() } };
+                }
+                
+                try {
+                    const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
+                    const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+                    const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
+                    imageUrl = uploadResponse.url;
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    logger.error('上傳老師照片至 ImageKit 失敗', err);
+                    return '❌ 圖片上傳失敗，請稍後再試。';
+                }
+
+                if (imageUrl) {
+                    await client.query('UPDATE teachers SET image_url = $1, updated_at = NOW() WHERE id = $2', [imageUrl, teacherProfile.id]);
+                    await client.query('COMMIT');
+                    delete pendingTeacherProfileEdit[userId];
+                    return '✅ 照片已更新！';
+                }
+                break;
+        }
+    } catch (err) {
+        await client.query('ROLLBACK');
+        logger.error(`編輯老師個人檔案 user: ${userId}`, err);
+        delete pendingTeacherProfileEdit[userId];
+        return '處理您的請求時發生錯誤，請稍後再試。';
+    } finally {
+        if (client) client.release();
+    }
+  } else {
+   
     // --- 處理一般指令 ---
     if (text === CONSTANTS.COMMANDS.TEACHER.COURSE_MANAGEMENT) {
         const menu = { 
