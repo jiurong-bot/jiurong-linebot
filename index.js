@@ -3291,7 +3291,7 @@ app.listen(PORT, async () => {
 
     // --- 執行資料庫遷移 ---
     console.log('🔄 正在檢查並執行資料庫遷移...');
-    await migrate.default({
+    await migrate ({
       dbClient: pgPool, // 直接使用我們已建立的連線池
       dir: 'migrations',
       direction: 'up',
