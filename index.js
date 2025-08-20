@@ -3799,13 +3799,14 @@ async function handlePostback(event, user) {
         case 'view_historical_messages': return showHistoricalMessages(decodeURIComponent(data.get('query') || ''), page);
         case 'view_failed_tasks': return showFailedTasks(page);
         case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
+        
         // ==================================
-        // [V34.0 新增] 師資管理
+        // [V34.0 & V34.1] 師資管理
         // ==================================
         case 'list_all_teachers': {
             return showAllTeachersList(page);
         }
-                case 'manage_personal_profile': {
+        case 'manage_personal_profile': {
             const client = await pgPool.connect();
             try {
                 const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
@@ -3820,16 +3821,14 @@ async function handlePostback(event, user) {
                             type: 'bubble',
                             hero: { type: 'image', url: profile.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
                             body: {
-                                type: 'box', layout: 'vertical', spacing: 'md',
-                                paddingAll: 'lg', // <--- 修正點 1
+                                type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md',
                                 contents: [
                                     { type: 'text', text: profile.name, weight: 'bold', size: 'xl' },
                                     { type: 'text', text: profile.bio || '尚未填寫簡介', wrap: true, size: 'sm', color: '#666666' }
                                 ]
                             },
                             footer: {
-                                type: 'box', layout: 'vertical', spacing: 'sm',
-                                paddingAll: 'lg', // <--- 修正點 2
+                                type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg',
                                 contents: [
                                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯姓名', data: `action=edit_teacher_profile_field&field=name` } },
                                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯簡介', data: `action=edit_teacher_profile_field&field=bio` } },
@@ -3843,14 +3842,7 @@ async function handlePostback(event, user) {
                     return {
                         type: 'text',
                         text: '您好！您尚未建立您的公開師資檔案。\n建立檔案後，您的資訊將會顯示在「師資查詢」列表中。',
-                        quickReply: { items: [{ 
-                            type: 'action', 
-                            action: { 
-                                type: 'postback',
-                                label: '➕ 開始建立檔案', 
-                                data: 'action=create_teacher_profile_start' 
-                            } 
-                        }] }
+                        quickReply: { items: [{ type: 'action', action: { type: 'postback', label: '➕ 開始建立檔案', data: 'action=create_teacher_profile_start' } }] }
                     };
                 }
             } finally {
@@ -3858,9 +3850,8 @@ async function handlePostback(event, user) {
             }
         }
         case 'create_teacher_profile_start': {
-            // 標記這是一個 "建立" 流程
             pendingTeacherProfileEdit[userId] = { type: 'create', step: 'await_name', profileData: {} };
-            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
+            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfile-Edit', (u) => {
                 enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
             });
             return { type: 'text', text: '好的，我們開始建立您的師資檔案。\n\n首先，請輸入您希望顯示的姓名或暱稱：', quickReply: { items: getCancelMenu() } };
@@ -3869,12 +3860,11 @@ async function handlePostback(event, user) {
             const field = data.get('field');
             const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
             const promptMap = {
-                name: '請輸入您新的姓名或暱稱：',
-                bio: '請輸入您新的個人簡介 (可換行)：',
-                image_url: '請直接上傳一張您新的個人照片：'
+                name: '請輸入您想更新的姓名或暱稱：',
+                bio: '請輸入您想更新的個人簡介 (可換行)：',
+                image_url: '請直接上傳一張您想更換的個人照片：'
             };
 
-            // 標記這是一個 "編輯" 流程
             pendingTeacherProfileEdit[userId] = { type: 'edit', step: `await_${field}` };
             setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
                 enqueuePushTask(u, { type: 'text', text: `編輯${fieldMap[field]}操作逾時，自動取消。` });
@@ -3882,23 +3872,31 @@ async function handlePostback(event, user) {
 
             return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
         }
+        case 'confirm_teacher_profile_update': {
+            const state = pendingTeacherProfileEdit[userId];
+            if (!state || state.step !== 'await_confirmation' || !state.newData) {
+                return '確認操作已逾時或無效，請重新操作。';
+            }
+            const newData = state.newData;
+            const client = await pgPool.connect();
+            try {
+                const fields = Object.keys(newData);
+                const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+                const values = Object.values(newData);
+                
+                await client.query(`UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`, [...values, userId]);
+            } finally {
+                if(client) client.release();
+            }
 
-        case 'edit_teacher_profile_field': {
-            const field = data.get('field');
-            const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
-            const promptMap = {
-                name: '請輸入您新的姓名或暱稱：',
-                bio: '請輸入您新的個人簡介 (可換行)：',
-                image_url: '請直接上傳一張您新的個人照片：'
-            };
-
-            pendingTeacherProfileEdit[userId] = { step: `await_${field}` };
-            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
-                enqueuePushTask(u, { type: 'text', text: `編輯${fieldMap[field]}操作逾時，自動取消。` });
-            });
-
-            return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
+            delete pendingTeacherProfileEdit[userId];
+            return '✅ 您的個人檔案已成功更新！';
         }
+
+
+       
+
+           
 
         // ==================================
         // 點數與訂單 (Points & Orders)
