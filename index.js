@@ -3659,6 +3659,70 @@ async function handlePostback(event, user) {
         case 'list_all_teachers': {
             return showAllTeachersList(page);
         }
+        case 'manage_personal_profile': {
+            return withClient(null, async (client) => {
+                const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
+                if (res.rows.length > 0) {
+                    // --- 如果已存在個人檔案，顯示資訊並提供編輯按鈕 ---
+                    const profile = res.rows[0];
+                    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+                    return {
+                        type: 'flex',
+                        altText: '我的個人資訊',
+                        contents: {
+                            type: 'bubble',
+                            hero: { type: 'image', url: profile.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                            body: {
+                                type: 'box', layout: 'vertical', padding: 'lg', spacing: 'md',
+                                contents: [
+                                    { type: 'text', text: profile.name, weight: 'bold', size: 'xl' },
+                                    { type: 'text', text: profile.bio || '尚未填寫簡介', wrap: true, size: 'sm', color: '#666666' }
+                                ]
+                            },
+                            footer: {
+                                type: 'box', layout: 'vertical', spacing: 'sm', padding: 'lg',
+                                contents: [
+                                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯姓名', data: `action=edit_teacher_profile_field&field=name` } },
+                                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯簡介', data: `action=edit_teacher_profile_field&field=bio` } },
+                                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📷 更換照片', data: `action=edit_teacher_profile_field&field=image_url` } },
+                                ]
+                            }
+                        }
+                    };
+                } else {
+                    // --- 如果不存在，提示使用者建立 ---
+                    return {
+                        type: 'text',
+                        text: '您好！您尚未建立您的公開師資檔案。\n建立檔案後，您的資訊將會顯示在「師資查詢」列表中。',
+                        quickReply: { items: [{ type: 'action', action: { type:p: 'postback', label: '➕ 開始建立檔案', data: 'action=create_teacher_profile_start' } }] }
+                    };
+                }
+            });
+        }
+        case 'create_teacher_profile_start': {
+            pendingTeacherProfileEdit[userId] = { step: 'await_name' };
+            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
+            });
+            return { type: 'text', text: '好的，我們開始建立您的師資檔案。\n\n首先，請輸入您希望顯示的姓名或暱稱：', quickReply: { items: getCancelMenu() } };
+        }
+        case 'edit_teacher_profile_field': {
+            const field = data.get('field');
+            const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
+            const promptMap = {
+                name: '請輸入您新的姓名或暱稱：',
+                bio: '請輸入您新的個人簡介 (可換行)：',
+                image_url: '請直接上傳一張您新的個人照片：'
+            };
+
+            pendingTeacherProfileEdit[userId] = { step: `await_${field}` };
+            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
+                enqueuePushTask(u, { type: 'text', text: `編輯${fieldMap[field]}操作逾時，自動取消。` });
+            });
+
+            return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
+        }
+
         // ==================================
         // 點數與訂單 (Points & Orders)
         // ==================================
