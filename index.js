@@ -3772,12 +3772,31 @@ async function handlePostback(event, user) {
             }
         }
         case 'create_teacher_profile_start': {
-            pendingTeacherProfileEdit[userId] = { step: 'await_name' };
+            // 標記這是一個 "建立" 流程
+            pendingTeacherProfileEdit[userId] = { type: 'create', step: 'await_name', profileData: {} };
             setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
                 enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
             });
             return { type: 'text', text: '好的，我們開始建立您的師資檔案。\n\n首先，請輸入您希望顯示的姓名或暱稱：', quickReply: { items: getCancelMenu() } };
         }
+        case 'edit_teacher_profile_field': {
+            const field = data.get('field');
+            const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
+            const promptMap = {
+                name: '請輸入您新的姓名或暱稱：',
+                bio: '請輸入您新的個人簡介 (可換行)：',
+                image_url: '請直接上傳一張您新的個人照片：'
+            };
+
+            // 標記這是一個 "編輯" 流程
+            pendingTeacherProfileEdit[userId] = { type: 'edit', step: `await_${field}` };
+            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
+                enqueuePushTask(u, { type: 'text', text: `編輯${fieldMap[field]}操作逾時，自動取消。` });
+            });
+
+            return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
+        }
+
         case 'edit_teacher_profile_field': {
             const field = data.get('field');
             const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
