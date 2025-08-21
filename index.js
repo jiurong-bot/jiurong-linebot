@@ -2833,7 +2833,7 @@ async function showPendingOrders(page) {
     });
 }
 /**
- * [V37.0 最終升級] 智慧化課程列表，整合顯示個人狀態與候補功能
+ * [V37.2 最終修正] 移除 SQL 過濾條件，讓已報名者也能看到課程並加入候補
  */
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2841,7 +2841,7 @@ async function showAvailableCourses(userId, page) {
     try {
         const sevenDaysLater = new Date(Date.now() + 7 * CONSTANTS.TIME.ONE_DAY_IN_MS);
         
-        // [V37.0 修改] 移除 SQL 中的過濾條件，改由程式邏輯處理，並查詢候補人數
+        // [V37.2 修正] 移除 WHERE 子句中過濾使用者是否已在 students 或 waiting 陣列的條件
         const coursesRes = await client.query(
             `SELECT 
                 c.*, 
@@ -2857,10 +2857,12 @@ async function showAvailableCourses(userId, page) {
         );
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
+        // 我們不過濾 SQL，但在顯示前過濾掉使用者已在候補中的課程
+        const pageCourses = (hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows)
+            .filter(c => !(c.waiting || []).includes(userId));
 
         if (pageCourses.length === 0 && page === 1) {
-            return '抱歉，未来 7 天內沒有任何課程。';
+            return '抱歉，未来 7 天內沒有可預約或候補的課程。';
         }
         if (pageCourses.length === 0) {
             return '沒有更多課程了。';
@@ -2869,49 +2871,36 @@ async function showAvailableCourses(userId, page) {
         const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
 
         const courseBubbles = pageCourses.map(c => {
-            // [V37.0 新增] 判斷使用者與課程的關係
             const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
-            const isUserOnWaitingList = (c.waiting || []).includes(userId);
             const studentCount = c.students?.length || 0;
             const isFull = studentCount >= c.capacity;
-
+            
             let userStatusComponent = null;
             let courseStatusComponent;
             let footerButton;
 
-            if (isUserOnWaitingList) {
-                userStatusComponent = { type: 'text', text: '🕒 您已在候補名單中', color: '#FFA500', size: 'sm', weight: 'bold', margin: 'md' };
-                footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'message', label: '您已在候補中', text: '我已在候補名單' }, color: '#AAAAAA' };
-            } else {
-                if (spotsBookedByUser > 0) {
-                    userStatusComponent = { type: 'text', text: `✅ 您已預約 ${spotsBookedByUser} 位`, color: '#28a745', size: 'sm', weight: 'bold', margin: 'md' };
-                }
+            if (spotsBookedByUser > 0) {
+                userStatusComponent = { type: 'text', text: `✅ 您已預約 ${spotsBookedByUser} 位`, color: '#28a745', size: 'sm', weight: 'bold', margin: 'md' };
+            }
 
-                if (isFull) {
-                    courseStatusComponent = { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '🕒', weight: 'bold', color: '#FFA500', flex: 0, size: 'sm' }, { type: 'text', text: `候補中 (${c.waiting_count}人)`, size: 'sm', color: '#555555', margin: 'xs' } ] };
-                    footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '加入候補', data: `action=join_waiting_list&course_id=${c.id}` } };
-                } else {
-                    const remainingSpots = c.capacity - studentCount;
-                    const spotsStatus = remainingSpots >= 4 ? '名額充足' : '名額緊張';
-                    const spotsColor = remainingSpots >= 4 ? '#52B69A' : '#FFC107';
-                    courseStatusComponent = { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '●', color: spotsColor, size: 'sm', flex: 0, gravity: 'center' }, { type: 'text', text: `${spotsStatus} (剩 ${remainingSpots} 位)`, size: 'sm', color: '#555555', gravity: 'center', margin: 'xs' } ] };
-                    footerButton = { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '預約此課程', data: `action=select_booking_spots&course_id=${c.id}` }, color: '#52B69A' };
-                }
+            if (isFull) {
+                courseStatusComponent = { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '🕒', weight: 'bold', color: '#FFA500', flex: 0, size: 'sm' }, { type: 'text', text: `候補中 (${c.waiting_count}人)`, size: 'sm', color: '#555555', margin: 'xs' } ] };
+                footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '加入候補 (追加名額)', data: `action=join_waiting_list&course_id=${c.id}` } };
+            } else {
+                const remainingSpots = c.capacity - studentCount;
+                const spotsStatus = remainingSpots >= 4 ? '名額充足' : '名額緊張';
+                const spotsColor = remainingSpots >= 4 ? '#52B69A' : '#FFC107';
+                courseStatusComponent = { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '●', color: spotsColor, size: 'sm', flex: 0, gravity: 'center' }, { type: 'text', text: `${spotsStatus} (剩 ${remainingSpots} 位)`, size: 'sm', color: '#555555', gravity: 'center', margin: 'xs' } ] };
+                footerButton = { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '預約此課程', data: `action=select_booking_spots&course_id=${c.id}` }, color: '#52B69A' };
             }
             
             const bodyContents = [
                 { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
-                ...(userStatusComponent ? [userStatusComponent] : []), // 動態加入使用者狀態
+                ...(userStatusComponent ? [userStatusComponent] : []),
                 { type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md', contents: [ { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png', size: 'sm' }, { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' } ] },
                 { type: 'text', text: c.teacher_bio || '', wrap: true, size: 'sm', color: '#888888', margin: 'sm' },
                 { type: 'separator', margin: 'lg' },
-                { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
-                    contents: [
-                        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555', flex: 0 } ] },
-                        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png', size: 'sm' }, { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#555555', flex: 0 } ] },
-                        courseStatusComponent
-                    ]
-                }
+                { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm', contents: [ { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555', flex: 0 } ] }, { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png', size: 'sm' }, { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#555555', flex: 0 } ] }, courseStatusComponent ] }
             ];
 
             return {
@@ -2921,6 +2910,8 @@ async function showAvailableCourses(userId, page) {
                 footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', contents: [ footerButton ] }
             };
         });
+        
+        if (pageCourses.length === 0 && page === 1) { return '您好，目前沒有其他您可以預約或候補的課程了。'; }
         
         const paginationBubble = createPaginationBubble('action=view_available_courses', page, hasNextPage);
         if (paginationBubble) { courseBubbles.push(paginationBubble); }
