@@ -2926,18 +2926,16 @@ async function showAvailableCourses(userId, page) {
     }
 }
 // ################
-  /**
- * [V37.9 FINAL DEBUG] 加入詳細日誌，追蹤候補課程為何沒有顯示
+/**
+ * [V38.0 最終完美版] 能夠處理使用者同時是學員也是候補的特殊情況
  */
 async function showMyCourses(userId, page) {
-    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    // Offset logic remains the same, so we query all related courses first
     const client = await pgPool.connect();
     try {
-        console.log(`[DEBUG] 準備為使用者 ${userId} 查詢我的課程...`);
-        
-        const query = `
-            SELECT 
-                c.id, c.title, c.time, c.students, c.waiting,
+        const res = await client.query(
+            `SELECT 
+                c.*, 
                 t.name AS teacher_name, 
                 t.image_url AS teacher_image_url
              FROM courses c
@@ -2945,58 +2943,84 @@ async function showMyCourses(userId, page) {
              WHERE (
                 c.students @> ARRAY[$1]::text[] OR c.waiting @> ARRAY[$1]::text[]
              ) AND c.time > NOW()
-             ORDER BY c.time ASC LIMIT $2 OFFSET $3`;
-        
-        console.log('[DEBUG] 將要執行的 SQL 查詢:', query.replace(/\s+/g, ' ').trim());
-        const res = await client.query(query, [userId, CONSTANTS.PAGINATION_SIZE + 1, offset]);
-        
-        console.log(`[DEBUG] 資料庫查詢完畢，共回傳了 ${res.rows.length} 筆課程。`);
-        if (res.rows.length > 0) {
-            res.rows.forEach((row, index) => {
-                console.log(`[DEBUG] 第 ${index + 1} 筆課程 (${row.id}) - students: [${row.students}], waiting: [${row.waiting}]`);
-            });
-        }
+             ORDER BY c.time ASC`, // Temporarily remove LIMIT/OFFSET to process all courses
+            [userId]
+        );
 
-        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
+        
+        // [V38.0 修改] 使用 flatMap 來為每個狀態產生獨立的卡片
+        const allCourseCards = res.rows.flatMap(c => {
+            const cards = [];
+            const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
+            const isUserOnWaitingList = (c.waiting || []).includes(userId);
 
-        if (pageCourses.length === 0 && page === 1) {
-            console.log(`[DEBUG] 沒有找到任何課程，將回傳「無課程」訊息。`);
+            // 如果使用者是學員，為他產生一張「已預約」的卡片
+            if (spotsBookedByUser > 0) {
+                const statusText = `✅ 已預約 (${spotsBookedByUser}位)`;
+                const statusColor = '#28a745';
+                cards.push({
+                    course: c,
+                    statusComponent: { type: 'box', layout: 'vertical', backgroundColor: statusColor, cornerRadius: 'md', paddingAll: 'sm', alignSelf: 'flex-start', contents: [{ type: 'text', text: statusText, color: '#ffffff', size: 'xs', weight: 'bold' }] },
+                    footerButton: { type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: `取消 ${spotsBookedByUser > 1 ? '1位' : ''}預約`, data: `action=confirm_cancel_booking_start&course_id=${c.id}` } }
+                });
+            }
+
+            // 如果使用者在候補中，為他產生一張「候補中」的卡片
+            if (isUserOnWaitingList) {
+                const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
+                const statusText = `🕒 候補中 (第${waitingPosition}位)`;
+                const statusColor = '#FFA500';
+                cards.push({
+                    course: c,
+                    statusComponent: { type: 'box', layout: 'vertical', backgroundColor: statusColor, cornerRadius: 'md', paddingAll: 'sm', alignSelf: 'flex-start', contents: [{ type: 'text', text: statusText, color: '#ffffff', size: 'xs', weight: 'bold' }] },
+                    footerButton: { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` } }
+                });
+            }
+            return cards;
+        });
+
+        if (allCourseCards.length === 0 && page === 1) {
             return '您目前沒有任何已預約或候補中的課程。';
         }
-        if (pageCourses.length === 0) {
+
+        // 手動進行分頁
+        const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+        const hasNextPage = allCourseCards.length > offset + CONSTANTS.PAGINATION_SIZE;
+        const pageCardsData = allCourseCards.slice(offset, offset + CONSTANTS.PAGINATION_SIZE);
+
+        if (pageCardsData.length === 0) {
             return '沒有更多課程了。';
         }
 
-        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
-        const courseBubbles = pageCourses.map(c => {
-            const isBooked = (c.students || []).includes(userId);
-            const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
-            
-            let statusText, statusColor, footerButton;
-            if (isBooked) {
-                statusText = `✅ 已預約 (${spotsBookedByUser}位)`;
-                statusColor = '#28a745';
-                footerButton = { type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: '取消預約', data: `action=confirm_cancel_booking_start&course_id=${c.id}` } };
-            } else { // isWaiting
-                const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
-                statusText = `🕒 候補中 (第${waitingPosition}位)`;
-                statusColor = '#FFA500';
-                footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` } };
-            }
-
+        const courseBubbles = pageCardsData.map(cardData => {
+            const c = cardData.course;
             return {
                 type: 'bubble', size: 'giga',
                 hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '20:13', aspectMode: 'cover' },
-                body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md', contents: [ { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'lg', wrap: true }, { type: 'text', text: statusText, color: statusColor, size: 'sm', weight: 'bold', margin: 'md' }, { type: 'separator', margin: 'lg' }, { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'sm' } ] },
-                footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [footerButton] }
+                body: {
+                    type: 'box', layout: 'vertical', paddingAll: 'xl',
+                    contents: [
+                        { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
+                        {
+                            type: 'box', layout: 'vertical', margin: 'lg', spacing: 'md',
+                            contents: [
+                                cardData.statusComponent,
+                                { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png', size: 'sm' }, { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' } ] },
+                                { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555' } ] }
+                            ]
+                        }
+                    ]
+                },
+                footer: { type: 'box', layout: 'vertical', contents: [cardData.footerButton] }
             };
         });
 
         const paginationBubble = createPaginationBubble('action=view_my_courses', page, hasNextPage);
-        if (paginationBubble) { courseBubbles.push(paginationBubble); }
+        if (paginationBubble) {
+            courseBubbles.push(paginationBubble);
+        }
 
-        console.log(`[DEBUG] 準備回傳 ${courseBubbles.length} 個課程卡片。`);
         return { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles } };
     } finally {
         if (client) client.release();
