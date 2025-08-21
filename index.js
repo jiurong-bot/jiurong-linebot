@@ -2226,21 +2226,28 @@ async function showStudentSearchResults(query, page) {
         return { type: 'flex', altText: `學員搜尋結果：${query}`, contents: { type: 'carousel', contents: userBubbles } };
     });
 }
+//#############
 /**
  * [V34.0 新增] 顯示所有老師的公開資訊列表
+ * [V38.2 DEBUG] 加入詳細日誌，追蹤為何新老師沒有顯示
  */
 async function showAllTeachersList(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-    
     const client = await pgPool.connect();
     try {
+        console.log('[DEBUG] 準備查詢所有老師...');
         const res = await client.query(
-            "SELECT name, bio, image_url FROM teachers ORDER BY name ASC LIMIT $1 OFFSET $2",
-            [CONSTANTS.PAGINATION_SIZE + 1, offset]
+            "SELECT id, name, bio, image_url FROM teachers ORDER BY name ASC"
         );
+        
+        console.log(`[DEBUG] 資料庫回傳了 ${res.rows.length} 筆老師資料。`);
+        if (res.rows.length > 0) {
+            res.rows.forEach(row => console.log(`[DEBUG] 找到老師: ${row.name} (ID: ${row.id})`));
+        }
 
-        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageTeachers = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        const allTeachers = res.rows;
+        const hasNextPage = allTeachers.length > offset + CONSTANTS.PAGINATION_SIZE;
+        const pageTeachers = allTeachers.slice(offset, offset + CONSTANTS.PAGINATION_SIZE);
 
         if (pageTeachers.length === 0 && page === 1) {
             return '目前尚未建立任何老師的公開資訊檔案。';
@@ -2249,31 +2256,16 @@ async function showAllTeachersList(page) {
             return '沒有更多老師的資訊了。';
         }
         
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png'; // 通用頭像
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
 
         const teacherBubbles = pageTeachers.map(t => ({
             type: 'bubble',
-            hero: {
-                type: 'image',
-                url: t.image_url || placeholder_avatar,
-                size: 'full',
-                aspectRatio: '1:1',
-                aspectMode: 'cover',
-            },
+            hero: { type: 'image', url: t.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
             body: {
-                type: 'box',
-                layout: 'vertical',
-                paddingAll: 'lg', // <--- 就是這裡的修正
+                type: 'box', layout: 'vertical', paddingAll: 'lg',
                 contents: [
                     { type: 'text', text: t.name, weight: 'bold', size: 'xl', wrap: true },
-                    { 
-                        type: 'text', 
-                        text: t.bio || '這位老師尚未留下簡介。', 
-                        wrap: true, 
-                        size: 'sm', 
-                        color: '#666666', 
-                        margin: 'md' 
-                    },
+                    { type: 'text', text: t.bio || '這位老師尚未留下簡介。', wrap: true, size: 'sm', color: '#666666', margin: 'md' },
                 ],
             },
         }));
@@ -2292,6 +2284,8 @@ async function showAllTeachersList(page) {
         if (client) client.release();
     }
 }
+
+//##############
 /**
  * [V35.0 新增] 建立一個顯示所有老師並供選擇的輪播卡片
  */
@@ -3010,7 +3004,6 @@ async function showMyCourses(userId, page) {
     }
 }
 
-// ################
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
