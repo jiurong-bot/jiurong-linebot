@@ -2925,6 +2925,93 @@ async function showAvailableCourses(userId, page) {
         if (client) client.release();
     }
 }
+/**
+ * [V37.1 新增] 顯示使用者所有已預約或候補中的課程
+ */
+async function showMyCourses(userId, page) {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query(
+            `SELECT 
+                c.*, 
+                t.name AS teacher_name, 
+                t.image_url AS teacher_image_url
+             FROM courses c
+             LEFT JOIN teachers t ON c.teacher_id = t.id
+             WHERE (
+                $1 = ANY(c.students) OR $1 = ANY(c.waiting)
+             ) AND c.time > NOW()
+             ORDER BY c.time ASC LIMIT $2 OFFSET $3`,
+            [userId, CONSTANTS.PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageCourses = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageCourses.length === 0 && page === 1) {
+            return '您目前沒有任何已預約或候補中的課程。';
+        }
+        if (pageCourses.length === 0) {
+            return '沒有更多課程了。';
+        }
+
+        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
+
+        const courseBubbles = pageCourses.map(c => {
+            const isBooked = (c.students || []).includes(userId);
+            const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
+            
+            let statusText, statusColor, footerButton;
+
+            if (isBooked) {
+                statusText = `✅ 已預約 (${spotsBookedByUser}位)`;
+                statusColor = '#28a745';
+                footerButton = { type: 'button', style: 'primary', color: '#DE5246', height: 'sm',
+                    action: { type: 'postback', label: '取消預約', data: `action=confirm_cancel_booking_start&course_id=${c.id}` }
+                };
+            } else { // isWaiting
+                const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
+                statusText = `🕒 候補中 (第${waitingPosition}位)`;
+                statusColor = '#FFA500';
+                footerButton = { type: 'button', style: 'secondary', height: 'sm',
+                    action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` }
+                };
+            }
+
+            return {
+                type: 'bubble',
+                size: 'giga',
+                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '20:13', aspectMode: 'cover' },
+                body: {
+                    type: 'box', layout: 'vertical', paddingAll: 'xl',
+                    contents: [
+                        { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
+                        { type: 'box', layout: 'vertical', margin: 'md',
+                            contents: [
+                                { type: 'box', backgroundColor: statusColor, cornerRadius: 'md', paddingAll: 'sm', alignSelf: 'flex-start',
+                                    contents: [{ type: 'text', text: statusText, color: '#ffffff', size: 'xs', weight: 'bold' }]
+                                },
+                                { type: 'box', layout: 'baseline', spacing: 'sm', margin: 'md', contents: [ { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png', size: 'sm' }, { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' } ] },
+                                { type: 'box', layout: 'baseline', spacing: 'sm', margin: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555' } ] }
+                            ]
+                        }
+                    ]
+                },
+                footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
+            };
+        });
+
+        const paginationBubble = createPaginationBubble('action=view_my_courses', page, hasNextPage);
+        if (paginationBubble) {
+            courseBubbles.push(paginationBubble);
+        }
+
+        return { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles } };
+    } finally {
+        if (client) client.release();
+    }
+}
 
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
