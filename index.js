@@ -4592,6 +4592,7 @@ async function handleEvent(event) {
           // 定義哪些 postback action 是多步驟流程的「一部分」，不應該觸發清除
 const continuationActions = [
     'set_course_weekday',      // 課程建立流程
+    'select_teacher_for_course', // [V35.1 新增] 課程建立流程中的一環
     'confirm_add_product',     // 商品上架流程
     'edit_product_field',      // 商品編輯流程
     'start_booking_confirmation', // 學員預約課程流程
