@@ -2828,7 +2828,6 @@ async function showPendingOrders(page) {
         return { type: 'flex', altText: '待確認點數訂單', contents: { type: 'carousel', contents: orderBubbles } };
     });
 }
-//#########
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     const client = await pgPool.connect();
@@ -2884,7 +2883,7 @@ async function showAvailableCourses(userId, page) {
 
             return {
                 type: 'bubble', size: 'giga',
-                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'fit', aspectRatio: '20:13', aspectMode: 'cover' },
+                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '20:13', aspectMode: 'size' },
                 body: {
                     type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md',
                     contents: [
@@ -2996,8 +2995,6 @@ async function showMyCourses(userId, page) {
         if (client) client.release();
     }
 }
-
-//#########
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
