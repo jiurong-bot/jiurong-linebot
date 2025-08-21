@@ -2902,7 +2902,6 @@ async function showAvailableCourses(userId, page) {
                             spacing: 'sm',
                             margin: 'md',
                             contents: [
-                                // [V35.4 修正] 補上 size 屬性
                                 { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png', size: 'sm' },
                                 { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' }
                             ]
@@ -2917,7 +2916,6 @@ async function showAvailableCourses(userId, page) {
                                 {
                                     type: 'box', layout: 'baseline', spacing: 'sm',
                                     contents: [
-                                        // [V35.4 修正] 補上 size 屬性
                                         { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' },
                                         { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555', flex: 0 }
                                     ]
@@ -2925,21 +2923,18 @@ async function showAvailableCourses(userId, page) {
                                 {
                                     type: 'box', layout: 'baseline', spacing: 'sm',
                                     contents: [
-                                        // [V35.4 修正] 補上 size 屬性
                                         { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png', size: 'sm' },
                                         { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#555555', flex: 0 }
                                     ]
                                 },
+                                // [V35.5 修正] 簡化名額狀態的巢狀結構
                                 {
-                                    type: 'box', layout: 'baseline', spacing: 'sm',
+                                    type: 'box',
+                                    layout: 'baseline',
+                                    spacing: 'sm',
                                     contents: [
-                                        {
-                                            type: 'box', layout: 'horizontal', spacing: 'xs',
-                                            contents: [
-                                                { type: 'text', text: '●', color: spotsColor, size: 'xs', flex: 0 },
-                                                { type: 'text', text: `${spotsStatus} (剩 ${remainingSpots} 位)`, size: 'sm', color: '#555555' }
-                                            ]
-                                        }
+                                        { type: 'text', text: '●', color: spotsColor, size: 'sm', flex: 0, gravity: 'center' },
+                                        { type: 'text', text: `${spotsStatus} (剩 ${remainingSpots} 位)`, size: 'sm', color: '#555555', gravity: 'center', margin: 'xs' }
                                     ]
                                 }
                             ]
