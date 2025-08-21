@@ -2826,7 +2826,7 @@ async function showPendingOrders(page) {
 }
 //##########
 /**
- * [V41.1 最終穩定版] 參照可運作的 showMyCourses 結構重寫
+ * [V41.2 最終修正] 修正致命的 res is not defined 變數名稱錯誤
  */
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2848,7 +2848,8 @@ async function showAvailableCourses(userId, page) {
         );
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        // [V41.2 修正] 致命錯誤修正：將 res.rows 改為 coursesRes.rows
+        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
 
         if (pageCourses.length === 0 && page === 1) {
             return '抱歉，未来 7 天內沒有可預約或候補的課程。';
