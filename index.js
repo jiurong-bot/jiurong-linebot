@@ -3967,46 +3967,49 @@ async function handlePostback(event, user) {
 
             return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
         }
-        case 'confirm_teacher_profile_update': {
+        //##########
+                case 'confirm_teacher_profile_update': {
             const state = pendingTeacherProfileEdit[userId];
             if (!state || state.step !== 'await_confirmation' || !state.newData) {
                 return '確認操作已逾時或無效，請重新操作。';
             }
+            
             const newData = state.newData;
+            const isCreating = state.type === 'create';
             const client = await pgPool.connect();
+
             try {
-                const fields = Object.keys(newData);
-                const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
-                const values = Object.values(newData);
-                
-                await client.query(`UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`, [...values, userId]);
+                // [V38.2 修正] 使用強大的 Upsert 邏輯，整合新增與更新
+                if (isCreating) {
+                    // 如果是首次建立，我們需要 name, bio, image_url, 和 line_user_id
+                    await client.query(
+                        `INSERT INTO teachers (line_user_id, name, bio, image_url) VALUES ($1, $2, $3, $4)
+                         ON CONFLICT (line_user_id) DO UPDATE 
+                         SET name = EXCLUDED.name, bio = EXCLUDED.bio, image_url = EXCLUDED.image_url, updated_at = NOW()`,
+                        [userId, newData.name, newData.bio, newData.image_url]
+                    );
+                } else {
+                    // 如果只是編輯，我們只需要更新變動的欄位
+                    const fields = Object.keys(newData);
+                    const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+                    const values = Object.values(newData);
+                    await client.query(
+                        `UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`,
+                        [...values, userId]
+                    );
+                }
             } finally {
                 if(client) client.release();
             }
 
             delete pendingTeacherProfileEdit[userId];
-            return '✅ 您的個人檔案已成功更新！';
+            
+            // 根據是「建立」還是「更新」給予不同的成功訊息
+            const successMessage = isCreating ? '✅ 恭喜！您的師資檔案已成功建立！' : '✅ 您的個人檔案已成功更新！';
+            return successMessage;
         }
-        case 'confirm_teacher_profile_update': {
-            const state = pendingTeacherProfileEdit[userId];
-            if (!state || state.step !== 'await_confirmation' || !state.newData) {
-                return '確認操作已逾時或無效，請重新操作。';
-            }
-            const newData = state.newData;
-            const client = await pgPool.connect();
-            try {
-                const fields = Object.keys(newData);
-                const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
-                const values = Object.values(newData);
-                
-                await client.query(`UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`, [...values, userId]);
-            } finally {
-                if(client) client.release();
-            }
 
-            delete pendingTeacherProfileEdit[userId];
-            return '✅ 您的個人檔案已成功更新！';
-        }
+        //#######
         case 'select_teacher_for_course': {
             const state = pendingCourseCreation[userId];
             const teacher_id = parseInt(data.get('teacher_id'), 10);
