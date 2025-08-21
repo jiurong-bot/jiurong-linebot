@@ -2857,7 +2857,6 @@ async function showAvailableCourses(userId, page) {
         );
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        // [V35.3 修正] 將 res.rows 改為 coursesRes.rows
         const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
 
         if (pageCourses.length === 0 && page === 1) {
@@ -2903,7 +2902,8 @@ async function showAvailableCourses(userId, page) {
                             spacing: 'sm',
                             margin: 'md',
                             contents: [
-                                { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png' },
+                                // [V35.4 修正] 補上 size 屬性
+                                { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png', size: 'sm' },
                                 { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' }
                             ]
                         },
@@ -2917,14 +2917,16 @@ async function showAvailableCourses(userId, page) {
                                 {
                                     type: 'box', layout: 'baseline', spacing: 'sm',
                                     contents: [
-                                        { type: 'icon', url: 'https://i.imgur.com/Am42D42.png' },
+                                        // [V35.4 修正] 補上 size 屬性
+                                        { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' },
                                         { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555', flex: 0 }
                                     ]
                                 },
                                 {
                                     type: 'box', layout: 'baseline', spacing: 'sm',
                                     contents: [
-                                        { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png' },
+                                        // [V35.4 修正] 補上 size 屬性
+                                        { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png', size: 'sm' },
                                         { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#555555', flex: 0 }
                                     ]
                                 },
