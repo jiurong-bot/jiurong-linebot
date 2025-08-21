@@ -547,7 +547,9 @@ async function getCourse(courseId, dbClient) {
     try {
         const res = await client.query('SELECT * FROM courses WHERE id = $1', [courseId]);
         if (res.rows.length === 0) return null;
+        
         const row = res.rows[0];
+        // [V42.1 修正] 確保回傳的課程物件包含 teacher_id
         return {
             id: row.id,
             title: row.title,
@@ -555,12 +557,14 @@ async function getCourse(courseId, dbClient) {
             capacity: row.capacity,
             points_cost: row.points_cost,
             students: row.students || [],
-            waiting: row.waiting || []
+            waiting: row.waiting || [],
+            teacher_id: row.teacher_id // <--- 就是補上這一行
         };
     } finally {
         if (shouldReleaseClient && client) client.release();
     }
 }
+
 async function saveCourse(course, dbClient) {
     const shouldReleaseClient = !dbClient;
     const client = dbClient || await pgPool.connect();
