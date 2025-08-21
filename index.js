@@ -2884,7 +2884,7 @@ async function showAvailableCourses(userId, page) {
 
             return {
                 type: 'bubble', size: 'giga',
-                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '16:9', aspectMode: 'cover' },
+                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'fit', aspectRatio: '20:13', aspectMode: 'cover' },
                 body: {
                     type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md',
                     contents: [
