@@ -2919,7 +2919,6 @@ async function showAvailableCourses(userId, page) {
         if (client) client.release();
     }
 }
-// ################
 /**
  * [V38.1 最終穩定版] 回歸單一卡片設計，顯示所有狀態與操作
  */
