@@ -2824,10 +2824,7 @@ async function showPendingOrders(page) {
         return { type: 'flex', altText: '待確認點數訂單', contents: { type: 'carousel', contents: orderBubbles } };
     });
 }
-//##########
-/**
- * [V41.2 最終修正] 修正致命的 res is not defined 變數名稱錯誤
- */
+//#########
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     const client = await pgPool.connect();
@@ -2848,7 +2845,6 @@ async function showAvailableCourses(userId, page) {
         );
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        // [V41.2 修正] 致命錯誤修正：將 res.rows 改為 coursesRes.rows
         const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
 
         if (pageCourses.length === 0 && page === 1) {
@@ -2913,10 +2909,6 @@ async function showAvailableCourses(userId, page) {
     }
 }
 
-//##########
-/**
- * [V41.0 最終穩定版] 回歸至使用者驗證過的可運作版本
- */
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     const client = await pgPool.connect();
