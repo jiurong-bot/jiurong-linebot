@@ -3126,7 +3126,7 @@ async function showShopProducts(page) {
 
             return {
                 type: 'bubble',
-                hero: (p.image_url && p.image_url.startsWith('https')) ? { type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:2', aspectMode: 'fit' } : undefined,
+                hero: (p.image_url && p.image_url.startsWith('https')) ? { type: 'image', url: p.image_url, size: 'full', aspectRatio: '20:13', aspectMode: 'fit' } : undefined,
                 body: {
                     type: 'box',
                     layout: 'vertical',
