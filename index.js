@@ -2842,7 +2842,6 @@ async function showAvailableCourses(userId, page) {
     try {
         const sevenDaysLater = new Date(Date.now() + 7 * CONSTANTS.TIME.ONE_DAY_IN_MS);
         
-        // [V35.2 修改] 使用 LEFT JOIN 查詢課程及關聯的老師資訊
         const coursesRes = await client.query(
             `SELECT 
                 c.*, 
@@ -2858,7 +2857,7 @@ async function showAvailableCourses(userId, page) {
         );
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
+        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
         if (pageCourses.length === 0 && page === 1) {
             return '抱歉，未来 7 天內沒有可預約的課程。\n您可至「我的課程」查看候補中的課程，或等候老師發布新課程。';
@@ -2867,7 +2866,7 @@ async function showAvailableCourses(userId, page) {
             return '沒有更多可預約的課程了。';
         }
 
-        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg'; // 通用課程圖片
+        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
 
         const courseBubbles = pageCourses.map(c => {
             const remainingSpots = c.capacity - (c.students?.length || 0);
@@ -2885,7 +2884,6 @@ async function showAvailableCourses(userId, page) {
                 size: 'giga',
                 hero: {
                     type: 'image',
-                    // [V35.2 修改] 優先使用老師照片，若無則用預設圖
                     url: c.teacher_image_url || placeholder_avatar,
                     size: 'full',
                     aspectRatio: '20:13',
@@ -2894,18 +2892,17 @@ async function showAvailableCourses(userId, page) {
                 body: {
                     type: 'box',
                     layout: 'vertical',
-                    padding: 'xl',
+                    paddingAll: 'xl', // <--- 就是這裡的修正
                     spacing: 'md',
                     contents: [
                         { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
-                        // [V35.2 新增] 顯示老師姓名
                         { 
                             type: 'box', 
                             layout: 'baseline', 
                             spacing: 'sm',
                             margin: 'md',
                             contents: [
-                                { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png' /* user icon */, size: 'sm' },
+                                { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png' },
                                 { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' }
                             ]
                         },
@@ -2919,14 +2916,14 @@ async function showAvailableCourses(userId, page) {
                                 {
                                     type: 'box', layout: 'baseline', spacing: 'sm',
                                     contents: [
-                                        { type: 'icon', url: 'https://i.imgur.com/Am42D42.png' /* calendar */, size: 'sm' },
+                                        { type: 'icon', url: 'https://i.imgur.com/Am42D42.png' },
                                         { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555', flex: 0 }
                                     ]
                                 },
                                 {
                                     type: 'box', layout: 'baseline', spacing: 'sm',
                                     contents: [
-                                        { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png' /* diamond */, size: 'sm' },
+                                        { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png' },
                                         { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#555555', flex: 0 }
                                     ]
                                 },
