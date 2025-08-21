@@ -2857,7 +2857,8 @@ async function showAvailableCourses(userId, page) {
         );
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        // [V35.3 修正] 將 res.rows 改為 coursesRes.rows
+        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
 
         if (pageCourses.length === 0 && page === 1) {
             return '抱歉，未来 7 天內沒有可預約的課程。\n您可至「我的課程」查看候補中的課程，或等候老師發布新課程。';
@@ -2892,7 +2893,7 @@ async function showAvailableCourses(userId, page) {
                 body: {
                     type: 'box',
                     layout: 'vertical',
-                    paddingAll: 'xl', // <--- 就是這裡的修正
+                    paddingAll: 'xl',
                     spacing: 'md',
                     contents: [
                         { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
@@ -2977,6 +2978,7 @@ async function showAvailableCourses(userId, page) {
         if (client) client.release();
     }
 }
+
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
