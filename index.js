@@ -4054,7 +4054,7 @@ async function handlePostback(event, user) {
                 ]}
             };
         }       
-        // [V36.0 新增] 處理加入候補請求
+                // [V37.3 修正] 處理加入候補請求
         case 'join_waiting_list': {
             const course_id = data.get('course_id');
             const client = await pgPool.connect();
@@ -4072,10 +4072,11 @@ async function handlePostback(event, user) {
                     await client.query('ROLLBACK');
                     return '好消息！這堂課剛好有名額釋出了，請回到列表直接點擊「預約課程」按鈕。';
                 }
-                if (course.students?.includes(userId)) {
-                    await client.query('ROLLBACK');
-                    return '您已預約此課程，無需加入候補。';
-                }
+                // [V37.3 移除] 不再檢查使用者是否已在 students 名單中，允許追加名額候補
+                // if (course.students?.includes(userId)) {
+                //     await client.query('ROLLBACK');
+                //     return '您已預約此課程，無需加入候補。';
+                // }
                 if (course.waiting?.includes(userId)) {
                     await client.query('ROLLBACK');
                     return '您已在候補名單中，請耐心等候通知。';
