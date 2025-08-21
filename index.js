@@ -2834,7 +2834,7 @@ async function showPendingOrders(page) {
 }
 /**
  * [V33.0 優化] 顯示可預約課程列表，改用輪播卡片介面
- * [V35.2 優化] 顯示授課老師的照片與姓名
+ * [V35.6 優化] 新增顯示老師簡介
  */
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2842,11 +2842,13 @@ async function showAvailableCourses(userId, page) {
     try {
         const sevenDaysLater = new Date(Date.now() + 7 * CONSTANTS.TIME.ONE_DAY_IN_MS);
         
+        // [V35.6 修改] 在查詢中加入 t.bio AS teacher_bio
         const coursesRes = await client.query(
             `SELECT 
                 c.*, 
                 t.name AS teacher_name, 
-                t.image_url AS teacher_image_url 
+                t.image_url AS teacher_image_url,
+                t.bio AS teacher_bio
              FROM courses c
              LEFT JOIN teachers t ON c.teacher_id = t.id
              WHERE c.time > NOW() AND c.time < $1
@@ -2906,6 +2908,15 @@ async function showAvailableCourses(userId, page) {
                                 { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' }
                             ]
                         },
+                        // [V35.6 新增] 顯示老師簡介
+                        {
+                            type: 'text',
+                            text: c.teacher_bio || '', // 如果 bio 是空的，就不顯示文字
+                            wrap: true,
+                            size: 'sm',
+                            color: '#888888',
+                            margin: 'sm'
+                        },
                         { type: 'separator', margin: 'lg' },
                         {
                             type: 'box',
@@ -2927,7 +2938,6 @@ async function showAvailableCourses(userId, page) {
                                         { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#555555', flex: 0 }
                                     ]
                                 },
-                                // [V35.5 修正] 簡化名額狀態的巢狀結構
                                 {
                                     type: 'box',
                                     layout: 'baseline',
