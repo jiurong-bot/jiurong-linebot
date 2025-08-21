@@ -2255,6 +2255,59 @@ async function showAllTeachersList(page) {
         if (client) client.release();
     }
 }
+/**
+ * [V35.0 新增] 建立一個顯示所有老師並供選擇的輪播卡片
+ */
+async function buildTeacherSelectionCarousel() {
+    const client = await pgPool.connect();
+    try {
+        const res = await client.query("SELECT id, name, image_url FROM teachers ORDER BY name ASC");
+        if (res.rows.length === 0) {
+            return { type: 'text', text: '錯誤：系統中沒有任何師資檔案，請先至「個人資訊」建立至少一位老師的檔案。' };
+        }
+
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+        const teacherBubbles = res.rows.map(t => ({
+            type: 'bubble',
+            hero: {
+                type: 'image',
+                url: t.image_url || placeholder_avatar,
+                size: 'full',
+                aspectRatio: '1:1',
+                aspectMode: 'cover',
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    { type: 'text', text: t.name, weight: 'bold', size: 'lg', align: 'center' }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'primary',
+                    height: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: '選擇此老師',
+                        data: `action=select_teacher_for_course&teacher_id=${t.id}`
+                    }
+                }]
+            }
+        }));
+
+        return {
+            type: 'flex',
+            altText: '請選擇授課老師',
+            contents: { type: 'carousel', contents: teacherBubbles }
+        };
+    } finally {
+        if (client) client.release();
+    }
+}
 
 async function showPurchaseHistory(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
