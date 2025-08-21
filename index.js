@@ -4055,6 +4055,48 @@ async function handlePostback(event, user) {
                 ]}
             };
         }       
+        // [V36.0 新增] 處理加入候補請求
+        case 'join_waiting_list': {
+            const course_id = data.get('course_id');
+            const client = await pgPool.connect();
+            try {
+                await client.query('BEGIN');
+                const courseRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
+                if (courseRes.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return '抱歉，找不到該課程，可能已被老師取消。';
+                }
+                const course = courseRes.rows[0];
+
+                // --- 驗證 ---
+                if ((course.students?.length || 0) < course.capacity) {
+                    await client.query('ROLLBACK');
+                    return '好消息！這堂課剛好有名額釋出了，請回到列表直接點擊「預約課程」按鈕。';
+                }
+                if (course.students?.includes(userId)) {
+                    await client.query('ROLLBACK');
+                    return '您已預約此課程，無需加入候補。';
+                }
+                if (course.waiting?.includes(userId)) {
+                    await client.query('ROLLBACK');
+                    return '您已在候補名單中，請耐心等候通知。';
+                }
+
+                // --- 執行加入候補 ---
+                const newWaitingList = [...(course.waiting || []), userId];
+                await client.query('UPDATE courses SET waiting = $1 WHERE id = $2', [newWaitingList, course_id]);
+                await client.query('COMMIT');
+
+                return `✅ 已成功將您加入「${getCourseMainTitle(course.title)}」的候補名單！\n當有名額釋出時，系統將會發送通知給您。`;
+
+            } catch (err) {
+                await client.query('ROLLBACK');
+                logger.error(`加入候補失敗 courseId: ${course_id}`, err);
+                return '加入候補時發生錯誤，請稍後再試。';
+            } finally {
+                if(client) client.release();
+            }
+        }
 
         // ==================================
         // 點數與訂單 (Points & Orders)
