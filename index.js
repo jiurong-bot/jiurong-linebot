@@ -2927,7 +2927,7 @@ async function showAvailableCourses(userId, page) {
 }
 // ################
 /**
- * [V37.3 最終修正] 智慧化「我的課程」列表，修正 footer 屬性
+ * [V37.5 最終修正] 補上狀態標籤 box 元件遺失的 layout 屬性
  */
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2970,7 +2970,12 @@ async function showMyCourses(userId, page) {
                 const statusText = `✅ 已預約 (${spotsBookedByUser}位)`;
                 const statusColor = '#28a745';
                 statusComponent = { 
-                    type: 'box', backgroundColor: statusColor, cornerRadius: 'md', paddingAll: 'sm', alignSelf: 'flex-start',
+                    type: 'box',
+                    layout: 'vertical', // [V37.5 修正] 補上這個必要的屬性
+                    backgroundColor: statusColor,
+                    cornerRadius: 'md',
+                    paddingAll: 'sm',
+                    alignSelf: 'flex-start',
                     contents: [{ type: 'text', text: statusText, color: '#ffffff', size: 'xs', weight: 'bold' }]
                 };
                 footerButton = { type: 'button', style: 'primary', color: '#DE5246', height: 'sm',
@@ -2981,7 +2986,12 @@ async function showMyCourses(userId, page) {
                 const statusText = `🕒 候補中 (第${waitingPosition}位)`;
                 const statusColor = '#FFA500';
                 statusComponent = { 
-                    type: 'box', backgroundColor: statusColor, cornerRadius: 'md', paddingAll: 'sm', alignSelf: 'flex-start',
+                    type: 'box',
+                    layout: 'vertical', // [V37.5 修正] 補上這個必要的屬性
+                    backgroundColor: statusColor,
+                    cornerRadius: 'md',
+                    paddingAll: 'sm',
+                    alignSelf: 'flex-start',
                     contents: [{ type: 'text', text: statusText, color: '#ffffff', size: 'xs', weight: 'bold' }]
                 };
                 footerButton = { type: 'button', style: 'secondary', height: 'sm',
@@ -3009,7 +3019,6 @@ async function showMyCourses(userId, page) {
                         }
                     ]
                 },
-                // [V37.4 修正] 移除 footer 不支援的 paddingAll 屬性
                 footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
             };
         });
