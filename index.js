@@ -2841,7 +2841,6 @@ async function showAvailableCourses(userId, page) {
     try {
         const sevenDaysLater = new Date(Date.now() + 7 * CONSTANTS.TIME.ONE_DAY_IN_MS);
         
-        // [V36.0 修改] 查詢所有未來課程，並取得候補人數，同時過濾掉使用者已參與的
         const coursesRes = await client.query(
             `SELECT 
                 c.*, 
@@ -2859,7 +2858,8 @@ async function showAvailableCourses(userId, page) {
         );
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        // [V36.1 修正] 將 res.rows 改為 coursesRes.rows
+        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
 
         if (pageCourses.length === 0 && page === 1) {
             return '抱歉，未来 7 天內沒有可預約或候補的課程。';
@@ -2877,7 +2877,6 @@ async function showAvailableCourses(userId, page) {
             let statusComponent;
             let footerButton;
 
-            // [V36.0 修改] 根據是否額滿，產生不同的狀態元件和按鈕
             if (isFull) {
                 statusComponent = {
                     type: 'box', layout: 'baseline', spacing: 'sm',
@@ -2923,7 +2922,7 @@ async function showAvailableCourses(userId, page) {
                             contents: [
                                 { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555', flex: 0 } ] },
                                 { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/k4Dba8H.png', size: 'sm' }, { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#555555', flex: 0 } ] },
-                                statusComponent // 插入動態的狀態元件
+                                statusComponent
                             ]
                         }
                     ]
