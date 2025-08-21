@@ -2927,7 +2927,7 @@ async function showAvailableCourses(userId, page) {
 }
 // ################
 /**
- * [V37.5 最終修正] 補上狀態標籤 box 元件遺失的 layout 屬性
+ * [V37.6 最終穩定版] 智慧化「我的課程」列表，使用保證可運作的簡潔版面
  */
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2963,42 +2963,24 @@ async function showMyCourses(userId, page) {
             const isBooked = (c.students || []).includes(userId);
             const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
             
-            let statusComponent;
-            let footerButton;
+            let statusText, statusColor, footerButton;
 
             if (isBooked) {
-                const statusText = `✅ 已預約 (${spotsBookedByUser}位)`;
-                const statusColor = '#28a745';
-                statusComponent = { 
-                    type: 'box',
-                    layout: 'vertical', // [V37.5 修正] 補上這個必要的屬性
-                    backgroundColor: statusColor,
-                    cornerRadius: 'md',
-                    paddingAll: 'sm',
-                    alignSelf: 'flex-start',
-                    contents: [{ type: 'text', text: statusText, color: '#ffffff', size: 'xs', weight: 'bold' }]
-                };
+                statusText = `✅ 已預約 (${spotsBookedByUser}位)`;
+                statusColor = '#28a745';
                 footerButton = { type: 'button', style: 'primary', color: '#DE5246', height: 'sm',
                     action: { type: 'postback', label: '取消預約', data: `action=confirm_cancel_booking_start&course_id=${c.id}` }
                 };
             } else { // isWaiting
                 const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
-                const statusText = `🕒 候補中 (第${waitingPosition}位)`;
-                const statusColor = '#FFA500';
-                statusComponent = { 
-                    type: 'box',
-                    layout: 'vertical', // [V37.5 修正] 補上這個必要的屬性
-                    backgroundColor: statusColor,
-                    cornerRadius: 'md',
-                    paddingAll: 'sm',
-                    alignSelf: 'flex-start',
-                    contents: [{ type: 'text', text: statusText, color: '#ffffff', size: 'xs', weight: 'bold' }]
-                };
+                statusText = `🕒 候補中 (第${waitingPosition}位)`;
+                statusColor = '#FFA500';
                 footerButton = { type: 'button', style: 'secondary', height: 'sm',
                     action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` }
                 };
             }
 
+            // 使用確定可以運作的簡潔版 Body 結構
             return {
                 type: 'bubble',
                 size: 'giga',
@@ -3007,19 +2989,16 @@ async function showMyCourses(userId, page) {
                     type: 'box',
                     layout: 'vertical',
                     paddingAll: 'xl',
+                    spacing: 'md',
                     contents: [
                         { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
-                        {
-                            type: 'box', layout: 'vertical', margin: 'lg', spacing: 'md',
-                            contents: [
-                                statusComponent,
-                                { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png', size: 'sm' }, { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' } ] },
-                                { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555' } ] }
-                            ]
-                        }
+                        { type: 'text', text: statusText, color: statusColor, size: 'sm', weight: 'bold', margin: 'md' },
+                        { type: 'separator', margin: 'lg' },
+                        { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md' },
+                        { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'sm' }
                     ]
                 },
-                footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
+                footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', contents: [footerButton] }
             };
         });
 
