@@ -2925,8 +2925,9 @@ async function showAvailableCourses(userId, page) {
         if (client) client.release();
     }
 }
+//################
 /**
- * [V37.1.1 DEBUG] 使用極簡化的 Flex Message 版本來除錯
+ * [V37.1.2 DEBUG] 逐步重建介面，第一步：加入狀態文字
  */
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2960,19 +2961,25 @@ async function showMyCourses(userId, page) {
 
         const courseBubbles = pageCourses.map(c => {
             const isBooked = (c.students || []).includes(userId);
-            let footerButton;
+            const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
+            
+            let statusText, statusColor, footerButton;
 
             if (isBooked) {
+                statusText = `✅ 已預約 (${spotsBookedByUser}位)`;
+                statusColor = '#28a745';
                 footerButton = { type: 'button', style: 'primary', color: '#DE5246', height: 'sm',
                     action: { type: 'postback', label: '取消預約', data: `action=confirm_cancel_booking_start&course_id=${c.id}` }
                 };
             } else { // isWaiting
+                const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
+                statusText = `🕒 候補中 (第${waitingPosition}位)`;
+                statusColor = '#FFA500';
                 footerButton = { type: 'button', style: 'secondary', height: 'sm',
                     action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` }
                 };
             }
 
-            // 使用最簡單的 Body 結構
             return {
                 type: 'bubble',
                 hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '20:13', aspectMode: 'cover' },
@@ -2982,6 +2989,8 @@ async function showMyCourses(userId, page) {
                     paddingAll: 'lg',
                     contents: [
                         { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'lg', wrap: true },
+                        // [V37.1.2 新增] 加入純文字的狀態顯示
+                        { type: 'text', text: statusText, color: statusColor, size: 'sm', weight: 'bold', margin: 'md' },
                         { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md' },
                         { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'sm' }
                     ]
@@ -3001,6 +3010,10 @@ async function showMyCourses(userId, page) {
     }
 }
 
+
+        
+        
+//################
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
