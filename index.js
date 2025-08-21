@@ -2885,7 +2885,7 @@ async function showAvailableCourses(userId, page) {
 
             if (isFull) {
                 courseStatusComponent = { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '🕒', weight: 'bold', color: '#FFA500', flex: 0, size: 'sm' }, { type: 'text', text: `候補中 (${c.waiting_count}人)`, size: 'sm', color: '#555555', margin: 'xs' } ] };
-                footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '加入候補 (追加名額)', data: `action=join_waiting_list&course_id=${c.id}` } };
+                footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '加入候補', data: `action=join_waiting_list&course_id=${c.id}` } };
             } else {
                 const remainingSpots = c.capacity - studentCount;
                 const spotsStatus = remainingSpots >= 4 ? '名額充足' : '名額緊張';
