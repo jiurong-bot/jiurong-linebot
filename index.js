@@ -2897,7 +2897,7 @@ async function showAvailableCourses(userId, page) {
 
             return {
                 type: 'bubble', size: 'giga',
-                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '20:13', aspectMode: 'cover' },
+                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '2:1', aspectMode: 'cover' },
                 body: { type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md', contents: bodyContents },
                 footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', contents: [ footerButton ] }
             };
@@ -2975,7 +2975,7 @@ async function showMyCourses(userId, page) {
 
             return {
                 type: 'bubble', size: 'giga',
-                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '20:13', aspectMode: 'cover' },
+                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '2:1', aspectMode: 'cover' },
                 body: {
                     type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md',
                     contents: [
@@ -3133,7 +3133,7 @@ async function showShopProducts(page) {
 
             return {
                 type: 'bubble',
-                hero: (p.image_url && p.image_url.startsWith('https')) ? { type: 'image', url: p.image_url, size: 'full', aspectRatio: '20:13', aspectMode: 'fit' } : undefined,
+                hero: (p.image_url && p.image_url.startsWith('https')) ? { type: 'image', url: p.image_url, size: 'full', aspectRatio: '2:1', aspectMode: 'fit' } : undefined,
                 body: {
                     type: 'box',
                     layout: 'vertical',
