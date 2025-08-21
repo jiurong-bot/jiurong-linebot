@@ -561,15 +561,17 @@ async function getCourse(courseId, dbClient) {
         if (shouldReleaseClient && client) client.release();
     }
 }
-
 async function saveCourse(course, dbClient) {
     const shouldReleaseClient = !dbClient;
     const client = dbClient || await pgPool.connect();
     try {
+        // [V35.0 修改] 新增 teacher_id 欄位
         await client.query(
-            `INSERT INTO courses (id, title, time, capacity, points_cost, students, waiting) VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (id) DO UPDATE SET title = $2, time = $3, capacity = $4, points_cost = $5, students = $6, waiting = $7`,
-            [course.id, course.title, course.time, course.capacity, course.points_cost, course.students, course.waiting]
+            `INSERT INTO courses (id, title, time, capacity, points_cost, students, waiting, teacher_id) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (id) 
+             DO UPDATE SET title = $2, time = $3, capacity = $4, points_cost = $5, students = $6, waiting = $7, teacher_id = $8`,
+            [course.id, course.title, course.time, course.capacity, course.points_cost, course.students, course.waiting, course.teacher_id]
         );
     } finally {
         if (shouldReleaseClient && client) client.release();
