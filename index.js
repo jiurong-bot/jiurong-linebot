@@ -3939,11 +3939,44 @@ async function handlePostback(event, user) {
             delete pendingTeacherProfileEdit[userId];
             return '✅ 您的個人檔案已成功更新！';
         }
+        case 'select_teacher_for_course': {
+            const state = pendingCourseCreation[userId];
+            const teacher_id = parseInt(data.get('teacher_id'), 10);
+            if (!state || state.step !== 'await_teacher' || !teacher_id) {
+                return '操作已逾時或無效，請重新新增課程。';
+            }
+            
+            state.teacher_id = teacher_id;
+            state.step = 'await_confirmation'; // 進入最終確認步驟
 
+            const client = await pgPool.connect();
+            try {
+                const teacherRes = await client.query('SELECT name FROM teachers WHERE id = $1', [teacher_id]);
+                state.teacher_name = teacherRes.rows[0]?.name || '未知老師';
+            } finally {
+                if(client) client.release();
+            }
 
-       
-
-           
+            // 產生最終確認訊息
+            const firstDate = getNextDate(state.weekday, state.time);
+            const summary = `請確認課程資訊：\n\n` +
+                          `標題：${state.title}\n` +
+                          `老師：${state.teacher_name}\n` +
+                          `時間：每${state.weekday_label} ${state.time}\n` +
+                          `堂數：${state.sessions} 堂\n` +
+                          `名額：${state.capacity} 位\n` +
+                          `費用：${state.points_cost} 點/堂\n\n` +
+                          `首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
+            
+            return { 
+                type: 'text', 
+                text: summary, 
+                quickReply: { items: [ 
+                    { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } }, 
+                    { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } 
+                ]}
+            };
+        }       
 
         // ==================================
         // 點數與訂單 (Points & Orders)
