@@ -2927,7 +2927,7 @@ async function showAvailableCourses(userId, page) {
 }
 // ################
 /**
- * [V37.2 最終版本] 智慧化「我的課程」列表，包含完整的 UI 設計
+ * [V37.3 最終修正] 智慧化「我的課程」列表，修正 footer 屬性
  */
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -3002,14 +3002,15 @@ async function showMyCourses(userId, page) {
                         {
                             type: 'box', layout: 'vertical', margin: 'lg', spacing: 'md',
                             contents: [
-                                statusComponent, // [V37.2 修改] 插入我們最終的「狀態標籤」元件
+                                statusComponent,
                                 { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/iPz1KVg.png', size: 'sm' }, { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', color: '#555555' } ] },
                                 { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'icon', url: 'https://i.imgur.com/Am42D42.png', size: 'sm' }, { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#555555' } ] }
                             ]
                         }
                     ]
                 },
-                footer: { type: 'box', layout: 'vertical', paddingAll: 'lg', contents: [footerButton] }
+                // [V37.4 修正] 移除 footer 不支援的 paddingAll 屬性
+                footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
             };
         });
 
@@ -3023,7 +3024,7 @@ async function showMyCourses(userId, page) {
         if (client) client.release();
     }
 }
- 
+
 // ################
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
