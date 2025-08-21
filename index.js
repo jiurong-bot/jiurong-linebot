@@ -2826,7 +2826,7 @@ async function showPendingOrders(page) {
 }
 //##########
 /**
- * [V40.1 版面微調] 頭像改為圓角方形
+ * [V40.2 最終穩定版] 預約課程列表改為「左圖右文」經典樣式
  */
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2856,35 +2856,38 @@ async function showAvailableCourses(userId, page) {
             const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
             const isFull = studentCount >= c.capacity;
             
-            let userStatusComponent = spotsBookedByUser > 0 ? { type: 'text', text: `✅ 您已預約 ${spotsBookedByUser} 位`, color: '#28a745', size: 'xs', weight: 'bold', margin: 'md', align: 'center' } : null;
+            let userStatusComponent = spotsBookedByUser > 0 ? { type: 'text', text: `✅ 您已預約 ${spotsBookedByUser} 位`, color: '#28a745', size: 'xs', weight: 'bold', margin: 'sm' } : null;
             let courseStatusComponent, footerButton;
 
             if (isFull) {
-                courseStatusComponent = { type: 'text', text: `候補中 (${c.waiting_count}人)`, size: 'sm', color: '#888888', margin: 'sm', align: 'center' };
+                courseStatusComponent = { type: 'text', text: `候補中 (${c.waiting_count}人)`, size: 'xs', color: '#888888' };
                 footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '加入候補', data: `action=join_waiting_list&course_id=${c.id}` } };
             } else {
                 const remainingSpots = c.capacity - studentCount;
-                courseStatusComponent = { type: 'text', text: `剩餘 ${remainingSpots} 位`, size: 'sm', color: '#888888', margin: 'sm', align: 'center' };
+                courseStatusComponent = { type: 'text', text: `剩餘 ${remainingSpots} 位`, size: 'xs', color: '#888888' };
                 footerButton = { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '預約此課程', data: `action=select_booking_spots&course_id=${c.id}` }, color: '#52B69A' };
             }
+
+            const textContents = [
+                { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'md', wrap: true },
+                ...(userStatusComponent ? [userStatusComponent] : []),
+                { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md', color: '#555555' },
+                { type: 'text', text: c.teacher_bio || '', wrap: true, size: 'xs', color: '#888888', margin: 'xs' },
+                { type: 'separator', margin: 'md' },
+                { type: 'box', layout: 'vertical', spacing: 'xs', contents: [
+                    { type: 'text', text: `${formatDateTime(c.time)}`, size: 'xs', color: '#888888' },
+                    { type: 'text', text: `${c.points_cost} 點`, size: 'xs', color: '#888888' },
+                    courseStatusComponent
+                ]}
+            ];
 
             return {
                 type: 'bubble',
                 body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    paddingAll: 'xl',
-                    spacing: 'md',
+                    type: 'box', layout: 'horizontal', spacing: 'md', paddingAll: 'lg',
                     contents: [
-                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'xl', aspectRatio: '1:1', aspectMode: 'cover', cornerRadius: 'md' },
-                        { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', margin: 'md', align: 'center', wrap: true },
-                        { type: 'text', text: c.teacher_name || '待定', size: 'md', color: '#555555', align: 'center' },
-                        { type: 'text', text: c.teacher_bio || '', wrap: true, size: 'sm', color: '#888888', margin: 'sm', align: 'center' },
-                        ...(userStatusComponent ? [userStatusComponent] : []),
-                        { type: 'separator', margin: 'lg' },
-                        courseStatusComponent,
-                        { type: 'text', text: `${formatDateTime(c.time)}`, size: 'sm', color: '#888888', align: 'center' },
-                        { type: 'text', text: `${c.points_cost} 點`, size: 'sm', color: '#888888', align: 'center' },
+                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, aspectRatio: '1:1', size: 'lg', flex: 0, aspectMode: 'cover', cornerRadius: 'md' },
+                        { type: 'box', layout: 'vertical', contents: textContents }
                     ]
                 },
                 footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
@@ -2904,7 +2907,7 @@ async function showAvailableCourses(userId, page) {
 
 //##########
 /**
- * [V40.1 版面微調] 頭像改為圓角方形
+ * [V40.2 最終穩定版] 我的課程列表改為「左圖右文」經典樣式
  */
 async function showMyCourses(userId, page) {
     const client = await pgPool.connect();
@@ -2941,28 +2944,29 @@ async function showMyCourses(userId, page) {
             let statusComponent, footerButton;
 
             if (cardData.type === 'booked') {
-                statusComponent = { type: 'text', text: `✅ 您已預約 ${cardData.spots} 位`, color: '#28a745', size: 'sm', weight: 'bold', align: 'center' };
+                statusComponent = { type: 'text', text: `✅ 您已預約 ${cardData.spots} 位`, color: '#28a745', size: 'sm', weight: 'bold' };
                 footerButton = { type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: `取消 ${cardData.spots > 1 ? '1位 ' : ''}預約`, data: `action=confirm_cancel_booking_start&course_id=${c.id}` } };
             } else { // waiting
                 const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
-                statusComponent = { type: 'text', text: `🕒 候補中 (第${waitingPosition}位)`, color: '#FFA500', size: 'sm', weight: 'bold', align: 'center' };
+                statusComponent = { type: 'text', text: `🕒 候補中 (第${waitingPosition}位)`, color: '#FFA500', size: 'sm', weight: 'bold' };
                 footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` } };
             }
+
+            const textContents = [
+                { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'md', wrap: true },
+                statusComponent,
+                { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md', color: '#555555' },
+                { type: 'separator', margin: 'md' },
+                { type: 'text', text: formatDateTime(c.time), size: 'xs', color: '#888888' },
+            ];
 
             return {
                 type: 'bubble',
                 body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    paddingAll: 'xl',
-                    spacing: 'md',
+                    type: 'box', layout: 'horizontal', spacing: 'md', paddingAll: 'lg',
                     contents: [
-                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'xl', aspectRatio: '1:1', aspectMode: 'cover', cornerRadius: 'md' },
-                        { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', margin: 'md', align: 'center', wrap: true },
-                        statusComponent,
-                        { type: 'separator', margin: 'lg' },
-                        { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'md', color: '#555555', align: 'center' },
-                        { type: 'text', text: `${formatDateTime(c.time)}`, size: 'sm', color: '#888888', margin: 'sm', align: 'center' },
+                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, aspectRatio: '1:1', size: 'lg', flex: 0, aspectMode: 'cover', cornerRadius: 'md' },
+                        { type: 'box', layout: 'vertical', contents: textContents }
                     ]
                 },
                 footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
