@@ -2004,7 +2004,7 @@ async function handleTeacherCommands(event, userId) {
                         { type: 'separator', margin: 'xl' },
                         { type: 'text', text: '師資功能', size: 'sm', color: '#888888', weight: 'bold', margin: 'lg' },
                         { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📋 師資查詢', data: 'action=list_all_teachers&page=1' } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '👤 我的個人資訊', data: 'action=manage_personal_profile' } }
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '👤 個人資訊', data: 'action=manage_personal_profile' } }
                     ] 
                 } 
             } 
@@ -2189,17 +2189,23 @@ async function showStudentSearchResults(query, page) {
 }
 /**
  * [V34.0 新增] 顯示所有老師的公開資訊列表
-*/
+ * [V34.2 DEBUG] 加入詳細日誌以追蹤連線問題
+ */
 async function showAllTeachersList(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     
-    // 使用你專案中既有的標準連線方式
-    const client = await pgPool.connect();
+    let client;
     try {
+        console.log('[DEBUG] 步驟 1: 準備連接資料庫...');
+        client = await pgPool.connect();
+        console.log('[DEBUG] 步驟 2: 資料庫連接成功！');
+
+        console.log('[DEBUG] 步驟 3: 準備查詢 teachers 資料表...');
         const res = await client.query(
             "SELECT name, bio, image_url FROM teachers ORDER BY name ASC LIMIT $1 OFFSET $2",
             [CONSTANTS.PAGINATION_SIZE + 1, offset]
         );
+        console.log(`[DEBUG] 步驟 4: 查詢成功！找到 ${res.rows.length} 筆資料。`);
 
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageTeachers = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
@@ -2211,7 +2217,7 @@ async function showAllTeachersList(page) {
             return '沒有更多老師的資訊了。';
         }
         
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png'; // 通用頭像
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
 
         const teacherBubbles = pageTeachers.map(t => ({
             type: 'bubble',
@@ -2228,14 +2234,7 @@ async function showAllTeachersList(page) {
                 padding: 'lg',
                 contents: [
                     { type: 'text', text: t.name, weight: 'bold', size: 'xl', wrap: true },
-                    { 
-                        type: 'text', 
-                        text: t.bio || '這位老師尚未留下簡介。', 
-                        wrap: true, 
-                        size: 'sm', 
-                        color: '#666666', 
-                        margin: 'md' 
-                    },
+                    { type: 'text', text: t.bio || '這位老師尚未留下簡介。', wrap: true, size: 'sm', color: '#666666', margin: 'md' },
                 ],
             },
         }));
@@ -2245,15 +2244,23 @@ async function showAllTeachersList(page) {
             teacherBubbles.push(paginationBubble);
         }
 
+        console.log('[DEBUG] 步驟 5: Flex Message 準備完成，即將回傳。');
         return { 
             type: 'flex', 
             altText: '師資列表', 
             contents: { type: 'carousel', contents: teacherBubbles } 
         };
+    } catch (err) {
+        console.error('❌ 在 showAllTeachersList 中發生嚴重錯誤:', err);
+        return '查詢師資列表時發生錯誤，請稍後再試。';
     } finally {
-        if (client) client.release();
+        if (client) {
+            client.release();
+            console.log('[DEBUG] 步驟 6: 資料庫連線已釋放。');
+        }
     }
 }
+
 
 async function showPurchaseHistory(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
