@@ -2284,8 +2284,6 @@ async function showAllTeachersList(page) {
         if (client) client.release();
     }
 }
-
-//##############
 /**
  * [V35.0 新增] 建立一個顯示所有老師並供選擇的輪播卡片
  */
