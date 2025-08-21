@@ -2925,7 +2925,7 @@ async function showAvailableCourses(userId, page) {
         if (client) client.release();
     }
 }
-//################
+// ################
 /**
  * [V37.1.2 DEBUG] 逐步重建介面，第一步：加入狀態文字
  */
@@ -3008,12 +3008,9 @@ async function showMyCourses(userId, page) {
     } finally {
         if (client) client.release();
     }
-}
-
-
+}   
         
-        
-//################
+// ################
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
