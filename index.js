@@ -1809,36 +1809,73 @@ async function handleTeacherCommands(event, userId) {
          }
         break;
     }
-  }
-  else if (pendingCourseCreation[userId]) {
+  } else if (pendingCourseCreation[userId]) {
     const state = pendingCourseCreation[userId];
     switch (state.step) {
-        case 'await_title': state.title = text; state.step = 'await_weekday'; const weekdayButtons = WEEKDAYS.map(day => ({ type: 'action', action: { type: 'postback', label: day.label, data: `action=set_course_weekday&day=${day.value}` } })); return { type: 'text', text: `課程標題：「${text}」\n\n請問課程固定在每週的哪一天？`, quickReply: { items: weekdayButtons } };
-        case 'await_time': if (!/^\d{2}:\d{2}$/.test(text)) { return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：19:30', quickReply: { items: getCancelMenu() } }; } state.time = text; state.step = 'await_sessions'; return { type: 'text', text: '請問這個系列總共要開設幾堂課？（請輸入數字）', quickReply: { items: getCancelMenu() } };
-        case 'await_sessions': const sessions = parseInt(text, 10); if (isNaN(sessions) || sessions <= 0) { return { type: 'text', text: '堂數必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } }; } state.sessions = sessions; state.step = 'await_capacity'; return { type: 'text', text: '請問每堂課的名額限制？（請輸入數字）', quickReply: { items: getCancelMenu() } };
-        case 'await_capacity': const capacity = parseInt(text, 10); if (isNaN(capacity) || capacity <= 0) { return { type: 'text', text: '名額必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } }; } state.capacity = capacity; state.step = 'await_points'; return { type: 'text', text: '請問每堂課需要消耗多少點數？（請輸入數字）', quickReply: { items: getCancelMenu() } };
+        case 'await_title': 
+            state.title = text; 
+            state.step = 'await_weekday';
+            const weekdayButtons = WEEKDAYS.map(day => ({ type: 'action', action: { type: 'postback', label: day.label, data: `action=set_course_weekday&day=${day.value}` } })); 
+            return { type: 'text', text: `課程標題：「${text}」\n\n請問課程固定在每週的哪一天？`, quickReply: { items: weekdayButtons } };
+        
+        case 'await_time': 
+            if (!/^\d{2}:\d{2}$/.test(text)) { return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：19:30', quickReply: { items: getCancelMenu() } }; } 
+            state.time = text; 
+            state.step = 'await_sessions'; 
+            return { type: 'text', text: '請問這個系列總共要開設幾堂課？（請輸入數字）', quickReply: { items: getCancelMenu() } };
+        
+        case 'await_sessions': 
+            const sessions = parseInt(text, 10); 
+            if (isNaN(sessions) || sessions <= 0) { return { type: 'text', text: '堂數必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } }; } 
+            state.sessions = sessions; 
+            state.step = 'await_capacity'; 
+            return { type: 'text', text: '請問每堂課的名額限制？（請輸入數字）', quickReply: { items: getCancelMenu() } };
+        
+        case 'await_capacity': 
+            const capacity = parseInt(text, 10); 
+            if (isNaN(capacity) || capacity <= 0) { return { type: 'text', text: '名額必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } }; } 
+            state.capacity = capacity; 
+            state.step = 'await_points'; 
+            return { type: 'text', text: '請問每堂課需要消耗多少點數？（請輸入數字）', quickReply: { items: getCancelMenu() } };
+        
         case 'await_points':
-            const points = parseInt(text, 10); if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是正整數或 0，請重新輸入。', quickReply: { items: getCancelMenu() } }; }
-            state.points_cost = points; state.step = 'await_confirmation';
-            const firstDate = getNextDate(state.weekday, state.time); const summary = `請確認課程資訊：\n\n標題：${state.title}\n時間：每${state.weekday_label} ${state.time}\n堂數：${state.sessions} 堂\n名額：${state.capacity} 位\n費用：${state.points_cost} 點/堂\n\n首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
-            return { type: 'text', text: summary, quickReply: { items: [ { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] }};
+            const points = parseInt(text, 10); 
+            if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是正整數或 0，請重新輸入。', quickReply: { items: getCancelMenu() } }; }
+            state.points_cost = points; 
+            state.step = 'await_teacher'; // 下一步改為選擇老師
+
+            // 呼叫老師選擇介面
+            return buildTeacherSelectionCarousel();
+        
         case 'await_confirmation':
             if (text === '✅ 確認新增') {
                 const client = await pgPool.connect();
                 try {
-                    await client.query('BEGIN'); const prefix = await generateUniqueCoursePrefix(client); let currentDate = new Date();
+                    await client.query('BEGIN'); 
+                    const prefix = await generateUniqueCoursePrefix(client); 
+                    let currentDate = new Date();
                     for (let i = 0; i < state.sessions; i++) {
                         const courseDate = getNextDate(state.weekday, state.time, currentDate);
-                        const course = { id: `${prefix}${String(i + 1).padStart(2, '0')}`, title: state.title, time: courseDate.toISOString(), capacity: state.capacity, points_cost: state.points_cost, students: [], waiting: [] };
-                        await saveCourse(course, client); currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
+                        const course = { id: `${prefix}${String(i + 1).padStart(2, '0')}`, title: state.title, time: courseDate.toISOString(), capacity: state.capacity, points_cost: state.points_cost, students: [], waiting: [], teacher_id: state.teacher_id };
+                        await saveCourse(course, client); 
+                        currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
                     }
-                    await client.query('COMMIT'); delete pendingCourseCreation[userId];
+                    await client.query('COMMIT'); 
+                    delete pendingCourseCreation[userId];
                     return `✅ 成功新增「${state.title}」系列共 ${state.sessions} 堂課！`;
-                } catch (e) { await client.query('ROLLBACK'); console.error("新增課程系列失敗:", e); delete pendingCourseCreation[userId]; return '新增課程時發生錯誤，請稍後再試。';
-                } finally { if(client) client.release(); }
-            } else { return '請點擊「✅ 確認新增」或「❌ 取消操作」。'; }
+                } catch (e) { 
+                    await client.query('ROLLBACK'); 
+                    logger.error("新增課程系列失敗", e); 
+                    delete pendingCourseCreation[userId]; 
+                    return '新增課程時發生錯誤，請稍後再試。';
+                } finally { 
+                    if(client) client.release(); 
+                }
+            } else { 
+                return '請點擊「✅ 確認新增」或「❌ 取消操作」。'; 
+            }
     }
-  } else if (pendingManualAdjust[userId]) {
+  }else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
     switch (state.step) {
       case 'await_student_search':
