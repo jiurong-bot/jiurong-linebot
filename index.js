@@ -2245,22 +2245,50 @@ async function handleTeacherCommands(event, userId) {
                 state.newData = state.profileData;
                 return buildProfileConfirmationMessage(userId, state.newData);
         }
-    } 
-    else if (state.type === 'edit') {
-        const field = step.replace('await_', '');
-        let value;
-        if (field === 'image_url') {
-            if (event.message.type !== 'image') return { type: 'text', text: '格式錯誤，請直接上傳一張照片。', quickReply: { items: getCancelMenu() } };
+    
+    } else if (state.type === 'edit') {
+    const field = step.replace('await_', '');
+
+    if (field === 'image_url') {
+        if (event.message.type !== 'image') {
+            return { type: 'text', text: '格式錯誤，請直接上傳一張照片。', quickReply: { items: getCancelMenu() } };
+        }
+
+        // 啟動背景任務，並立即回覆
+        (async () => {
             try {
+                // 在背景執行耗時的圖片處理
                 const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
                 const imageBuffer = Buffer.from(imageResponse.data, 'binary');
                 const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
-                value = uploadResponse.url;
-            } catch (err) { console.error('更新老師照片至 ImageKit 失敗', err); delete pendingTeacherProfileEdit[userId]; return '❌ 圖片上傳失敗，請稍後再試。'; }
-        } else { value = text; }
-        state.newData = { [field]: value };
-        state.step = 'await_confirmation';
-        return buildProfileConfirmationMessage(userId, state.newData);
+                const imageUrl = uploadResponse.url;
+
+                const currentState = pendingTeacherProfileEdit[userId];
+                if (!currentState) return; // 如果使用者在處理過程中取消了，就終止
+
+                currentState.newData = { [field]: imageUrl };
+                currentState.step = 'await_confirmation';
+
+                // 處理完成後，用「推播」方式傳送確認訊息
+                const confirmationMessage = await buildProfileConfirmationMessage(userId, currentState.newData);
+                await enqueuePushTask(userId, confirmationMessage);
+
+            } catch (err) {
+                console.error('更新老師照片至 ImageKit 失敗', err);
+                delete pendingTeacherProfileEdit[userId];
+                await enqueuePushTask(userId, '❌ 圖片上傳失敗，請稍後再試。');
+            }
+        })();
+
+        // [!] 立刻回覆使用者，告知正在處理中
+        return '✅ 已收到您的照片，正在處理中，請稍候...';
+    }
+
+    // 非圖片欄位的處理邏輯維持不變
+    const value = text;
+    state.newData = { [field]: value };
+    state.step = 'await_confirmation';
+    return buildProfileConfirmationMessage(userId, state.newData);
     }
   }
 
