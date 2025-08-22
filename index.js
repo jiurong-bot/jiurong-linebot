@@ -2830,7 +2830,7 @@ async function showPendingOrders(page) {
 }
 // ###########
 /**
- * [V42.2 最終版面] 預約課程列表改為「左圖右文」經典樣式
+ * [V42.3 最終穩定版] 根據官方範例，修正 flex 屬性
  */
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
@@ -2885,13 +2885,12 @@ async function showAvailableCourses(userId, page) {
             ];
 
             return {
-                type: 'bubble',
-                size: 'mega', // 使用 Mega 尺寸更適合此版面
+                type: 'bubble', size: 'mega',
                 body: {
-                    type: 'box', layout: 'horizontal', spacing: 'lg', paddingAll: 'lg',
+                    type: 'box', layout: 'horizontal', spacing: 'md', paddingAll: 'lg',
                     contents: [
-                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, aspectRatio: '1:1', size: 'md', flex: 0, aspectMode: 'cover', cornerRadius: 'md' },
-                        { type: 'box', layout: 'vertical', spacing: 'sm', contents: textContents }
+                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, aspectRatio: '1:1', size: 'md', aspectMode: 'cover', cornerRadius: 'md', flex: 1 },
+                        { type: 'box', layout: 'vertical', spacing: 'sm', contents: textContents, flex: 2 }
                     ]
                 },
                 footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
@@ -2911,7 +2910,7 @@ async function showAvailableCourses(userId, page) {
 
 // #########
 /**
- * [V42.2 最終版面] 我的課程列表改為「左圖右文」經典樣式
+ * [V42.3 最終穩定版] 根據官方範例，修正 flex 屬性
  */
 async function showMyCourses(userId, page) {
     const client = await pgPool.connect();
@@ -2970,8 +2969,8 @@ async function showMyCourses(userId, page) {
                 body: {
                     type: 'box', layout: 'horizontal', spacing: 'md', paddingAll: 'lg',
                     contents: [
-                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, aspectRatio: '1:1', size: 'lg', flex: 0, aspectMode: 'cover', cornerRadius: 'md' },
-                        { type: 'box', layout: 'vertical', spacing: 'sm', contents: textContents }
+                        { type: 'image', url: c.teacher_image_url || placeholder_avatar, aspectRatio: '1:1', size: 'lg', aspectMode: 'cover', cornerRadius: 'md', flex: 1 },
+                        { type: 'box', layout: 'vertical', spacing: 'sm', contents: textContents, flex: 2 }
                     ]
                 },
                 footer: { type: 'box', layout: 'vertical', contents: [footerButton] }
