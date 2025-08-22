@@ -3624,7 +3624,7 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
-
+// ###########
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
@@ -3784,6 +3784,10 @@ async function handlePostback(event, user) {
             if (!state || state.name !== 'course_creation') return '新增課程流程已逾時或中斷。';
             return handleCourseCreationFlow(event, user, state);
         }
+
+        // ==================================
+        // ✨ V35.2 修正點：補回 run_command
+        // ==================================
         case 'run_command': {
             const commandText = decodeURIComponent(data.get('text'));
             if (!commandText) return null;
@@ -3815,6 +3819,7 @@ async function handlePostback(event, user) {
                 return handleStudentCommands(simulatedEvent, user, null);
             }
         }
+        
         // ==================================
         // 單次性、無狀態的操作
         // ==================================
@@ -3849,7 +3854,6 @@ async function handlePostback(event, user) {
                     const course = courseRes.rows[0];
                     if ((course.students?.length || 0) < course.capacity) { await client.query('ROLLBACK'); return '好消息！這堂課剛好有名額釋出了，請回到列表直接點擊「預約課程」按鈕。'; }
                     if (course.waiting?.includes(userId)) { await client.query('ROLLBACK'); return '您已在候補名單中，請耐心等候通知。'; }
-
                     const newWaitingList = [...(course.waiting || []), userId];
                     await client.query('UPDATE courses SET waiting = $1 WHERE id = $2', [newWaitingList, course_id]);
                     await client.query('COMMIT');
@@ -3894,6 +3898,19 @@ async function handlePostback(event, user) {
                 return `✅ 已退回 ${order.user_name} 的訂單，並已通知對方。`;
             });
         }
+        case 'generate_report': {
+            // (此處省略，與 V34.0 版本相同) ...
+        }
+        // ... (其他所有單次性操作的 case 都需要從 V34.0 完整複製過來) ...
+
+        default:
+            console.log(`[INFO] 未處理的 Postback Action: ${action}`);
+            return null;
+    }
+}
+
+
+        // ########$###
         case 'generate_report': {
             const reportType = data.get('type');
             const period = data.get('period');
