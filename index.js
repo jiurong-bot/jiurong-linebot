@@ -3370,7 +3370,8 @@ async function showSingleCoursesForCancellation(prefix, page) {
         const coursesRes = await client.query("SELECT * FROM courses WHERE id LIKE $1 AND time > NOW() ORDER BY time ASC LIMIT $2 OFFSET $3", [`${prefix}%`, CONSTANTS.PAGINATION_SIZE + 1, offset]);
 
         const hasNextPage = coursesRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        // 【修正點】將錯誤的 res.rows 改為 coursesRes.rows
+        const pageCourses = hasNextPage ? coursesRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : coursesRes.rows;
 
         if (pageCourses.length === 0 && page === 1) {
           return "此系列沒有可取消的未來課程。";
@@ -3404,6 +3405,7 @@ async function showSingleCoursesForCancellation(prefix, page) {
         return { type: 'flex', altText: '請選擇要單次取消的課程', contents: { type: 'carousel', contents: courseBubbles } };
     });
 }
+
 async function showShopProducts(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
