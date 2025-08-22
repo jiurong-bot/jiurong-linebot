@@ -1,4 +1,4 @@
-// index.js - V33.0 (程式碼重構)
+// index.js - V33.0 (程式碼重構)〔穩定版〕
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
