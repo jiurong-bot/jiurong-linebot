@@ -2828,7 +2828,10 @@ async function showPendingOrders(page) {
         return { type: 'flex', altText: '待確認點數訂單', contents: { type: 'carousel', contents: orderBubbles } };
     });
 }
-// ###########
+// ###########       
+/**
+ * [V43.0 UI優化] 課程卡片中的老師資訊，改為圓形頭像+簡介的精緻版面
+ */
 async function showAvailableCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     const client = await pgPool.connect();
@@ -2858,7 +2861,7 @@ async function showAvailableCourses(userId, page) {
             return '沒有更多課程了。';
         }
 
-        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
 
         const courseBubbles = pageCourses.map(c => {
             const studentCount = c.students?.length || 0;
@@ -2882,17 +2885,30 @@ async function showAvailableCourses(userId, page) {
                 footerButton = { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '預約此課程', data: `action=select_booking_spots&course_id=${c.id}` }, color: '#52B69A' };
             }
 
+            // [V43.0 新增] 老師資訊的精緻化元件
+            const teacherInfoComponent = {
+                type: 'box', layout: 'horizontal', spacing: 'md', margin: 'md', alignItems: 'center',
+                contents: [
+                    { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'sm', aspectRatio: '1:1', aspectMode: 'cover', cornerRadius: '100px', flex: 0 },
+                    { type: 'box', layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: c.teacher_name || '待定', weight: 'bold', size: 'sm', color: '#555555' },
+                            { type: 'text', text: c.teacher_bio || '', wrap: true, size: 'xs', color: '#888888', margin: 'xs' }
+                        ]
+                    }
+                ]
+            };
+
             return {
                 type: 'bubble', size: 'giga',
-                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                hero: { type: 'image', url: 'https://i.imgur.com/s43t5tQ.jpeg', size: 'full', aspectRatio: '20:13', aspectMode: 'cover' },
                 body: {
                     type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md',
                     contents: [
                         { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
                         ...statusComponents,
                         { type: 'separator', margin: 'lg' },
-                        { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md' },
-                        { type: 'text', text: c.teacher_bio || '', wrap: true, size: 'xs', color: '#888888', margin: 'xs' },
+                        teacherInfoComponent, // [V43.0 修改] 替換掉原本的純文字
                         { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'sm' },
                         { type: 'text', text: `${c.points_cost} 點`, size: 'sm' },
                         { type: 'text', text: courseStatusText, size: 'sm' },
@@ -2914,15 +2930,19 @@ async function showAvailableCourses(userId, page) {
 }
 
 // #########
+/**
+ * [V43.0 UI優化] 課程卡片中的老師資訊，改為圓形頭像+簡介的精緻版面
+ */
 async function showMyCourses(userId, page) {
-    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     const client = await pgPool.connect();
     try {
+        // [V43.0 修改] 在查詢中加入 t.bio AS teacher_bio
         const res = await client.query(
             `SELECT 
                 c.*, 
                 t.name AS teacher_name, 
-                t.image_url AS teacher_image_url
+                t.image_url AS teacher_image_url,
+                t.bio AS teacher_bio
              FROM courses c
              LEFT JOIN teachers t ON c.teacher_id = t.id
              WHERE (
@@ -2946,14 +2966,14 @@ async function showMyCourses(userId, page) {
             return '您目前沒有任何已預約或候補中的課程。';
         }
         
-        const hasNextPage = allCourseCardsData.length > offset + CONSTANTS.PAGINATION_SIZE;
-        const pageCardsData = allCourseCardsData.slice(offset, offset + CONSTANTS.PAGINATION_SIZE);
+        const hasNextPage = allCourseCardsData.length > (page - 1) * CONSTANTS.PAGINATION_SIZE + CONSTANTS.PAGINATION_SIZE;
+        const pageCardsData = allCourseCardsData.slice((page - 1) * CONSTANTS.PAGINATION_SIZE, page * CONSTANTS.PAGINATION_SIZE);
         
         if (pageCardsData.length === 0) {
             return '沒有更多課程了。';
         }
 
-        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
 
         const courseBubbles = pageCardsData.map(cardData => {
             const c = cardData.course;
@@ -2970,16 +2990,30 @@ async function showMyCourses(userId, page) {
                 footerButtons.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` } });
             }
 
+            // [V43.0 新增] 老師資訊的精緻化元件
+            const teacherInfoComponent = {
+                type: 'box', layout: 'horizontal', spacing: 'md', margin: 'md', alignItems: 'center',
+                contents: [
+                    { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'sm', aspectRatio: '1:1', aspectMode: 'cover', cornerRadius: '100px', flex: 0 },
+                    { type: 'box', layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: c.teacher_name || '待定', weight: 'bold', size: 'sm', color: '#555555' },
+                            { type: 'text', text: c.teacher_bio || '', wrap: true, size: 'xs', color: '#888888', margin: 'xs' }
+                        ]
+                    }
+                ]
+            };
+
             return {
                 type: 'bubble', size: 'giga',
-                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                hero: { type: 'image', url: 'https://i.imgur.com/s43t5tQ.jpeg', size: 'full', aspectRatio: '20:13', aspectMode: 'cover' },
                 body: {
                     type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md',
                     contents: [
                         { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
                         ...statusComponents,
                         { type: 'separator', margin: 'lg' },
-                        { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md' },
+                        teacherInfoComponent, // [V43.0 修改] 替換掉原本的純文字
                         { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'sm' }
                     ]
                 },
