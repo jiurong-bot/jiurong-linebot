@@ -4225,7 +4225,6 @@ async function handlePostback(event, user) {
     }
 }
 
-
 async function handleEvent(event) {
     if (event.type === 'unfollow' || event.type === 'leave') {
         console.log(`用戶 ${event.source.userId} 已封鎖或離開`);
@@ -4305,27 +4304,28 @@ async function handleEvent(event) {
     try {
         const text = (event.type === 'message' && event.message.type === 'text') ? event.message.text.trim() : '';
 
-        let shouldClear = true;
-        if (event.type === 'postback') {
-            const postbackData = new URLSearchParams(event.postback.data);
-            const action = postbackData.get('action');
-            
+        // ✨ 修正點：將所有的判斷串接成一個完整的 if...else if... 鏈
+        
+        // 智慧取消邏輯：當使用者在對話中輸入新指令時，自動取消前一個操作
+        let shouldClear = true;
+        if (event.type === 'postback') {
+            const postbackData = new URLSearchParams(event.postback.data);
+            const action = postbackData.get('action');
             const continuationActions = [ 'set_course_weekday', 'select_teacher_for_course', 'confirm_add_product', 'edit_product_field', 'start_booking_confirmation', 'execute_booking', 'execute_product_purchase' ];
-
-            if (continuationActions.includes(action)) {
-                shouldClear = false;
-            }
-        }
-
-        if (shouldClear && (text && text.startsWith('@') || event.type === 'postback')) {
-            const wasCleared = clearPendingConversations(userId);
-            if (wasCleared) console.log(`使用者 ${userId} 的待辦任務已由新操作自動取消。`);
+            if (continuationActions.includes(action)) {
+                shouldClear = false;
+            }
+        }
+        if (shouldClear && text.startsWith('@')) {
+            clearPendingConversations(userId);
         }
         
+        // 1. 最高優先級：通用取消指令
         if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
             const wasCleared = clearPendingConversations(userId);
             mainReplyContent = wasCleared ? '已取消先前的操作。' : '目前沒有可取消的操作。';
-        } 
+        }
+        // 2. 次高優先級：管理員模式切換
         else if (userId === ADMIN_USER_ID && text === CONSTANTS.COMMANDS.ADMIN.PANEL) {
             contextForError = '進入管理模式';
             if (user.role !== 'admin') {
@@ -4334,6 +4334,7 @@ async function handleEvent(event) {
             }
             mainReplyContent = await handleAdminCommands(event, userId);
         }
+        // 3. 處理文字訊息
         else if (event.type === 'message') {
             contextForError = `處理訊息: ${text}`;
             switch(user.role) {
@@ -4342,11 +4343,13 @@ async function handleEvent(event) {
                 default: mainReplyContent = await handleStudentCommands(event, userId); break;
             }
         } 
+        // 4. 處理按鈕回傳事件
         else if (event.type === 'postback') {
             const action = new URLSearchParams(event.postback.data).get('action');
             contextForError = `處理 Postback: ${action}`;
             mainReplyContent = await handlePostback(event, user);
         }
+
     } catch(err) {
         await handleError(err, event.replyToken, contextForError);
         return;
@@ -4372,4 +4375,3 @@ async function handleEvent(event) {
         }
     }
 }
-
