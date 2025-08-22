@@ -1683,6 +1683,152 @@ function handleUnknownTeacherCommand(text) {
 }
 
 // --- Main Command Handlers ---
+async function getUserNames(userIds, dbClient) {
+    if (!userIds || userIds.length === 0) {
+        return new Map();
+    }
+    const usersRes = await dbClient.query("SELECT id, name FROM users WHERE id = ANY($1::text[])", [userIds]);
+    return new Map(usersRes.rows.map(u => [u.id, u.name]));
+}
+
+async function showFailedTasks(page) {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return withDatabaseClient(async (client) => {
+        const res = await client.query(
+            "SELECT * FROM failed_tasks ORDER BY failed_at DESC LIMIT $1 OFFSET $2",
+            [CONSTANTS.PAGINATION_SIZE + 1, offset]
+        );
+        
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageTasks = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageTasks.length === 0 && page === 1) {
+            return '✅ 太好了！目前沒有任何失敗的任務。';
+        }
+        if (pageTasks.length === 0) {
+            return '沒有更多失敗的任務了。';
+        }
+
+        const userIds = [...new Set(pageTasks.map(task => task.recipient_id))];
+        const userNamesMap = await getUserNames(userIds, client);
+
+        const taskBubbles = pageTasks.map(task => {
+            const recipientName = userNamesMap.get(task.recipient_id) || '未知用戶';
+            const errorMessage = task.last_error || '沒有錯誤訊息。';
+            
+            return {
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🚨 任務失敗', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#d9534f', paddingAll: 'lg' },
+                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '收件人', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${recipientName}`, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '失敗時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(task.failed_at), color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                    { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'text', text: '錯誤原因', color: '#aaaaaa', size: 'sm' }, { type: 'text', text: errorMessage.substring(0, 100), color: '#666666', size: 'sm', wrap: true, margin: 'md' } ] }
+                ]},
+                footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+                    { type: 'button', style: 'secondary', flex: 1, height: 'sm', action: { type: 'postback', label: '🗑️ 刪除', data: `action=delete_failed_task&id=${task.id}` } },
+                    { type: 'button', style: 'primary', color: '#5cb85c', flex: 1, height: 'sm', action: { type: 'postback', label: '🔄 重試', data: `action=retry_failed_task&id=${task.id}` } }
+                ]}
+            };
+        });
+
+        const paginationBubble = createPaginationBubble('action=view_failed_tasks', page, hasNextPage);
+        if (paginationBubble) {
+            taskBubbles.push(paginationBubble);
+        }
+
+        return { type: 'flex', altText: '失敗任務列表', contents: { type: 'carousel', contents: taskBubbles } };
+    });
+}
+
+async function showSystemStatus() {
+  return withDatabaseClient(async (db) => {
+    const [pendingRes, processingRes, failedRes] = await Promise.all([
+      db.query("SELECT COUNT(*) FROM tasks WHERE status = 'pending'"),
+      db.query("SELECT COUNT(*) FROM tasks WHERE status = 'processing'"),
+      db.query("SELECT COUNT(*) FROM failed_tasks")
+    ]);
+
+    const pendingCount = pendingRes.rows[0].count;
+    const processingCount = processingRes.rows[0].count;
+    const failedCount = failedRes.rows[0].count;
+
+    const statusText = `
+⚙️ 背景系統狀態 ⚙️
+
+- 待處理任務: ${pendingCount} 個
+- 正在處理中: ${processingCount} 個
+- 失敗任務(DLQ): ${failedCount} 個
+
+ℹ️ 「待處理任務」是系統即將要發送的排程訊息 (如課程提醒)。若「失敗任務」數量持續增加，請檢查 Worker 紀錄。
+    `.trim();
+
+    return statusText;
+  });
+}
+
+async function showTeacherListForRemoval(page) {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return withDatabaseClient(async (client) => {
+        const res = await client.query(
+            "SELECT id, name, picture_url FROM users WHERE role = 'teacher' ORDER BY name ASC LIMIT $1 OFFSET $2",
+            [CONSTANTS.PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageTeachers = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageTeachers.length === 0 && page === 1) {
+            return '目前沒有任何已授權的老師可供移除。';
+        }
+        if (pageTeachers.length === 0) {
+            return '沒有更多老師了。';
+        }
+
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+        const teacherBubbles = pageTeachers.map(t => ({
+            type: 'bubble',
+            body: {
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'md',
+                contents: [
+                    { type: 'image', url: t.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
+                    { type: 'box', layout: 'vertical', flex: 3, justifyContent: 'center',
+                        contents: [
+                            { type: 'text', text: t.name, weight: 'bold', size: 'lg', wrap: true },
+                            { type: 'text', text: `ID: ${formatIdForDisplay(t.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm', wrap: true }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'primary',
+                    color: '#DE5246',
+                    height: 'sm',
+                    action: { type: 'postback', label: '選擇此老師', data: `action=select_teacher_for_removal&targetId=${t.id}&targetName=${encodeURIComponent(t.name)}` }
+                }]
+            }
+        }));
+
+        const paginationBubble = createPaginationBubble('action=list_teachers_for_removal', page, hasNextPage);
+        if (paginationBubble) {
+            teacherBubbles.push(paginationBubble);
+        }
+
+        return {
+            type: 'flex',
+            altText: '選擇要移除的老師',
+            contents: { type: 'carousel', contents: teacherBubbles }
+        };
+    });
+}
+
+
 
 async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
