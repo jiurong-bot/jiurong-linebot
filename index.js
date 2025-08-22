@@ -3624,7 +3624,6 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
-
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
@@ -3634,14 +3633,12 @@ async function handlePostback(event, user) {
     switch (action) {
 
         // ==================================
-        // 頁面檢視 (Pagination & Views)
+        // 頁面檢視 (無狀態)
         // ==================================
         case 'view_course_series': return showCourseSeries(page);
         case 'view_course_roster_summary': return showCourseRosterSummary(page);
-        case 'view_course_roster_details': return showCourseRosterDetails(data.get('course_id'));
         case 'view_student_details': return showStudentDetails(data.get('studentId'));
         case 'list_teachers_for_removal': return showTeacherListForRemoval(page);
-        case 'view_pending_orders':
         case 'view_pending_orders_page': return showPendingOrders(page);
         case 'student_search_results': return showStudentSearchResults(decodeURIComponent(data.get('query') || ''), page);
         case 'view_unread_messages': return showUnreadMessages(page);
@@ -3657,15 +3654,14 @@ async function handlePostback(event, user) {
         case 'view_historical_messages': return showHistoricalMessages(decodeURIComponent(data.get('query') || ''), page);
         case 'view_failed_tasks': return showFailedTasks(page);
         case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
-        
+        case 'list_all_teachers': return showAllTeachersList(page);
+        case 'view_course_roster_details': return showCourseRosterDetails(data.get('course_id'));
+
         // ==================================
-        // [V34.0 & V34.1] 師資管理
+        // 啟動對話流程的操作 (使用 saveState)
         // ==================================
-        case 'list_all_teachers': {
-            return showAllTeachersList(page);
-        }
         case 'manage_personal_profile': {
-            return withDatabaseClient(async (client) => {
+             return withDatabaseClient(async (client) => {
                 const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
                 if (res.rows.length > 0) {
                     const profile = res.rows[0];
@@ -3685,57 +3681,105 @@ async function handlePostback(event, user) {
             });
         }
         case 'create_teacher_profile_start': {
-            pendingTeacherProfileEdit[userId] = { type: 'create', step: 'await_name', profileData: {} };
-            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfile-Edit', (u) => {
-                enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
-            });
+            await saveState(userId, { name: 'teacher_profile_edit', type: 'create', step: 'await_name', data: {} });
             return { type: 'text', text: '好的，我們開始建立您的師資檔案。\n\n首先，請輸入您希望顯示的姓名或暱稱：', quickReply: { items: getCancelMenu() } };
         }
         case 'edit_teacher_profile_field': {
             const field = data.get('field');
             const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
             const promptMap = { name: '請輸入您想更新的姓名或暱稱：', bio: '請輸入您想更新的個人簡介 (可換行)：', image_url: '請直接上傳一張您想更換的個人照片：' };
-            pendingTeacherProfileEdit[userId] = { type: 'edit', step: `await_${field}` };
-            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
-                enqueuePushTask(u, { type: 'text', text: `編輯${fieldMap[field]}操作逾時，自動取消。` });
-            });
+            await saveState(userId, { name: 'teacher_profile_edit', type: 'edit', step: `await_${field}`, data: { field } });
             return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
         }
-        case 'confirm_teacher_profile_update': {
-            const state = pendingTeacherProfileEdit[userId];
-            if (!state || state.step !== 'await_confirmation' || !state.newData) { return '確認操作已逾時或無效，請重新操作。'; }
-            const newData = state.newData;
-            const isCreating = state.type === 'create';
-            delete pendingTeacherProfileEdit[userId];
-            
-            await withDatabaseClient(async (client) => {
-                if (isCreating) {
-                    await client.query( `INSERT INTO teachers (line_user_id, name, bio, image_url) VALUES ($1, $2, $3, $4) ON CONFLICT (line_user_id) DO UPDATE SET name = EXCLUDED.name, bio = EXCLUDED.bio, image_url = EXCLUDED.image_url, updated_at = NOW()`, [userId, newData.name, newData.bio, newData.image_url] );
-                } else {
-                    const fields = Object.keys(newData);
-                    const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
-                    const values = Object.values(newData);
-                    await client.query( `UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`, [...values, userId] );
-                }
-            });
-            const successMessage = isCreating ? '✅ 恭喜！您的師資檔案已成功建立！' : '✅ 您的個人檔案已成功更新！';
-            return successMessage;
+        case 'select_purchase_plan': {
+            const points = parseInt(data.get('plan'), 10);
+            const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+            if (!plan) return '找不到您選擇的購買方案。';
+            await saveState(userId, { name: 'purchase', step: 'confirm_purchase', data: { points: plan.points, amount: plan.amount } });
+            return {
+                type: 'text',
+                text: `您選擇了購買「${plan.label}」。\n金額為 ${plan.amount} 元。\n\n請確認是否繼續購買？`,
+                quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}
+            };
+        }
+        case 'reply_feedback': {
+            const msgId = data.get('msgId');
+            const studentId = data.get('userId');
+            if (!msgId || !studentId) return '操作失敗，缺少必要資訊。';
+            const msgRes = await withDatabaseClient(client => client.query("SELECT message FROM feedback_messages WHERE id = $1", [msgId]));
+            if (msgRes.rows.length === 0) return '找不到這則留言，可能已被其他老師處理。';
+            const originalMessage = msgRes.rows[0].message;
+            await saveState(userId, { name: 'reply', data: { msgId, studentId, originalMessage } });
+            return { type: 'text', text: `正在回覆學員的留言：\n「${originalMessage.substring(0, 80)}...」\n\n請直接輸入您要回覆的內容：`, quickReply: { items: getCancelMenu() } };
+        }
+        case 'select_student_for_auth': {
+            const targetId = data.get('targetId');
+            const targetName = decodeURIComponent(data.get('targetName'));
+            if (!targetId || !targetName) return '操作失敗，缺少目標學員資訊。';
+            await saveState(userId, { name: 'teacher_addition', step: 'await_confirmation', data: { targetId, targetName } });
+            return { type: 'text', text: `您確定要授權學員「${targetName}」成為老師嗎？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
+        }
+        case 'select_teacher_for_removal': {
+            const targetId = data.get('targetId');
+            const targetName = decodeURIComponent(data.get('targetName'));
+            if (!targetId || !targetName) return '操作失敗，缺少目標老師資訊。';
+            await saveState(userId, { name: 'teacher_removal', step: 'await_confirmation', data: { targetId, targetName } });
+            return { type: 'text', text: `您確定要移除老師「${targetName}」的權限嗎？\n該用戶將會變回學員身份。`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
+        }
+        case 'select_student_for_adjust': {
+            const studentId = data.get('studentId');
+            const student = await getUser(studentId);
+            if (!student) return '找不到該學員的資料。';
+            await saveState(userId, { name: 'manual_adjust', step: 'await_operation', data: { studentId: student.id, studentName: student.name } });
+            return { type: 'text', text: `已選擇學員：「${student.name}」。\n請問您要為他加點或扣點？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS, text: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS, text: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
+        }
+        case 'select_announcement_for_deletion': {
+            const ann_id = data.get('ann_id');
+            const annRes = await withDatabaseClient(client => client.query("SELECT content FROM announcements WHERE id = $1", [ann_id]));
+            if(annRes.rows.length === 0) return '找不到該公告。';
+            await saveState(userId, { name: 'announcement_deletion', step: 'await_confirmation', data: { ann_id } });
+            return { type: 'text', text: `您確定要刪除以下公告嗎？\n\n「${annRes.rows[0].content.substring(0, 100)}...」`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_DELETE_ANNOUNCEMENT, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_DELETE_ANNOUNCEMENT}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
+        }
+        case 'cancel_course_group_confirm': {
+            const prefix = data.get('prefix');
+            const courseTitle = await withDatabaseClient(client => client.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`])).then(res => res.rows[0]?.title);
+            if (!courseTitle) return '找不到此課程系列。';
+            const mainTitle = getCourseMainTitle(courseTitle);
+            await saveState(userId, { name: 'course_cancellation', type: 'batch', data: { prefix } });
+            return { type: 'text', text: `⚠️ 警告：您確定要批次取消「${mainTitle}」系列的所有未來課程嗎？\n此操作將會退還點數給所有已預約的學員，且無法復原。`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
+        }
+        case 'confirm_single_course_cancel': {
+            const courseId = data.get('course_id');
+            const course = await getCourse(courseId);
+            if (!course) return '找不到此課程。';
+            await saveState(userId, { name: 'course_cancellation', type: 'single', data: { courseId } });
+            return { type: 'text', text: `您確定要取消單堂課程「${course.title}」嗎？\n此操作將退還點數給已預約的學員。`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
+        }
+        case 'confirm_cancel_booking_start':
+        case 'confirm_cancel_waiting_start': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) return '找不到該課程，可能已被老師取消或已結束。';
+            const isBooking = action === 'confirm_cancel_booking_start';
+            await saveState(userId, { name: 'cancel_booking', type: isBooking ? 'cancel_book' : 'cancel_wait', data: { course_id } });
+            const actionText = isBooking ? '取消預約' : '取消候補';
+            const confirmCommand = isBooking ? CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING : CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING;
+            return { type: 'text', text: `您確定要「${actionText}」以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: `✅ 確認${actionText}`, text: confirmCommand } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
+        }
+        case 'set_course_weekday': {
+            const state = await getState(userId);
+            if (!state || state.name !== 'course_creation') return '新增課程流程已逾時或中斷。';
+            return handleCourseCreationFlow(event, user, state);
+        }
+        case 'select_teacher_for_course': {
+            const state = await getState(userId);
+            if (!state || state.name !== 'course_creation') return '新增課程流程已逾時或中斷。';
+            return handleCourseCreationFlow(event, user, state);
         }
 
-        case 'select_teacher_for_course': {
-            const state = pendingCourseCreation[userId];
-            const teacher_id = parseInt(data.get('teacher_id'), 10);
-            if (!state || state.step !== 'await_teacher' || !teacher_id) { return '操作已逾時或無效，請重新新增課程。'; }
-            state.teacher_id = teacher_id;
-            state.step = 'await_confirmation';
-
-            const teacher = await withDatabaseClient(client => client.query('SELECT name FROM teachers WHERE id = $1', [teacher_id])).then(res => res.rows[0]);
-            state.teacher_name = teacher?.name || '未知老師';
-
-            const firstDate = getNextDate(state.weekday, state.time);
-            const summary = `請確認課程資訊：\n\n` + `標題：${state.title}\n` + `老師：${state.teacher_name}\n` + `時間：每${state.weekday_label} ${state.time}\n` + `堂數：${state.sessions} 堂\n` + `名額：${state.capacity} 位\n` + `費用：${state.points_cost} 點/堂\n\n` + `首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
-            return { type: 'text', text: summary, quickReply: { items: [ { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
-        }       
+        // ==================================
+        // 單次性、無狀態的操作
+        // ==================================
         case 'join_waiting_list': {
             const course_id = data.get('course_id');
             return withDatabaseClient(async (client) => {
@@ -3757,17 +3801,6 @@ async function handlePostback(event, user) {
                     return '加入候補時發生錯誤，請稍後再試。';
                 }
             });
-        }
-        case 'select_purchase_plan': {
-            const points = parseInt(data.get('plan'), 10);
-            const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
-            if (!plan) return '找不到您選擇的購買方案。';
-            pendingPurchase[userId] = { step: 'confirm_purchase', data: { points: plan.points, amount: plan.amount } };
-            setupConversationTimeout(userId, pendingPurchase, 'pendingPurchase', (u) => {
-                const timeoutMessage = { type: 'text', text: '您的購買確認操作已逾時，請重新點擊「購買點數」開始。' };
-                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
-            });
-            return { type: 'text', text: `您選擇了購買「${plan.label}」。\n金額為 ${plan.amount} 元。\n\n請確認是否繼續購買？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
         }
         case 'confirm_order': {
             const order_id = data.get('order_id');
@@ -3843,35 +3876,17 @@ async function handlePostback(event, user) {
             } catch (err) { console.error(`❌ 即時生成 ${reportType} 報表失敗:`, err); return `❌ 產生 ${periodText} 報表時發生錯誤，請稍後再試。`; }
         }
         case 'confirm_add_product': {
-            const state = pendingProductCreation[userId];
-            if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
-            await withDatabaseClient(client => client.query( `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) VALUES ($1, $2, $3, $4, $5, 'available', $6, $7)`, [state.name, state.description, state.price, state.inventory, state.image_url, userId, user.name] ) );
-            delete pendingProductCreation[userId];
+            const state = await getState(userId);
+            if (!state || state.name !== 'product_creation' || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
+            await withDatabaseClient(client => client.query( `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) VALUES ($1, $2, $3, $4, $5, 'available', $6, $7)`, [state.data.name, state.data.description, state.data.price, state.data.inventory, state.data.image_url, userId, user.name] ) );
+            await clearState(userId);
             return '✅ 商品已成功上架！';
-        }
-        case 'manage_product': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            const flexMessage = { type: 'flex', altText: '編輯商品資訊', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `編輯：${product.name}`, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#52B69A' }, body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯名稱', data: `action=edit_product_field&product_id=${productId}&field=name` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯描述', data: `action=edit_product_field&product_id=${productId}&field=description` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯價格', data: `action=edit_product_field&product_id=${productId}&field=price` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯圖片網址', data: `action=edit_product_field&product_id=${productId}&field=image_url` } } ]}}};
-            return flexMessage;
-        }
-        case 'edit_product_field': {
-            const productId = data.get('product_id');
-            const field = data.get('field');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            pendingProductEdit[userId] = { product, field };
-            setupConversationTimeout(userId, pendingProductEdit, 'pendingProductEdit', u => enqueuePushTask(u, { type: 'text', text: '編輯商品操作逾時，自動取消。' }));
-            const fieldMap = { name: '名稱', description: '描述', price: '價格 (點數)', image_url: '圖片網址' };
-            return { type: 'text', text: `請輸入新的「${fieldMap[field]}」：\n(目前為：${product[field] || '無'})`, quickReply: { items: getCancelMenu() } };
         }
         case 'adjust_inventory_start': {
             const productId = data.get('product_id');
             const product = await getProduct(productId);
             if (!product) return '找不到該商品。';
-            pendingInventoryAdjust[userId] = { product, originalInventory: product.inventory };
-            setupConversationTimeout(userId, pendingInventoryAdjust, 'pendingInventoryAdjust', u => enqueuePushTask(u, { type: 'text', text: '調整庫存操作逾時，自動取消。' }));
+            await saveState(userId, { name: 'inventory_adjust', data: { productId: product.id, productName: product.name, originalInventory: product.inventory } });
             return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
         }
         case 'toggle_product_status': {
@@ -3961,43 +3976,8 @@ async function handlePostback(event, user) {
                 } catch (err) { await client.query('ROLLBACK'); console.error('❌ 取消商城訂單失敗:', err); return '取消訂單時發生錯誤，操作已復原。'; }
             });
         }
-        case 'set_course_weekday': {
-            const state = pendingCourseCreation[userId];
-            if (!state || state.step !== 'await_weekday') return '新增課程流程已逾時或中斷。';
-            state.weekday = parseInt(data.get('day'), 10);
-            state.weekday_label = WEEKDAYS.find(d => d.value === state.weekday).label;
-            state.step = 'await_time';
-            return { type: 'text', text: `好的，課程固定在每${state.weekday_label}。\n\n請問上課時間是幾點？（請輸入四位數時間，例如：19:30）`, quickReply: { items: getCancelMenu() } };
-        }
-        case 'cancel_course_group_confirm': {
-            const prefix = data.get('prefix');
-            const courseTitle = await withDatabaseClient(client => client.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`])).then(res => res.rows[0]?.title);
-            if (!courseTitle) return '找不到此課程系列。';
-            const mainTitle = getCourseMainTitle(courseTitle);
-            pendingCourseCancellation[userId] = { type: 'batch', prefix };
-            setupConversationTimeout(userId, pendingCourseCancellation, 'pendingCourseCancellation', u => enqueuePushTask(u, { type: 'text', text: '取消課程操作逾時。' }));
-            return { type: 'text', text: `⚠️ 警告：您確定要批次取消「${mainTitle}」系列的所有未來課程嗎？\n此操作將會退還點數給所有已預約的學員，且無法復原。`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
-        }
-        case 'confirm_single_course_cancel': {
-            const courseId = data.get('course_id');
-            const course = await getCourse(courseId);
-            if (!course) return '找不到此課程。';
-            pendingCourseCancellation[userId] = { type: 'single', course_id: courseId };
-            setupConversationTimeout(userId, pendingCourseCancellation, 'pendingCourseCancellation', u => enqueuePushTask(u, { type: 'text', text: '取消課程操作逾時。' }));
-            return { type: 'text', text: `您確定要取消單堂課程「${course.title}」嗎？\n此操作將退還點數給已預約的學員。`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
-        }
-        case 'select_booking_spots': {
-            const course_id = data.get('course_id');
-            const course = await getCourse(course_id);
-            if (!course) return '抱歉，找不到該課程。';
-            const remainingSpots = course.capacity - course.students.length;
-            if (remainingSpots <= 0) return '抱歉，此課程名額已滿。';
-            const maxSpots = Math.min(5, remainingSpots);
-            const buttons = Array.from({ length: maxSpots }, (_, i) => ({ type: 'button', style: 'secondary', height: 'sm', margin: 'sm', action: { type: 'postback', label: `${i + 1} 位 (共 ${course.points_cost * (i + 1)} 點)`, data: `action=start_booking_confirmation&course_id=${course.id}&spots=${i + 1}` } }));
-            return { type: 'flex', altText: '請選擇預約人數', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '選擇預約人數', weight: 'bold', size: 'lg', color: '#FFFFFF' }], backgroundColor: '#52b69a' }, body: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: course.title, wrap: true, weight: 'bold', size: 'md' }, { type: 'text', text: `剩餘名額：${remainingSpots} 位`, size: 'sm', color: '#666666', margin: 'md' }, { type: 'separator', margin: 'lg' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: buttons } } };
-        }
         case 'start_booking_confirmation': {
-            const course_id = data.get('course_id');
+             const course_id = data.get('course_id');
             const spotsToBook = parseInt(data.get('spots'), 10);
             const course = await getCourse(course_id);
             if (!course) return '抱歉，找不到該課程。';
@@ -4044,66 +4024,11 @@ async function handlePostback(event, user) {
                 }
             });
         }
-        case 'confirm_cancel_booking_start':
-        case 'confirm_cancel_waiting_start': {
-            const course_id = data.get('course_id');
-            const course = await getCourse(course_id);
-            if (!course) return '找不到該課程，可能已被老師取消或已結束。';
-            const isBooking = action === 'confirm_cancel_booking_start';
-            pendingBookingConfirmation[userId] = { type: isBooking ? 'cancel_book' : 'cancel_wait', course_id: course_id };
-            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => enqueuePushTask(u, { type: 'text', text: '取消操作已逾時，自動放棄。' }));
-            const actionText = isBooking ? '取消預約' : '取消候補';
-            const confirmCommand = isBooking ? CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING : CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING;
-            return { type: 'text', text: `您確定要「${actionText}」以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: `✅ 確認${actionText}`, text: confirmCommand } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
-        }
         case 'mark_feedback_read': {
             const msgId = data.get('msgId');
             if (!msgId) return '操作失敗，缺少訊息 ID。';
             await withDatabaseClient(client => client.query("UPDATE feedback_messages SET status = 'read' WHERE id = $1 AND status = 'new'", [msgId]) );
             return '✅ 已將此留言標示為已讀。';
-        }
-        case 'reply_feedback': {
-            const msgId = data.get('msgId');
-            const studentId = data.get('userId');
-            if (!msgId || !studentId) return '操作失敗，缺少必要資訊。';
-            const msgRes = await withDatabaseClient(client => client.query("SELECT message FROM feedback_messages WHERE id = $1", [msgId]) );
-            if (msgRes.rows.length === 0) return '找不到這則留言，可能已被其他老師處理。';
-            const originalMessage = msgRes.rows[0].message;
-            pendingReply[userId] = { msgId, studentId, originalMessage };
-            setupConversationTimeout(userId, pendingReply, 'pendingReply', (u) => enqueuePushTask(u, { type: 'text', text: '回覆留言操作逾時，自動取消。' }));
-            return { type: 'text', text: `正在回覆學員的留言：\n「${originalMessage.substring(0, 80)}...」\n\n請直接輸入您要回覆的內容：`, quickReply: { items: getCancelMenu() } };
-        }
-         case 'select_student_for_auth': {
-            const targetId = data.get('targetId');
-            const targetName = decodeURIComponent(data.get('targetName'));
-            if (!targetId || !targetName) return '操作失敗，缺少目標學員資訊。';
-            pendingTeacherAddition[userId] = { step: 'await_confirmation', targetUser: { id: targetId, name: targetName } };
-            setupConversationTimeout(userId, pendingTeacherAddition, 'pendingTeacherAddition', u => { enqueuePushTask(u, { type: 'text', text: '授權老師操作逾時。' }).catch(e => console.error(e)); });
-            return { type: 'text', text: `您確定要授權學員「${targetName}」成為老師嗎？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
-        }
-        case 'select_teacher_for_removal': {
-            const targetId = data.get('targetId');
-            const targetName = decodeURIComponent(data.get('targetName'));
-            if (!targetId || !targetName) return '操作失敗，缺少目標老師資訊。';
-            pendingTeacherRemoval[userId] = { step: 'await_confirmation', targetUser: { id: targetId, name: targetName } };
-            setupConversationTimeout(userId, pendingTeacherRemoval, 'pendingTeacherRemoval', u => enqueuePushTask(u, { type: 'text', text: '移除老師操作逾時。' }));
-            return { type: 'text', text: `您確定要移除老師「${targetName}」的權限嗎？\n該用戶將會變回學員身份。`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
-        }
-        case 'select_student_for_adjust': {
-            const studentId = data.get('studentId');
-            const student = await getUser(studentId);
-            if (!student) return '找不到該學員的資料。';
-            pendingManualAdjust[userId] = { step: 'await_operation', targetStudent: { id: student.id, name: student.name } };
-            setupConversationTimeout(userId, pendingManualAdjust, 'pendingManualAdjust', (u) => enqueuePushTask(u, { type: 'text', text: '手動調整點數逾時，自動取消。' }));
-            return { type: 'text', text: `已選擇學員：「${student.name}」。\n請問您要為他加點或扣點？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS, text: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS, text: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
-        }
-        case 'select_announcement_for_deletion': {
-            const ann_id = data.get('ann_id');
-            const annRes = await withDatabaseClient(client => client.query("SELECT content FROM announcements WHERE id = $1", [ann_id]) );
-            if(annRes.rows.length === 0) return '找不到該公告。';
-            pendingAnnouncementDeletion[userId] = { ann_id };
-            setupConversationTimeout(userId, pendingAnnouncementDeletion, 'pendingAnnouncementDeletion', u => enqueuePushTask(u, { type: 'text', text: '刪除公告操作逾時。' }));
-            return { type: 'text', text: `您確定要刪除以下公告嗎？\n\n「${annRes.rows[0].content.substring(0, 100)}...」`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_DELETE_ANNOUNCEMENT, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_DELETE_ANNOUNCEMENT}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
         }
         case 'retry_failed_task':
         case 'delete_failed_task': {
@@ -4134,9 +4059,10 @@ async function handlePostback(event, user) {
             const commandText = decodeURIComponent(data.get('text'));
             if (commandText) {
                 const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
-                if (user.role === 'admin') return handleAdminCommands(simulatedEvent, userId);
-                if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, userId);
-                return handleStudentCommands(simulatedEvent, userId);
+                // 因為 run_command 本身是無狀態的，所以 currentState 傳 null
+                if (user.role === 'admin') return handleAdminCommands(event, user, null);
+                if (user.role === 'teacher') return handleTeacherCommands(event, user, null);
+                return handleStudentCommands(event, user, null);
             }
             break;
         }
