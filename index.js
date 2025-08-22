@@ -1180,6 +1180,7 @@ const cancellableConversationStates = {
     pendingProductCreation,
     pendingProductEdit,
     pendingInventoryAdjust,
+    pendingTeacherProfileEdit,
 };
 /**
  * 清除使用者所有待處理的對話狀態。
