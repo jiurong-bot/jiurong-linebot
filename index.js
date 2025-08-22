@@ -2251,7 +2251,7 @@ async function handleTeacherCommands(event, userId) {
     state.step = 'await_confirmation';
     state.newData = state.profileData;
     return buildProfileConfirmationMessage(userId, state.newData);
-
+        }   
     }
   }
 
