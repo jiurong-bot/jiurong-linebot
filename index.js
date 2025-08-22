@@ -3784,7 +3784,37 @@ async function handlePostback(event, user) {
             if (!state || state.name !== 'course_creation') return '新增課程流程已逾時或中斷。';
             return handleCourseCreationFlow(event, user, state);
         }
+        case 'run_command': {
+            const commandText = decodeURIComponent(data.get('text'));
+            if (!commandText) return null;
 
+            const simulatedEvent = {
+                ...event,
+                type: 'message',
+                message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText }
+            };
+
+            let commandFunction;
+            if (user.role === 'teacher') {
+                commandFunction = teacherCommandMap[commandText];
+            } else if (user.role === 'admin') {
+                // 未來若為 admin 建立 command map，可在此處加入
+                // commandFunction = adminCommandMap[commandText];
+            } else {
+                // 未來若為 student 建立 command map，可在此處加入
+                // commandFunction = studentCommandMap[commandText];
+            }
+            
+            if (commandFunction) {
+                return commandFunction(simulatedEvent, user);
+            } else {
+                // 如果找不到對應的 command map，作為備用方案，
+                // 仍可呼叫主處理器 (儘管這不是最佳實踐)
+                if (user.role === 'admin') return handleAdminCommands(simulatedEvent, user, null);
+                if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, user, null);
+                return handleStudentCommands(simulatedEvent, user, null);
+            }
+        }
         // ==================================
         // 單次性、無狀態的操作
         // ==================================
