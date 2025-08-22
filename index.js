@@ -3624,6 +3624,7 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
+
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
@@ -3656,7 +3657,7 @@ async function handlePostback(event, user) {
         case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
         case 'list_all_teachers': return showAllTeachersList(page);
         case 'view_course_roster_details': return showCourseRosterDetails(data.get('course_id'));
-
+        
         // ==================================
         // 啟動對話流程的操作 (使用 saveState)
         // ==================================
@@ -3766,6 +3767,13 @@ async function handlePostback(event, user) {
             const confirmCommand = isBooking ? CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING : CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING;
             return { type: 'text', text: `您確定要「${actionText}」以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: `✅ 確認${actionText}`, text: confirmCommand } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
         }
+        case 'adjust_inventory_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            await saveState(userId, { name: 'inventory_adjust', data: { productId: product.id, productName: product.name, originalInventory: product.inventory } });
+            return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
+        }
         case 'set_course_weekday': {
             const state = await getState(userId);
             if (!state || state.name !== 'course_creation') return '新增課程流程已逾時或中斷。';
@@ -3780,6 +3788,27 @@ async function handlePostback(event, user) {
         // ==================================
         // 單次性、無狀態的操作
         // ==================================
+        case 'confirm_teacher_profile_update': {
+            const state = await getState(userId);
+            if (!state || state.name !== 'teacher_profile_edit' || state.step !== 'await_confirmation') {
+                return '確認操作已逾時或無效，請重新操作。';
+            }
+            const newData = state.data.newData;
+            const isCreating = state.type === 'create';
+            await clearState(userId);
+            await withDatabaseClient(async (client) => {
+                if (isCreating) {
+                    await client.query( `INSERT INTO teachers (line_user_id, name, bio, image_url) VALUES ($1, $2, $3, $4) ON CONFLICT (line_user_id) DO UPDATE SET name = EXCLUDED.name, bio = EXCLUDED.bio, image_url = EXCLUDED.image_url, updated_at = NOW()`, [userId, newData.name, newData.bio, newData.image_url] );
+                } else {
+                    const fields = Object.keys(newData);
+                    const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+                    const values = Object.values(newData);
+                    await client.query( `UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`, [...values, userId] );
+                }
+            });
+            const successMessage = isCreating ? '✅ 恭喜！您的師資檔案已成功建立！' : '✅ 您的個人檔案已成功更新！';
+            return successMessage;
+        }
         case 'join_waiting_list': {
             const course_id = data.get('course_id');
             return withDatabaseClient(async (client) => {
@@ -3881,13 +3910,6 @@ async function handlePostback(event, user) {
             await withDatabaseClient(client => client.query( `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) VALUES ($1, $2, $3, $4, $5, 'available', $6, $7)`, [state.data.name, state.data.description, state.data.price, state.data.inventory, state.data.image_url, userId, user.name] ) );
             await clearState(userId);
             return '✅ 商品已成功上架！';
-        }
-        case 'adjust_inventory_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            await saveState(userId, { name: 'inventory_adjust', data: { productId: product.id, productName: product.name, originalInventory: product.inventory } });
-            return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
         }
         case 'toggle_product_status': {
             const productId = data.get('product_id');
@@ -4055,17 +4077,7 @@ async function handlePostback(event, user) {
                 return result.rowCount > 0 ? `✅ 已成功刪除失敗任務 #${failedTaskId}。` : '找不到該失敗任務，可能已被刪除。';
             }
         }
-        case 'run_command': {
-            const commandText = decodeURIComponent(data.get('text'));
-            if (commandText) {
-                const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
-                // 因為 run_command 本身是無狀態的，所以 currentState 傳 null
-                if (user.role === 'admin') return handleAdminCommands(event, user, null);
-                if (user.role === 'teacher') return handleTeacherCommands(event, user, null);
-                return handleStudentCommands(event, user, null);
-            }
-            break;
-        }
+        
         default:
             console.log(`[INFO] 未處理的 Postback Action: ${action}`);
             return null;
