@@ -270,6 +270,65 @@ function createPaginationBubble(baseAction, currentPage, hasNext, customParams =
         },
     };
 }
+/**
+ * [V29.1 新增] 建立一個通用的、包含分頁功能的 Flex Carousel 訊息。
+ * @param {object} options - 設定物件。
+ * @param {string} options.altText - Flex Message 的替代文字。
+ * @param {string} options.baseAction - Postback 的基本動作字串，例如 'action=view_history'。
+ * @param {number} options.page - 當前頁碼。
+ * @param {string} options.dataQuery - 要執行的 SQL 查詢，必須包含 LIMIT 和 OFFSET 的參數位置 (例如 $2, $3)。
+ * @param {Array<any>} options.queryParams - SQL 查詢的參數陣列 (不含 LIMIT 和 OFFSET 的值)。
+ * @param {function(object): object} options.mapRowToBubble - 一個將資料庫 row 轉換為 Flex Bubble 物件的函式。
+ * @param {string} options.noDataMessage - 當第一頁沒有任何資料時顯示的文字訊息。
+ * @param {string} [options.customParams=''] - (可選) 要附加到 postback data 的額外參數。
+ * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息。
+ */
+async function createPaginatedCarousel(options) {
+  const {
+    altText,
+    baseAction,
+    page,
+    dataQuery,
+    queryParams,
+    mapRowToBubble,
+    noDataMessage,
+    customParams = ''
+  } = options;
+
+  const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+
+  return withDatabaseClient(async (client) => {
+    // 組合查詢參數，將分頁參數加在最後
+    const finalQueryParams = [...queryParams, CONSTANTS.PAGINATION_SIZE + 1, offset];
+    const res = await client.query(dataQuery, finalQueryParams);
+
+    const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+    const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+    if (pageRows.length === 0 && page === 1) {
+      return noDataMessage;
+    }
+    if (pageRows.length === 0) {
+      return '沒有更多資料了。';
+    }
+
+    const bubbles = pageRows.map(mapRowToBubble);
+
+    const paginationBubble = createPaginationBubble(baseAction, page, hasNextPage, customParams);
+    if (paginationBubble) {
+      bubbles.push(paginationBubble);
+    }
+
+    return {
+      type: 'flex',
+      altText: altText,
+      contents: {
+        type: 'carousel',
+        contents: bubbles
+      }
+    };
+  });
+}
 
 /**
  * [V30 新增] 執行一個需要資料庫客戶端的操作，並自動管理連線的開啟與關閉。
