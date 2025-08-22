@@ -3624,7 +3624,6 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
-// ###########
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
@@ -3898,19 +3897,6 @@ async function handlePostback(event, user) {
                 return `✅ 已退回 ${order.user_name} 的訂單，並已通知對方。`;
             });
         }
-        case 'generate_report': {
-            // (此處省略，與 V34.0 版本相同) ...
-        }
-        // ... (其他所有單次性操作的 case 都需要從 V34.0 完整複製過來) ...
-
-        default:
-            console.log(`[INFO] 未處理的 Postback Action: ${action}`);
-            return null;
-    }
-}
-
-
-        // ########$###
         case 'generate_report': {
             const reportType = data.get('type');
             const period = data.get('period');
