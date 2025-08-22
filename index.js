@@ -4574,7 +4574,7 @@ async function handleEvent(event) {
             const postbackData = new URLSearchParams(event.postback.data);
             const action = postbackData.get('action');
             
-            const continuationActions = [ 'set_course_weekday', 'select_teacher_for_course', 'confirm_add_product', 'edit_product_field', 'start_booking_confirmation', 'execute_booking', 'execute_product_purchase' ];
+            const continuationActions = [ 'set_course_weekday', 'select_teacher_for_course', 'confirm_add_product', 'edit_product_field', 'start_booking_confirmation', 'execute_booking', 'execute_product_purchase',  'confirm_teacher_profile_update'];
 
             if (continuationActions.includes(action)) {
                 shouldClear = false;
