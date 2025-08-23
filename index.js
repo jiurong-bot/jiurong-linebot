@@ -1161,6 +1161,7 @@ const pendingAnnouncementDeletion = {};
 const repliedTokens = new Set();
 const pendingProductEdit = {};
 const pendingInventoryAdjust = {};
+const pendingManualAdjustSearch = {}; 
 const userProfileCache = new Map();
 const userLastInteraction = {}; // [V28.0 新增] 用於智慧回覆機制的 Session 追蹤
 const cancellableConversationStates = {
