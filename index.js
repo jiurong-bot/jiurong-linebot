@@ -2222,8 +2222,6 @@ async function handleTeacherCommands(event, userId) {
           });
         }
         break;
-// ...
-
     }
   } else if (pendingStudentSearchQuery[userId]) {
     const searchQuery = text;
