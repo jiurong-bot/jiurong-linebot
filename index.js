@@ -3259,7 +3259,7 @@ async function showAvailableCourses(userId, page) {
 
             if (isFull) {
                 courseStatusText = `候補中 (${c.waiting_count}人)`;
-                footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '加入候補', data: `action=join_waiting_list&course_id=${c.id}` } };
+                footerButton = { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '加入候補', data: `action=confirm_join_waiting_list_start&course_id=${c.id}` } };
             } else {
                 const remainingSpots = c.capacity - studentCount;
                 courseStatusText = `剩餘 ${remainingSpots} 位`;
