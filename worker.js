@@ -1,4 +1,4 @@
-// worker.js - V25.1 (整合資料庫備份功能)
+// worker.js - V34.0 (整合資料庫備份功能)
 require('dotenv').config();
 const { exec } = require('child_process');
 const fs = require('fs');
