@@ -2924,92 +2924,104 @@ async function buildTeacherSelectionCarousel() {
     });
 }
 
-/**
- * [V34.x 新增] 顯示手動調整點數的歷史紀錄
- */
-async function showManualAdjustHistory(page) {
+async function showManualAdjustHistory(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
 
     return withDatabaseClient(async (client) => {
-        // [修改] 採用新的 SQL 查詢語法，進行分組與匯總
-        const res = await client.query(
-            `SELECT
-                user_id,
-                user_name,
-                SUM(points) AS total_points,
-                COUNT(*) AS transaction_count,
-                MAX(timestamp) AS last_updated,
-                (CASE WHEN points > 0 THEN 'addition' ELSE 'deduction' END) AS adjustment_type
-             FROM
-                orders
-             WHERE
-                amount = 0
-             GROUP BY
-                user_id, user_name, adjustment_type
-             ORDER BY
-                last_updated DESC
-             LIMIT $1 OFFSET $2`,
-            [CONSTANTS.PAGINATION_SIZE + 1, offset]
-        );
+        let query = "SELECT * FROM orders WHERE amount = 0";
+        const queryParams = [];
+        let paramIndex = 1;
+
+        if (userId) {
+            query += ` AND user_id = $${paramIndex++}`;
+            queryParams.push(userId);
+        }
+
+        query += ` ORDER BY timestamp DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
+        
+        const res = await client.query(query, queryParams);
 
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
         if (pageRows.length === 0 && page === 1) {
-            return '目前沒有任何手動調整紀錄。';
+            return userId ? '這位學員沒有任何手動調整紀錄。' : '目前沒有任何手動調整紀錄。';
         }
         if (pageRows.length === 0) {
             return '沒有更多紀錄了。';
         }
 
-        const bubbles = pageRows.map(summary => {
-            const isAddition = summary.adjustment_type === 'addition';
-            const titleText = isAddition ? `✅ 手動加點` : `❌ 手動扣點`;
-            const titleColor = isAddition ? '#28a745' : '#dc3545';
-            const pointsText = isAddition ? `+${summary.total_points}` : `${summary.total_points}`;
+        const listItems = pageRows.map(record => {
+            const isAddition = record.points > 0;
+            const typeText = isAddition ? `✨ 手動加點` : `⚠️ 手動扣點`;
+            const pointsText = isAddition ? `+${record.points}` : `${record.points}`;
+            const pointsColor = isAddition ? '#1A759F' : '#D9534F';
 
             return {
-                type: 'bubble',
-                header: { 
-                    type: 'box', 
-                    layout: 'vertical', 
-                    contents: [{ type: 'text', text: titleText, color: '#ffffff', weight: 'bold' }], 
-                    backgroundColor: titleColor, 
-                    paddingAll: 'lg' 
-                },
-                body: { 
-                    type: 'box', 
-                    layout: 'vertical', 
-                    spacing: 'md', 
-                    contents: [
-                        { type: 'text', text: summary.user_name, weight: 'bold', size: 'xl' },
-                        { type: 'text', text: `總調整點數：${pointsText} 點`, size: 'md', margin: 'md' },
-                        { type: 'text', text: `共 ${summary.transaction_count} 筆調整`, size: 'sm', color: '#666666' },
-                        { type: 'separator', margin: 'lg' },
-                        { type: 'text', text: `最近操作時間: ${formatDateTime(summary.last_updated)}`, size: 'xs', color: '#AAAAAA' }
-                    ]
-                }
+                type: 'box',
+                layout: 'horizontal',
+                paddingAll: 'md',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        flex: 3,
+                        contents: [
+                            { type: 'text', text: record.user_name, weight: 'bold', size: 'sm' },
+                            { type: 'text', text: formatDateTime(record.timestamp), size: 'xxs', color: '#AAAAAA' }
+                        ]
+                    },
+                    {
+                        type: 'text',
+                        text: `${pointsText} 點`,
+                        gravity: 'center',
+                        align: 'end',
+                        flex: 2,
+                        weight: 'bold',
+                        size: 'sm',
+                        color: pointsColor,
+                    }
+                ]
             };
         });
         
-        const paginationBubble = createPaginationBubble('action=view_manual_adjust_history', page, hasNextPage);
-        if (paginationBubble) {
-            bubbles.push(paginationBubble);
-        }
+        const customParams = userId ? `&user_id=${userId}` : '';
+        const paginationBubble = createPaginationBubble('action=view_manual_adjust_history', page, hasNextPage, customParams);
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+        
+        const headerText = userId ? `${pageRows[0].user_name} 的調整紀錄` : '手動調整紀錄';
 
-        // 因為我們不再使用 createPaginatedCarousel，所以回傳 carousel 的邏輯要自己寫
         return {
             type: 'flex',
             altText: '手動調整紀錄',
             contents: {
-                type: 'carousel',
-                contents: bubbles
+                type: 'bubble',
+                size: 'giga',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [{ type: 'text', text: headerText, weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                    backgroundColor: '#343A40'
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'none',
+                    contents: listItems.flatMap((item, index) => 
+                        index === 0 ? [item] : [{ type: 'separator' }, item]
+                    )
+                },
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: footerContents
+                }
             }
         };
     });
 }
 
-    
 
 async function showPurchaseHistory(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
