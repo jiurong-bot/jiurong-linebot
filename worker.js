@@ -29,7 +29,7 @@ const HEALTH_CHECK_INTERVAL_MS = 1000 * 60 * 5; // 每 5 分鐘
 const STUCK_TASK_TIMEOUT_MINUTES = 10;
 
 // [新增] 資料庫備份相關常數
-const BACKUP_INTERVAL_MS = 1000 * 60 * 60 * 24; // 每 24 小時
+const BACKUP_INTERVAL_MS = 1000 * 60 * 60 * 2; // 每 24 小時
 const MAIL_TO = 'lunatang.yoga@gmail.com';
 const MAIL_FROM = process.env.GMAIL_ACCOUNT;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
