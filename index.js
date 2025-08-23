@@ -3852,7 +3852,7 @@ async function showStudentExchangeHistory(userId, page = 1) {
             return '沒有更多紀錄了。';
         }
 
-        const historyBubbles = pageOrders.map(order => {
+        const listItems = pageOrders.map(order => {
             let statusText, statusColor;
             switch (order.status) {
                 case 'completed': statusText = '✅ 已完成/可領取'; statusColor = '#52b69a'; break;
@@ -3860,25 +3860,50 @@ async function showStudentExchangeHistory(userId, page = 1) {
                 case 'cancelled': statusText = '❌ 已取消'; statusColor = '#d90429'; break;
                 default: statusText = '未知狀態'; statusColor = '#6c757d';
             }
+
             return {
-                type: 'bubble',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: statusText, color: '#ffffff', weight: 'bold' }], backgroundColor: statusColor, paddingAll: 'lg' },
-                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-                    { type: 'text', text: order.product_name, weight: 'bold', size: 'lg', wrap: true },
-                    { type: 'text', text: `花費: ${order.points_spent} 點`, size: 'sm' },
-                    { type: 'text', text: `訂單ID: ${formatIdForDisplay(order.order_uid)}`, size: 'xxs', color: '#aaaaaa', wrap: true },
-                    { type: 'text', text: `兌換時間: ${formatDateTime(order.created_at)}`, size: 'xs', color: '#aaaaaa' },
-                    ...(order.status === 'completed' && order.updated_at ? [{ type: 'text', text: `完成時間: ${formatDateTime(order.updated_at)}`, size: 'xs', color: '#aaaaaa' }] : [])
-                ]}
+                type: 'box',
+                layout: 'horizontal',
+                paddingAll: 'md',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        flex: 3,
+                        contents: [
+                            { type: 'text', text: order.product_name, weight: 'bold', size: 'sm', wrap: true },
+                            { type: 'text', text: statusText, color: statusColor, size: 'xs', weight: 'bold' },
+                            { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' },
+                        ]
+                    },
+                    {
+                        type: 'text',
+                        text: `-${order.points_spent} 點`,
+                        gravity: 'center',
+                        align: 'end',
+                        flex: 2,
+                        weight: 'bold',
+                        size: 'sm',
+                        color: '#D9534F',
+                    }
+                ]
             };
         });
 
         const paginationBubble = createPaginationBubble('action=view_exchange_history', page, hasNextPage);
-        if (paginationBubble) {
-            historyBubbles.push(paginationBubble);
-        }
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
 
-        const flexMessage = { type: 'flex', altText: '兌換紀錄', contents: { type: 'carousel', contents: historyBubbles } };
+        const flexMessage = {
+            type: 'flex',
+            altText: '兌換紀錄',
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '我的兌換紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#343A40' },
+                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
+                footer: { type: 'box', layout: 'vertical', contents: footerContents }
+            }
+        };
         
         if (page === 1) {
             return [{ type: 'text', text: '以下是您近期的商品兌換紀錄：' }, flexMessage ];
@@ -3886,6 +3911,7 @@ async function showStudentExchangeHistory(userId, page = 1) {
         return flexMessage;
     });
 }
+
 
 async function showCourseRosterSummary(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
