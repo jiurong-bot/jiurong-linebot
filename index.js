@@ -2910,71 +2910,119 @@ async function showManualAdjustHistory(page) {
 }
 
 async function showPurchaseHistory(userId, page) {
-    const mapOrderToBubble = (order) => {
-        // [修改] 增加判斷邏輯，用來區分不同類型的紀錄
-        let statusText, statusColor, titleText, amountText, detailsItems = [];
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
 
-        // 判斷是否為手動調整 (金額為 0)
-        if (order.amount === 0) {
-            if (order.points > 0) {
-                // 手動加點
-                statusText = '✨ 手動加點';
-                statusColor = '#1A759F'; // 深藍色
-                titleText = `收到 ${order.points} 點`;
-            } else {
-                // 手動扣點
-                statusText = '⚠️ 手動扣點';
-                statusColor = '#f28482'; // 橘紅色
-                titleText = `扣除 ${-order.points} 點`;
-            }
-            amountText = `由老師手動調整`;
-            detailsItems.push({ type: 'text', text: `類型: ${order.last_5_digits || '手動'}`, size: 'sm' });
+    return withDatabaseClient(async (client) => {
+        const res = await client.query(
+            `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
+            [userId, CONSTANTS.PAGINATION_SIZE + 1, offset]
+        );
 
-        } else {
-            // 一般的購點紀錄
-            titleText = `購買 ${order.points} 點`;
-            amountText = `金額: ${order.amount} 元`;
-            
-            switch (order.status) {
-                case 'completed': statusText = '✅ 購點成功'; statusColor = '#52b69a'; break;
-                case 'pending_confirmation': statusText = '🕒 等待確認'; statusColor = '#ff9e00'; break;
-                case 'pending_payment': statusText = '❗ 等待付款'; statusColor = '#f28482'; break;
-                case 'rejected': statusText = '❌ 已退回'; statusColor = '#d90429'; break;
-                default: statusText = '未知狀態'; statusColor = '#6c757d';
-            }
-            detailsItems.push({ type: 'text', text: `後五碼: ${order.last_5_digits || 'N/A'}`, size: 'sm' });
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageRows.length === 0 && page === 1) {
+            return '您沒有任何購點紀錄。';
+        }
+        if (pageRows.length === 0) {
+            return '沒有更多紀錄了。';
         }
 
-        // 組裝 Flex Message Bubble
-        return {
-            type: 'bubble',
-            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: statusText, color: '#ffffff', weight: 'bold' }], backgroundColor: statusColor, paddingAll: 'lg' },
-            body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-                { type: 'text', text: titleText, weight: 'bold', size: 'lg' },
-                { type: 'text', text: amountText, size: 'sm' },
-                ...detailsItems, // 動態加入詳細資訊
-                { type: 'separator', margin: 'md' },
-                { type: 'text', text: `訂單ID: ${formatIdForDisplay(order.order_id)}`, size: 'xxs', color: '#aaaaaa', wrap: true },
-                { type: 'text', text: `時間: ${formatDateTime(order.timestamp)}`, size: 'xs', color: '#aaaaaa' }
-            ]}
-        };
-    };
+        // --- 建立列表內容 ---
+        const listItems = pageRows.map(order => {
+            let typeText, pointsText, pointsColor;
 
-    // 使用 createPaginatedCarousel 的部分完全不變
-    const result = await createPaginatedCarousel({
-        altText: '購點紀錄',
-        baseAction: 'action=view_purchase_history',
-        page: page,
-        dataQuery: `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
-        queryParams: [userId],
-        mapRowToBubble: mapOrderToBubble,
-        noDataMessage: '您沒有任何購點紀錄。'
+            // 判斷紀錄類型
+            if (order.amount === 0) { // 手動調整
+                if (order.points > 0) {
+                    typeText = '✨ 手動加點';
+                    pointsText = `+${order.points}`;
+                    pointsColor = '#1A759F'; // 深藍色
+                } else {
+                    typeText = '⚠️ 手動扣點';
+                    pointsText = `${order.points}`;
+                    pointsColor = '#D9534F'; // 紅色
+                }
+            } else { // 一般購點
+                typeText = '✅ 購點成功';
+                pointsText = `+${order.points}`;
+                pointsColor = '#28A745'; // 綠色
+                 // 也可以根據 order.status 顯示不同文字
+                if (order.status !== 'completed') {
+                    typeText = '🕒 訂單處理中';
+                    pointsColor = '#6C757D'; // 灰色
+                }
+            }
+
+            // 回傳代表「一行」的 Flexbox 元件
+            return {
+                type: 'box',
+                layout: 'horizontal',
+                paddingAll: 'md',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        flex: 3,
+                        contents: [
+                            { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
+                            { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
+                        ]
+                    },
+                    {
+                        type: 'text',
+                        text: `${pointsText} 點`,
+                        gravity: 'center',
+                        align: 'end',
+                        flex: 2,
+                        weight: 'bold',
+                        size: 'sm',
+                        color: pointsColor,
+                    }
+                ]
+            };
+        });
+
+        // --- 組合成分頁按鈕 ---
+        const paginationBubble = createPaginationBubble('action=view_purchase_history', page, hasNextPage);
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+
+        // --- 組合最終的 Flex Message ---
+        const flexMessage = {
+            type: 'flex',
+            altText: '購點紀錄',
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [{ type: 'text', text: '點數紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                    backgroundColor: '#343A40'
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'none',
+                    spacing: 'none',
+                    // 將所有列表項目和分隔線放進來
+                    contents: listItems.flatMap((item, index) => 
+                        index === 0 ? [item] : [{ type: 'separator' }, item]
+                    )
+                },
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: footerContents
+                }
+            }
+        };
+
+        if (page === 1) {
+            return [{ type: 'text', text: '以下是您所有的點數紀錄：' }, flexMessage];
+        }
+        return flexMessage;
     });
-    
-    if (page === 1 && typeof result === 'object') {
-        return [{ type: 'text', text: '以下是您所有的點數紀錄：' }, result];
-    }
-    return result;
 }
 
 async function showUnreadMessages(page) {
