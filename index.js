@@ -2242,7 +2242,7 @@ async function handleTeacherCommands(event, userId) {
                     try {
                         const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
                         const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                        const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
+                        const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: true, folder: "yoga_teachers" });
                         imageUrl = uploadResponse.url;
                     } catch (err) {
                         console.error('上傳老師照片至 ImageKit 失敗', err);
@@ -2268,7 +2268,7 @@ async function handleTeacherCommands(event, userId) {
             try {
                 const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
                 const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: false, folder: "yoga_teachers" });
+                const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: true, folder: "yoga_teachers" });
                 value = uploadResponse.url;
             } catch (err) {
                 console.error('更新老師照片至 ImageKit 失敗', err);
