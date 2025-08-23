@@ -2863,6 +2863,52 @@ async function buildTeacherSelectionCarousel() {
     });
 }
 
+/**
+ * [V34.x 新增] 顯示手動調整點數的歷史紀錄
+ */
+async function showManualAdjustHistory(page) {
+    const mapAdjustToBubble = (record) => {
+        const isAddition = record.points > 0;
+        const titleText = isAddition ? `✅ 手動加點` : `❌ 手動扣點`;
+        const titleColor = isAddition ? '#28a745' : '#dc3545';
+        const pointsText = isAddition ? `+${record.points} 點` : `${record.points} 點`;
+
+        return {
+            type: 'bubble',
+            header: { 
+                type: 'box', 
+                layout: 'vertical', 
+                contents: [{ type: 'text', text: titleText, color: '#ffffff', weight: 'bold' }], 
+                backgroundColor: titleColor, 
+                paddingAll: 'lg' 
+            },
+            body: { 
+                type: 'box', 
+                layout: 'vertical', 
+                spacing: 'md', 
+                contents: [
+                    { type: 'text', text: record.user_name, weight: 'bold', size: 'xl' },
+                    { type: 'text', text: `調整點數：${pointsText}`, size: 'md', margin: 'md' },
+                    { type: 'separator', margin: 'lg' },
+                    { type: 'text', text: `訂單ID: ${formatIdForDisplay(record.order_id)}`, size: 'xxs', color: '#aaaaaa', wrap: true },
+                    { type: 'text', text: `操作時間: ${formatDateTime(record.timestamp)}`, size: 'xs', color: '#aaaaaa' }
+                ]
+            }
+        };
+    };
+
+    return createPaginatedCarousel({
+        altText: '手動調整紀錄',
+        baseAction: 'action=view_manual_adjust_history',
+        page: page,
+        // 我們透過 amount = 0 來篩選出所有手動調整的紀錄
+        dataQuery: "SELECT * FROM orders WHERE amount = 0 ORDER BY timestamp DESC LIMIT $1 OFFSET $2",
+        queryParams: [],
+        mapRowToBubble: mapAdjustToBubble,
+        noDataMessage: '目前沒有任何手動調整紀錄。'
+    });
+}
+
 async function showPurchaseHistory(userId, page) {
     const mapOrderToBubble = (order) => {
         // [修改] 增加判斷邏輯，用來區分不同類型的紀錄
