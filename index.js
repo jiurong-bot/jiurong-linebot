@@ -1,4 +1,4 @@
-// index.js - V34.5 (資料查詢優化)
+// index.js - V34.6 (資料查詢優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -4026,7 +4026,7 @@ app.listen(PORT, async () => {
     console.log('✅ 資料庫結構已由 Build Command 處理。');
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V34.5 (資料備份)`);
+    console.log(`Bot 版本 V34.6 (資料查詢優化)`);
 
     setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, CONSTANTS.TIME.ONE_HOUR_IN_MS);
