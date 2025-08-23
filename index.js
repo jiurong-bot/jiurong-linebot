@@ -2217,7 +2217,13 @@ async function handleTeacherCommands(event, userId) {
     // ... (原有 pendingMessageSearchQuery 邏輯) ...
     const searchQuery = text; delete pendingMessageSearchQuery[userId];
     return showHistoricalMessages(searchQuery, 1);
-  } else if (pendingTeacherProfileEdit[userId]) {
+  } 
+  // =======================================================
+  // [偵錯點 2] 請在 else if (pendingTeacherProfileEdit...) 的正上方
+  // 加上第二行 console.log
+  console.log(`[DEBUG] About to check pendingTeacherProfileEdit. State:`, JSON.stringify(pendingTeacherProfileEdit[userId]));
+  // =======================================================
+  else if (pendingTeacherProfileEdit[userId]) {
     // ... (原有 pendingTeacherProfileEdit 邏輯) ...
     const state = pendingTeacherProfileEdit[userId];
     const step = state.step;
