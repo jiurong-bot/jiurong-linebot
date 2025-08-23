@@ -4325,12 +4325,18 @@ async function handlePostback(event, user) {
             if (!product || product.status !== 'available') return '找不到此商品，或商品已下架。';
             if (product.inventory <= 0) return '抱歉，此商品庫存不足，無法兌換。';
             if (user.points < product.price) return `抱歉，您的點數不足！\n兌換此商品需要 ${product.price} 點，您目前擁有 ${user.points} 點。`;
+            
+            pendingBookingConfirmation[userId] = { type: 'product_purchase', product_id: product.id };
+             setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '兌換操作已逾時，自動取消。' });
+            });
+            
             const confirmationMessage = `您確定要兌換「${product.name}」嗎？\n\n將花費：${product.price} 點\n您目前的點數：${user.points} 點\n兌換後剩餘：${user.points - product.price} 點`;
             return { type: 'flex', altText: '確認兌換商品', contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: '請確認兌換資訊', weight: 'bold', size: 'lg' }, { type: 'separator', margin: 'md' }, { type: 'text', text: confirmationMessage, wrap: true, margin: 'md' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'button', style: 'primary', color: '#52B69A', action: { type: 'postback', label: '✅ 確認兌換', data: `action=execute_product_purchase&product_id=${product.id}` } }, { type: 'button', style: 'secondary', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } } };
         }
         case 'execute_product_purchase': {
             const productId = data.get('product_id');
-            return withDatabaseClient(async (client) => {
+            const result = await withDatabaseClient(async (client) => {
                 await client.query('BEGIN');
                 try {
                     const productRes = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [productId]);
@@ -4345,13 +4351,15 @@ async function handlePostback(event, user) {
                     await client.query('UPDATE users SET points = points - $1 WHERE id = $2', [product.price, userId]);
                     const orderUID = `PROD-${Date.now()}-${userId.slice(-4)}`;
                     await client.query(`INSERT INTO product_orders (order_uid, user_id, user_name, product_id, product_name, points_spent, status) VALUES ($1, $2, $3, $4, $5, $6, 'pending')`, [orderUID, userId, student.name, productId, product.name, product.price]);
-                    
                     const notifyMessage = { type: 'text', text: `🔔 商城新訂單通知\n學員 ${student.name} 兌換了「${product.name}」。\n請至「商城管理」->「訂單管理」查看並處理。` };
                     await enqueuePushTask(TEACHER_ID, notifyMessage);
                     await client.query('COMMIT');
                     return `✅ 兌換成功！\n您已成功使用 ${product.price} 點兌換「${product.name}」。\n後續請等待老師的通知，您也可以在「我的兌換紀錄」中查看訂單狀態。`;
-                } catch (err) { await client.query('ROLLBACK'); console.error('❌ 商品兌換執行失敗:', err); return '抱歉，兌換過程中發生錯誤，您的點數未被扣除，請稍後再試。'; }
+                } catch (err) { await client.query('ROLLBACK'); console.error('❌ 商品兌換執行失敗:', err); return '抱歉，兌換過程中發生錯誤，您的點數未被扣除，請稍後再試。';
+                }
             });
+            delete pendingBookingConfirmation[userId];
+            return result;
         }
         case 'confirm_shop_order': {
             return withDatabaseClient(async (client) => {
