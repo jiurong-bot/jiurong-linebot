@@ -1363,7 +1363,7 @@ async function showPointManagementMenu(event, user) {
     
     let pendingOrdersLabel = '✅ 確認處理訂單';
     if (pendingCount > 0) { 
-        pendingOrdersLabel = `✅ 確認處理訂單 (${pendingCount})`; 
+        pendingOrdersLabel = `✅ 確認處理訂單 (${pendingCount})`;
     }
     
     return { 
@@ -1387,12 +1387,15 @@ async function showPointManagementMenu(event, user) {
                 paddingAll: 'lg', 
                 contents: [ 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: pendingOrdersLabel, data: `action=view_pending_orders_page&page=1` } }, 
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✍️ 手動調整點數', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANUAL_ADJUST_POINTS)}` } } 
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✍️ 手動調整點數', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANUAL_ADJUST_POINTS)}` } },
+                    // [新增] 查詢手動調整紀錄的按鈕
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢調整紀錄', data: `action=view_manual_adjust_history&page=1` } } 
                 ] 
             } 
         } 
     };
 }
+
 async function showPendingPointOrders(event, user) {
     return showPendingOrders(1);
 }
