@@ -2867,47 +2867,88 @@ async function buildTeacherSelectionCarousel() {
  * [V34.x 新增] 顯示手動調整點數的歷史紀錄
  */
 async function showManualAdjustHistory(page) {
-    const mapAdjustToBubble = (record) => {
-        const isAddition = record.points > 0;
-        const titleText = isAddition ? `✅ 手動加點` : `❌ 手動扣點`;
-        const titleColor = isAddition ? '#28a745' : '#dc3545';
-        const pointsText = isAddition ? `+${record.points} 點` : `${record.points} 點`;
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
 
+    return withDatabaseClient(async (client) => {
+        // [修改] 採用新的 SQL 查詢語法，進行分組與匯總
+        const res = await client.query(
+            `SELECT
+                user_id,
+                user_name,
+                SUM(points) AS total_points,
+                COUNT(*) AS transaction_count,
+                MAX(timestamp) AS last_updated,
+                (CASE WHEN points > 0 THEN 'addition' ELSE 'deduction' END) AS adjustment_type
+             FROM
+                orders
+             WHERE
+                amount = 0
+             GROUP BY
+                user_id, user_name, adjustment_type
+             ORDER BY
+                last_updated DESC
+             LIMIT $1 OFFSET $2`,
+            [CONSTANTS.PAGINATION_SIZE + 1, offset]
+        );
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageRows.length === 0 && page === 1) {
+            return '目前沒有任何手動調整紀錄。';
+        }
+        if (pageRows.length === 0) {
+            return '沒有更多紀錄了。';
+        }
+
+        const bubbles = pageRows.map(summary => {
+            const isAddition = summary.adjustment_type === 'addition';
+            const titleText = isAddition ? `✅ 手動加點` : `❌ 手動扣點`;
+            const titleColor = isAddition ? '#28a745' : '#dc3545';
+            const pointsText = isAddition ? `+${summary.total_points}` : `${summary.total_points}`;
+
+            return {
+                type: 'bubble',
+                header: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    contents: [{ type: 'text', text: titleText, color: '#ffffff', weight: 'bold' }], 
+                    backgroundColor: titleColor, 
+                    paddingAll: 'lg' 
+                },
+                body: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    spacing: 'md', 
+                    contents: [
+                        { type: 'text', text: summary.user_name, weight: 'bold', size: 'xl' },
+                        { type: 'text', text: `總調整點數：${pointsText} 點`, size: 'md', margin: 'md' },
+                        { type: 'text', text: `共 ${summary.transaction_count} 筆調整`, size: 'sm', color: '#666666' },
+                        { type: 'separator', margin: 'lg' },
+                        { type: 'text', text: `最近操作時間: ${formatDateTime(summary.last_updated)}`, size: 'xs', color: '#AAAAAA' }
+                    ]
+                }
+            };
+        });
+        
+        const paginationBubble = createPaginationBubble('action=view_manual_adjust_history', page, hasNextPage);
+        if (paginationBubble) {
+            bubbles.push(paginationBubble);
+        }
+
+        // 因為我們不再使用 createPaginatedCarousel，所以回傳 carousel 的邏輯要自己寫
         return {
-            type: 'bubble',
-            header: { 
-                type: 'box', 
-                layout: 'vertical', 
-                contents: [{ type: 'text', text: titleText, color: '#ffffff', weight: 'bold' }], 
-                backgroundColor: titleColor, 
-                paddingAll: 'lg' 
-            },
-            body: { 
-                type: 'box', 
-                layout: 'vertical', 
-                spacing: 'md', 
-                contents: [
-                    { type: 'text', text: record.user_name, weight: 'bold', size: 'xl' },
-                    { type: 'text', text: `調整點數：${pointsText}`, size: 'md', margin: 'md' },
-                    { type: 'separator', margin: 'lg' },
-                    { type: 'text', text: `訂單ID: ${formatIdForDisplay(record.order_id)}`, size: 'xxs', color: '#aaaaaa', wrap: true },
-                    { type: 'text', text: `操作時間: ${formatDateTime(record.timestamp)}`, size: 'xs', color: '#aaaaaa' }
-                ]
+            type: 'flex',
+            altText: '手動調整紀錄',
+            contents: {
+                type: 'carousel',
+                contents: bubbles
             }
         };
-    };
-
-    return createPaginatedCarousel({
-        altText: '手動調整紀錄',
-        baseAction: 'action=view_manual_adjust_history',
-        page: page,
-        // 我們透過 amount = 0 來篩選出所有手動調整的紀錄
-        dataQuery: "SELECT * FROM orders WHERE amount = 0 ORDER BY timestamp DESC LIMIT $1 OFFSET $2",
-        queryParams: [],
-        mapRowToBubble: mapAdjustToBubble,
-        noDataMessage: '目前沒有任何手動調整紀錄。'
     });
 }
+
+    
 
 async function showPurchaseHistory(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
