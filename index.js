@@ -4122,6 +4122,12 @@ async function handlePostback(event, user) {
             const course_id = data.get('course_id');
             const course = await getCourse(course_id);
             if (!course) return '抱歉，找不到該課程，可能已被老師取消。';
+            
+            // [新增] 設定待處理狀態
+            pendingBookingConfirmation[userId] = { type: 'confirm_wait', course_id: course_id };
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '加入候補操作已逾時，自動取消。' });
+            });
 
             const message = `您確定要加入以下課程的候補名單嗎？\n\n課程：${getCourseMainTitle(course.title)}\n時間：${formatDateTime(course.time)}\n\n候補不需支付點數，當有名額釋出時，系統將會發送通知給您。`;
             
@@ -4131,15 +4137,15 @@ async function handlePostback(event, user) {
                 quickReply: {
                     items: [
                         { type: 'action', action: { type: 'postback', label: '✅ 確認加入候補', data: `action=execute_join_waiting_list&course_id=${course.id}` } },
-                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                        { type: 'action', action: { type: 'message', label: '❌ 取消操作', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                     ]
                 }
             };
         }
-        case 'join_waiting_list': // <- 這個 case 名稱我們不再使用，但為了相容性可以先留著或刪除
         case 'execute_join_waiting_list': {
             const course_id = data.get('course_id');
-            return withDatabaseClient(async (client) => {
+            const result = await withDatabaseClient(async (client) => {
+                // ... (內部的資料庫操作邏輯不變) ...
                 await client.query('BEGIN');
                 try {
                     const courseRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
@@ -4158,7 +4164,13 @@ async function handlePostback(event, user) {
                     return '加入候補時發生錯誤，請稍後再試。';
                 }
             });
+            // [新增] 操作完成後，清除狀態
+            delete pendingBookingConfirmation[userId];
+            return result;
         }
+
+// ...
+
         case 'join_waiting_list': {
             const course_id = data.get('course_id');
             return withDatabaseClient(async (client) => {
