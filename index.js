@@ -4434,13 +4434,19 @@ async function handlePostback(event, user) {
             const remainingSpots = course.capacity - course.students.length;
             if (spotsToBook > remainingSpots) return `抱歉，課程名額不足！\n目前僅剩 ${remainingSpots} 位。`;
             if (user.points < totalCost) return `抱歉，您的點數不足！\n預約 ${spotsToBook} 位需 ${totalCost} 點，您目前有 ${user.points} 點。`;
+
+            pendingBookingConfirmation[userId] = { type: 'confirm_book', course_id: course.id, spots: spotsToBook };
+             setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '預約操作已逾時，自動取消。' });
+            });
+
             const message = `請確認預約資訊：\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n預約：${spotsToBook} 位\n花費：${totalCost} 點\n\n您目前的點數為：${user.points} 點`;
             return { type: 'text', text: message, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認預約', data: `action=execute_booking&course_id=${course.id}&spots=${spotsToBook}` } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
         }
         case 'execute_booking': {
             const course_id = data.get('course_id');
             const spotsToBook = parseInt(data.get('spots'), 10);
-            return withDatabaseClient(async (clientDB) => {
+            const result = await withDatabaseClient(async (clientDB) => {
                 await clientDB.query('BEGIN');
                 try {
                     const userForUpdate = await clientDB.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
@@ -4458,7 +4464,6 @@ async function handlePostback(event, user) {
                     const newHistory = student.history ? [...student.history, historyEntry] : [historyEntry];
                     await clientDB.query('UPDATE users SET points = points - $1, history = $2 WHERE id = $3', [totalCost, JSON.stringify(newHistory), userId]);
                     await clientDB.query('UPDATE courses SET students = $1 WHERE id = $2', [newStudents, course_id]);
-                    
                     const reminderTime = new Date(new Date(course.time).getTime() - CONSTANTS.TIME.ONE_HOUR_IN_MS);
                     if (reminderTime > new Date()) {
                         const reminderMessage = { type: 'text', text: `🔔 課程提醒 🔔\n您預約的課程「${course.title}」即將在約一小時後開始，請準備好上課囉！` };
@@ -4467,11 +4472,13 @@ async function handlePostback(event, user) {
                     await clientDB.query('COMMIT');
                     return `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`;
                 } catch (e) {
-                    await clientDB.query('ROLLBACK'); 
+                    await clientDB.query('ROLLBACK');
                     console.error('多人預約課程失敗:', e); 
                     return '預約時發生錯誤，請稍後再試。';
                 }
             });
+            delete pendingBookingConfirmation[userId];
+            return result;
         }
         case 'confirm_cancel_booking_start':
         case 'confirm_cancel_waiting_start': {
