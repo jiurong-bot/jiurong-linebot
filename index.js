@@ -2862,27 +2862,56 @@ async function buildTeacherSelectionCarousel() {
 
 async function showPurchaseHistory(userId, page) {
     const mapOrderToBubble = (order) => {
-        let statusText, statusColor;
-        switch (order.status) {
-            case 'completed': statusText = '✅ 已完成'; statusColor = '#52b69a'; break;
-            case 'pending_confirmation': statusText = '🕒 等待確認'; statusColor = '#ff9e00'; break;
-            case 'pending_payment': statusText = '❗ 等待付款'; statusColor = '#f28482'; break;
-            case 'rejected': statusText = '❌ 已退回'; statusColor = '#d90429'; break;
-            default: statusText = '未知狀態'; statusColor = '#6c757d';
+        // [修改] 增加判斷邏輯，用來區分不同類型的紀錄
+        let statusText, statusColor, titleText, amountText, detailsItems = [];
+
+        // 判斷是否為手動調整 (金額為 0)
+        if (order.amount === 0) {
+            if (order.points > 0) {
+                // 手動加點
+                statusText = '✨ 手動加點';
+                statusColor = '#1A759F'; // 深藍色
+                titleText = `收到 ${order.points} 點`;
+            } else {
+                // 手動扣點
+                statusText = '⚠️ 手動扣點';
+                statusColor = '#f28482'; // 橘紅色
+                titleText = `扣除 ${-order.points} 點`;
+            }
+            amountText = `由老師手動調整`;
+            detailsItems.push({ type: 'text', text: `類型: ${order.last_5_digits || '手動'}`, size: 'sm' });
+
+        } else {
+            // 一般的購點紀錄
+            titleText = `購買 ${order.points} 點`;
+            amountText = `金額: ${order.amount} 元`;
+            
+            switch (order.status) {
+                case 'completed': statusText = '✅ 購點成功'; statusColor = '#52b69a'; break;
+                case 'pending_confirmation': statusText = '🕒 等待確認'; statusColor = '#ff9e00'; break;
+                case 'pending_payment': statusText = '❗ 等待付款'; statusColor = '#f28482'; break;
+                case 'rejected': statusText = '❌ 已退回'; statusColor = '#d90429'; break;
+                default: statusText = '未知狀態'; statusColor = '#6c757d';
+            }
+            detailsItems.push({ type: 'text', text: `後五碼: ${order.last_5_digits || 'N/A'}`, size: 'sm' });
         }
+
+        // 組裝 Flex Message Bubble
         return {
             type: 'bubble',
             header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: statusText, color: '#ffffff', weight: 'bold' }], backgroundColor: statusColor, paddingAll: 'lg' },
             body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-                { type: 'text', text: `購買 ${order.points} 點`, weight: 'bold', size: 'lg' },
-                { type: 'text', text: `金額: ${order.amount} 元`, size: 'sm' },
-                { type: 'text', text: `後五碼: ${order.last_5_digits || 'N/A'}`, size: 'sm' },
+                { type: 'text', text: titleText, weight: 'bold', size: 'lg' },
+                { type: 'text', text: amountText, size: 'sm' },
+                ...detailsItems, // 動態加入詳細資訊
+                { type: 'separator', margin: 'md' },
                 { type: 'text', text: `訂單ID: ${formatIdForDisplay(order.order_id)}`, size: 'xxs', color: '#aaaaaa', wrap: true },
                 { type: 'text', text: `時間: ${formatDateTime(order.timestamp)}`, size: 'xs', color: '#aaaaaa' }
             ]}
         };
     };
 
+    // 使用 createPaginatedCarousel 的部分完全不變
     const result = await createPaginatedCarousel({
         altText: '購點紀錄',
         baseAction: 'action=view_purchase_history',
@@ -2892,9 +2921,9 @@ async function showPurchaseHistory(userId, page) {
         mapRowToBubble: mapOrderToBubble,
         noDataMessage: '您沒有任何購點紀錄。'
     });
-
+    
     if (page === 1 && typeof result === 'object') {
-        return [{ type: 'text', text: '以下是您近期的購點紀錄：' }, result];
+        return [{ type: 'text', text: '以下是您所有的點數紀錄：' }, result];
     }
     return result;
 }
