@@ -6,7 +6,6 @@ const { Pool } = require('pg');
 const crypto =require('crypto');
 const axios = require('axios');
 const ImageKit = require("imagekit");
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -1181,6 +1180,7 @@ const cancellableConversationStates = {
     pendingProductEdit,
     pendingInventoryAdjust,
     pendingTeacherProfileEdit,
+    pendingMessageSearchQuery,
 };
 /**
  * 清除使用者所有待處理的對話狀態。
