@@ -3075,6 +3075,7 @@ async function showUnreadMessages(page) {
         return { type: 'flex', altText: '未回覆的學員留言', contents: { type: 'carousel', contents: messageBubbles } };
     });
 }
+
 async function showHistoricalMessages(query, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
@@ -3102,36 +3103,47 @@ async function showHistoricalMessages(query, page) {
             replied: { text: '🟢 已回覆', color: '#2a9d8f' },
         };
 
-        const messageBubbles = pageMessages.map(msg => {
+        const listItems = pageMessages.map(msg => {
             const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
-            const bodyContents = [
-                { type: 'box', layout: 'horizontal', contents: [
-                    { type: 'text', text: msg.user_name, weight: 'bold', size: 'lg', wrap: true, flex: 5 },
-                    { type: 'box', layout: 'vertical', backgroundColor: statusInfo.color, cornerRadius: 'md', paddingAll: 'sm', flex: 2, alignItems: 'center', justifyContent: 'center', contents: [
-                        { type: 'text', text: statusInfo.text, color: '#FFFFFF', weight: 'bold', size: 'xs' }
-                    ]}
-                ]},
-                { type: 'text', text: formatDateTime(msg.timestamp), size: 'xs', color: '#AAAAAA' },
-                { type: 'separator', margin: 'lg' },
-                { type: 'text', text: '【學員留言】', size: 'sm', color: '#888888', margin: 'md'},
-                { type: 'text', text: msg.message, wrap: true, size: 'md' },
-            ];
+            const replyContent = msg.teacher_reply 
+                ? [{ type: 'separator' }, { type: 'text', text: `回覆：${msg.teacher_reply}`, wrap: true, size: 'xs', color: '#495057' }]
+                : [];
 
-            if (msg.teacher_reply) {
-                bodyContents.push({ type: 'separator', margin: 'lg' });
-                bodyContents.push({ type: 'text', text: '【您的回覆】', size: 'sm', color: '#888888', margin: 'md'});
-                bodyContents.push({ type: 'text', text: msg.teacher_reply, wrap: true, size: 'md', color: '#495057' });
-            }
-
-            return { type: 'bubble', size: 'giga', body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents }};
+            return {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'md',
+                spacing: 'sm',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'horizontal',
+                        contents: [
+                            { type: 'text', text: msg.user_name, weight: 'bold', size: 'sm', flex: 3 },
+                            { type: 'text', text: statusInfo.text, size: 'xs', color: statusInfo.color, align: 'end', flex: 2 }
+                        ]
+                    },
+                    { type: 'text', text: `留言：${msg.message}`, wrap: true, size: 'sm' },
+                    ...replyContent,
+                    { type: 'text', text: formatDateTime(msg.timestamp), size: 'xxs', color: '#AAAAAA', margin: 'md' }
+                ]
+            };
         });
-
+        
         const paginationBubble = createPaginationBubble('action=view_historical_messages', page, hasNextPage, `&query=${encodeURIComponent(query)}`);
-        if (paginationBubble) {
-            messageBubbles.push(paginationBubble);
-        }
-
-        const flexMessage = { type: 'flex', altText: `歷史留言搜尋結果: ${query}`, contents: { type: 'carousel', contents: messageBubbles }};
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+        
+        const flexMessage = {
+            type: 'flex',
+            altText: `歷史留言搜尋結果: ${query}`,
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `與「${query}」相關的留言`, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#343A40' },
+                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
+                footer: { type: 'box', layout: 'vertical', contents: footerContents }
+            }
+        };
 
         if (page === 1) {
             return [{ type: 'text', text: `以下是關於「${query}」的歷史留言：`}, flexMessage];
@@ -3139,6 +3151,7 @@ async function showHistoricalMessages(query, page) {
         return flexMessage;
     });
 }
+
 async function showPendingShopOrders(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
