@@ -1888,6 +1888,10 @@ async function showTeacherListForRemoval(page) {
     });
 }
 async function handleTeacherCommands(event, userId) {
+  // =======================================================
+  // [偵錯點 1] 請在這裡加上第一行 console.log
+  console.log(`[DEBUG] Entering handleTeacherCommands. Event type: ${event.message.type}. State:`, JSON.stringify(pendingTeacherProfileEdit[userId]));
+  // =======================================================
   const text = event.message.text ? event.message.text.trim().normalize() : '';
   const user = await getUser(userId);
 
