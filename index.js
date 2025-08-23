@@ -3542,6 +3542,7 @@ async function showMyCourses(userId, page) {
         return { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles } };
     });
 }
+
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
@@ -3552,14 +3553,14 @@ async function showMyMessages(userId, page) {
 
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageMessages = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
-        
+    
         if (pageMessages.length > 0) {
             await client.query(
                 "UPDATE feedback_messages SET is_student_read = true WHERE user_id = $1 AND status = 'replied' AND is_student_read = false",
                 [userId]
             );
         }
-
+  
         if (pageMessages.length === 0 && page === 1) {
             return '您目前沒有任何留言紀錄。';
         }
@@ -3573,42 +3574,50 @@ async function showMyMessages(userId, page) {
             replied: { text: '🟢 老師已回覆', color: '#2a9d8f' },
         };
 
-        const messageBubbles = pageMessages.map(msg => {
+        const listItems = pageMessages.map(msg => {
             const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
-            const bodyContents = [
-                { type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm', contents: [
-                    { type: 'text', text: '【我的留言】', weight: 'bold', size: 'sm', color: '#1A759F'},
-                    { type: 'text', text: msg.message, wrap: true, size: 'md' }
-                ]}
-            ];
-
-            if (msg.teacher_reply) {
-                bodyContents.push({ type: 'separator', margin: 'lg' });
-                bodyContents.push({ type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm', contents: [
-                    { type: 'text', text: '【老師的回覆】', weight: 'bold', size: 'sm', color: '#52B69A'},
-                    { type: 'text', text: msg.teacher_reply, wrap: true, size: 'md' }
-                ]});
-            }
+            const replyContent = msg.teacher_reply
+                ? [{ type: 'separator', margin: 'sm' }, { type: 'text', text: `老師回覆：${msg.teacher_reply}`, wrap: true, size: 'xs', color: '#495057' }]
+                : [];
 
             return {
-                type: 'bubble',
-                size: 'giga',
-                header: { type: 'box', layout: 'horizontal', paddingAll: 'lg', backgroundColor: statusInfo.color, contents: [
-                    { type: 'text', text: statusInfo.text, color: '#FFFFFF', weight: 'bold' },
-                    { type: 'text', text: formatDateTime(msg.timestamp), size: 'xs', color: '#FFFFFF', align: 'end' }
-                ]},
-                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents }
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'md',
+                spacing: 'sm',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'horizontal',
+                        contents: [
+                            { type: 'text', text: '我的留言', weight: 'bold', size: 'sm', flex: 3 },
+                            { type: 'text', text: statusInfo.text, size: 'xs', color: statusInfo.color, align: 'end', flex: 2 }
+                        ]
+                    },
+                    { type: 'text', text: msg.message, wrap: true, size: 'sm' },
+                    ...replyContent,
+                    { type: 'text', text: formatDateTime(msg.timestamp), size: 'xxs', color: '#AAAAAA', margin: 'md' }
+                ]
             };
         });
         
         const paginationBubble = createPaginationBubble('action=view_my_messages', page, hasNextPage);
-        if (paginationBubble) {
-            messageBubbles.push(paginationBubble);
-        }
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
 
-        return { type: 'flex', altText: '您的歷史留言紀錄', contents: { type: 'carousel', contents: messageBubbles }};
+        return {
+            type: 'flex',
+            altText: '您的歷史留言紀錄',
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '我的留言紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#343A40' },
+                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
+                footer: { type: 'box', layout: 'vertical', contents: footerContents }
+            }
+        };
     });
 }
+
 
 async function showSingleCoursesForCancellation(prefix, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
