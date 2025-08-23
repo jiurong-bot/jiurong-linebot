@@ -3880,43 +3880,51 @@ async function showCourseRosterSummary(page) {
             return '沒有更多課程了。';
         }
 
-        const courseBubbles = pageCourses.map(c => ({
-            type: 'bubble',
-            body: {
-                type: 'box',
-                layout: 'vertical',
-                spacing: 'md',
-                contents: [
-                    { type: 'text', text: c.title, weight: 'bold', size: 'lg', wrap: true },
-                    { type: 'text', text: formatDateTime(c.time), size: 'sm', color: '#666666' },
-                    { type: 'separator', margin: 'md' },
-                    {
-                        type: 'box', layout: 'horizontal', margin: 'md',
-                        contents: [
-                            { type: 'text', text: `預約: ${c.student_count} 人`, size: 'sm', flex: 1 },
-                            { type: 'text', text: `候補: ${c.waiting_count} 人`, size: 'sm', flex: 1, align: 'end' }
-                        ]
-                    }
-                ]
-            },
-            footer: {
-                type: 'box',
-                layout: 'vertical',
-                contents: [{
-                    type: 'button', style: 'primary', height: 'sm',
-                    action: { type: 'postback', label: '查看詳細名單', data: `action=view_course_roster_details&course_id=${c.id}` }
-                }]
-            }
+        const listItems = pageCourses.map(c => ({
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'md',
+            paddingAll: 'md',
+            contents: [
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 4,
+                    contents: [
+                        { type: 'text', text: c.title, weight: 'bold', size: 'sm', wrap: true },
+                        { type: 'text', text: formatDateTime(c.time), size: 'xs', color: '#666666' },
+                        { type: 'text', text: `預約: ${c.student_count} 人 / 候補: ${c.waiting_count} 人`, size: 'xs', margin: 'sm' }
+                    ]
+                },
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 2,
+                    justifyContent: 'center',
+                    contents: [
+                        { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '看名單', data: `action=view_course_roster_details&course_id=${c.id}` } }
+                    ]
+                }
+            ]
         }));
-
+        
         const paginationBubble = createPaginationBubble('action=view_course_roster_summary', page, hasNextPage);
-        if (paginationBubble) {
-            courseBubbles.push(paginationBubble);
-        }
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
 
-        return { type: 'flex', altText: '課程狀態查詢', contents: { type: 'carousel', contents: courseBubbles }};
+        return {
+            type: 'flex',
+            altText: '課程狀態查詢',
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '7日內課程狀態查詢', weight: 'bold', size: 'lg', color: '#FFFFFF' }], backgroundColor: '#343A40' },
+                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
+                footer: { type: 'box', layout: 'vertical', contents: footerContents }
+            }
+        };
     });
 }
+
 
 async function showCourseRosterDetails(courseId) {
     return withDatabaseClient(async (client) => {
