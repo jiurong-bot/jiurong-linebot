@@ -4118,12 +4118,11 @@ async function handlePostback(event, user) {
             const summary = `請確認課程資訊：\n\n` + `標題：${state.title}\n` + `老師：${state.teacher_name}\n` + `時間：每${state.weekday_label} ${state.time}\n` + `堂數：${state.sessions} 堂\n` + `名額：${state.capacity} 位\n` + `費用：${state.points_cost} 點/堂\n\n` + `首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
             return { type: 'text', text: summary, quickReply: { items: [ { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
         }   
-        case 'confirm_join_waiting_list_start': {
+            case 'confirm_join_waiting_list_start': {
             const course_id = data.get('course_id');
             const course = await getCourse(course_id);
             if (!course) return '抱歉，找不到該課程，可能已被老師取消。';
             
-            // [新增] 設定待處理狀態
             pendingBookingConfirmation[userId] = { type: 'confirm_wait', course_id: course_id };
             setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
                 enqueuePushTask(u, { type: 'text', text: '加入候補操作已逾時，自動取消。' });
@@ -4145,7 +4144,6 @@ async function handlePostback(event, user) {
         case 'execute_join_waiting_list': {
             const course_id = data.get('course_id');
             const result = await withDatabaseClient(async (client) => {
-                // ... (內部的資料庫操作邏輯不變) ...
                 await client.query('BEGIN');
                 try {
                     const courseRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
@@ -4164,13 +4162,9 @@ async function handlePostback(event, user) {
                     return '加入候補時發生錯誤，請稍後再試。';
                 }
             });
-            // [新增] 操作完成後，清除狀態
             delete pendingBookingConfirmation[userId];
             return result;
         }
-
-// ...
-
         case 'join_waiting_list': {
             const course_id = data.get('course_id');
             return withDatabaseClient(async (client) => {
