@@ -3217,7 +3217,6 @@ async function showPendingShopOrders(page) {
     });
 }
 
-
 async function showAnnouncementsForDeletion(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
@@ -3236,44 +3235,50 @@ async function showAnnouncementsForDeletion(page) {
             return '沒有更多公告了。';
         }
 
-        const announcementBubbles = pageAnnouncements.map(ann => {
-            return {
-                type: 'bubble',
-                body: {
+        const listItems = pageAnnouncements.map(ann => ({
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'md',
+            paddingAll: 'md',
+            contents: [
+                {
                     type: 'box',
                     layout: 'vertical',
-                    spacing: 'md',
+                    flex: 4,
                     contents: [
                         { type: 'text', text: ann.content, wrap: true, size: 'sm' },
-                        { type: 'separator', margin: 'lg' },
                         { type: 'text', text: `由 ${ann.creator_name} 於 ${formatDateTime(ann.created_at)} 發布`, size: 'xxs', color: '#AAAAAA', margin: 'lg', wrap: true }
                     ]
                 },
-                footer: {
+                {
                     type: 'box',
                     layout: 'vertical',
+                    flex: 1,
+                    justifyContent: 'center',
                     contents: [
-                        { type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: '🗑️ 刪除此公告', data: `action=select_announcement_for_deletion&ann_id=${ann.id}` } }
+                         { type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: '刪除', data: `action=select_announcement_for_deletion&ann_id=${ann.id}` } }
                     ]
                 }
-            };
-        });
-
+            ]
+        }));
+        
         const paginationBubble = createPaginationBubble('action=view_announcements_for_deletion', page, hasNextPage);
-        if (paginationBubble) {
-            announcementBubbles.push(paginationBubble);
-        }
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
 
         return {
             type: 'flex',
             altText: '選擇要刪除的公告',
             contents: {
-                type: 'carousel',
-                contents: announcementBubbles
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '刪除舊公告', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#343A40' },
+                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
+                footer: { type: 'box', layout: 'vertical', contents: footerContents }
             }
         };
     });
 }
+
 
 async function showCourseSeries(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
