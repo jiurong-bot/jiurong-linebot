@@ -1390,13 +1390,14 @@ async function showPointManagementMenu(event, user) {
                 contents: [ 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: pendingOrdersLabel, data: `action=view_pending_orders_page&page=1` } }, 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✍️ 手動調整點數', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANUAL_ADJUST_POINTS)}` } },
-                    // [新增] 查詢手動調整紀錄的按鈕
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢調整紀錄', data: `action=view_manual_adjust_history&page=1` } } 
+                    // [修改] 將按鈕的 data 改為觸發一個新的 action
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢調整紀錄', data: `action=select_adjust_history_view_type` } } 
                 ] 
             } 
         } 
     };
 }
+
 
 async function showPendingPointOrders(event, user) {
     return showPendingOrders(1);
