@@ -2223,7 +2223,24 @@ async function handleTeacherCommands(event, userId) {
         }
         break;
     }
-  } else if (pendingStudentSearchQuery[userId]) {
+  } else if (pendingManualAdjust[userId]) {
+    // ... pendingManualAdjust 的程式碼 ...
+  } else if (pendingManualAdjustSearch[userId]) {
+    const searchQuery = text;
+    delete pendingManualAdjustSearch[userId];
+
+    const res = await withDatabaseClient(client => 
+        client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
+    );
+
+    if (res.rows.length === 0) {
+        return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
+    }
+    
+    return showStudentSelectionForAdjustHistory(res.rows, searchQuery);
+  }
+
+  else if (pendingStudentSearchQuery[userId]) {
     const searchQuery = text;
     delete pendingStudentSearchQuery[userId];
     return showStudentSearchResults(searchQuery, 1);
