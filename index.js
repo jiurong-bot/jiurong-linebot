@@ -3170,54 +3170,53 @@ async function showPendingShopOrders(page) {
             return '沒有更多待處理的訂單了。';
         }
 
-        const orderBubbles = pageOrders.map(order => ({
-            type: 'bubble',
-            body: {
-                type: 'box',
-                layout: 'vertical',
-                spacing: 'md',
-                contents: [
-                    { type: 'text', text: order.product_name, weight: 'bold', size: 'xl', wrap: true },
-                    { type: 'text', text: `兌換者: ${order.user_name}`, size: 'md' },
-                    { type: 'separator', margin: 'lg' },
-                    {
-                        type: 'box',
-                        layout: 'vertical',
-                        margin: 'lg',
-                        spacing: 'sm',
-                        contents: [
-                            { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '花費點數', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${order.points_spent} 點`, color: '#666666', size: 'sm', flex: 3, wrap: true } ] },
-                            { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '訂單時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(order.created_at), color: '#666666', size: 'sm', flex: 3, wrap: true } ] }
-                        ]
-                    }
-                ]
-            },
-            footer: {
-                type: 'box',
-                layout: 'horizontal',
-                spacing: 'sm',
-                contents: [
-                    { type: 'button', style: 'secondary', flex: 1, action: { type: 'postback', label: '取消訂單', data: `action=cancel_shop_order_start&orderUID=${order.order_uid}` } },
-                    { type: 'button', style: 'primary', color: '#28a745', flex: 1, action: { type: 'postback', label: '確認訂單', data: `action=confirm_shop_order&orderUID=${order.order_uid}` } }
-                ]
-            }
+        const listItems = pageOrders.map(order => ({
+            type: 'box',
+            layout: 'horizontal',
+            paddingAll: 'md',
+            spacing: 'md',
+            contents: [
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 3,
+                    contents: [
+                        { type: 'text', text: order.product_name, weight: 'bold', size: 'md', wrap: true },
+                        { type: 'text', text: `兌換者: ${order.user_name}`, size: 'sm' },
+                        { type: 'text', text: `花費: ${order.points_spent} 點`, size: 'sm', color: '#666666' },
+                        { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' }
+                    ]
+                },
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 2,
+                    justifyContent: 'space-around',
+                    contents: [
+                        { type: 'button', style: 'primary', color: '#28a745', height: 'sm', action: { type: 'postback', label: '確認', data: `action=confirm_shop_order&orderUID=${order.order_uid}` } },
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消', data: `action=cancel_shop_order_start&orderUID=${order.order_uid}` } }
+                    ]
+                }
+            ]
         }));
-
+        
         const paginationBubble = createPaginationBubble('action=view_pending_shop_orders', page, hasNextPage);
-        if (paginationBubble) {
-            orderBubbles.push(paginationBubble);
-        }
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
 
         return {
             type: 'flex',
             altText: '待處理的商品訂單',
             contents: {
-                type: 'carousel',
-                contents: orderBubbles
+                type: 'bubble',
+                size: 'giga',
+                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '待處理商城訂單', weight: 'bold', size: 'lg', color: '#FFFFFF' }], backgroundColor: '#343A40' },
+                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
+                footer: { type: 'box', layout: 'vertical', contents: footerContents }
             }
         };
     });
 }
+
 
 async function showAnnouncementsForDeletion(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
