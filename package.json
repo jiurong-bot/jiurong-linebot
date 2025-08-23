@@ -17,6 +17,7 @@
     "imagekit": "^6.0.0",
     "node-fetch": "^3.3.2",
     "node-pg-migrate": "^7.5.2",
+    "nodemailer": "^7.0.5",
     "pg": "^8.16.3",
     "pg-pool": "^3.10.1"
   }
