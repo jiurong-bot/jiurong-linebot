@@ -4526,6 +4526,29 @@ async function handlePostback(event, user) {
                 } else { return result; }
             } catch (err) { console.error(`❌ 即時生成 ${reportType} 報表失敗:`, err); return `❌ 產生 ${periodText} 報表時發生錯誤，請稍後再試。`; }
         }
+        case 'select_adjust_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的紀錄，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部紀錄', data: 'action=view_manual_adjust_history&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_manual_adjust_history_search' } }
+                    ]
+                }
+            };
+        }
+        case 'start_manual_adjust_history_search': {
+            pendingManualAdjustSearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingManualAdjustSearch, 'pendingManualAdjustSearch', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '搜尋操作已逾時，自動取消。' });
+            });
+            return {
+                type: 'text',
+                text: '請輸入您想查詢的學員姓名：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
         case 'confirm_add_product': {
             const state = pendingProductCreation[userId];
             if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
