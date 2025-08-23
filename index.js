@@ -2172,29 +2172,48 @@ async function handleTeacherCommands(event, userId) {
         return { type: 'text', text: summary, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_MANUAL_ADJUST, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_MANUAL_ADJUST } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] }};
       case 'await_confirmation':
         if (text === CONSTANTS.COMMANDS.TEACHER.CONFIRM_MANUAL_ADJUST) {
-          return withDatabaseClient(async (clientDB) => {
-            await clientDB.query('BEGIN');
-            try {
-                const studentRes = await clientDB.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [state.targetStudent.id]); const student = studentRes.rows[0];
-                 const newPoints = state.operation === 'add' ? student.points + state.amount : student.points - state.amount;
-                if (newPoints < 0) { await clientDB.query('ROLLBACK'); delete pendingManualAdjust[userId]; return `操作失敗：學員 ${student.name} 的點數不足以扣除 ${state.amount} 點。`; }
-                const historyEntry = { action: `手動調整：${state.operation === 'add' ? '+' : '-'}${state.amount}點`, reason: state.reason, time: new Date().toISOString(), operator: user.name };
-                const newHistory = student.history ? [...student.history, historyEntry] : [historyEntry];
-                await clientDB.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), student.id]);
-                const opTextForStudent = state.operation === 'add' ? `增加了 ${state.amount}` : `扣除了 ${state.amount}`;
-                const notifyMessage = { type: 'text', text: `🔔 點數異動通知\n老師 ${user.name} 為您 ${opTextForStudent} 點。\n原因：${state.reason}\n您目前的點數為：${newPoints} 點。`};
-                await enqueuePushTask(student.id, notifyMessage);
-                await clientDB.query('COMMIT');
-                delete pendingManualAdjust[userId];
-                return `✅ 已成功為學員 ${student.name} ${state.operation === 'add' ? '增加' : '扣除'} ${state.amount} 點。`;
-            } catch (e) { 
+        return withDatabaseClient(async (clientDB) => {
+        await clientDB.query('BEGIN');
+        try {
+            const studentRes = await clientDB.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [state.targetStudent.id]);
+            const student = studentRes.rows[0];
+            const newPoints = state.operation === 'add' ? student.points + state.amount : student.points - state.amount;
+            if (newPoints < 0) {
                 await clientDB.query('ROLLBACK');
-                console.error('手動調整點數失敗:', e); 
-                delete pendingManualAdjust[userId]; 
-                return '❌ 操作失敗，資料庫發生錯誤，請稍後再試。';
+                delete pendingManualAdjust[userId];
+                return `操作失敗：學員 ${student.name} 的點數不足以扣除 ${state.amount} 點。`;
             }
-          });
+            const historyEntry = { action: `手動調整：${state.operation === 'add' ? '+' : '-'}${state.amount}點`, reason: state.reason, time: new Date().toISOString(), operator: user.name };
+            const newHistory = student.history ? [...student.history, historyEntry] : [historyEntry];
+            await clientDB.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), student.id]);
+
+            // [新增] 在 orders 資料表中也新增一筆紀錄
+            const orderId = `MA-${Date.now()}`; // MA for Manual Adjust
+            const pointsChange = state.operation === 'add' ? state.amount : -state.amount;
+            
+            await clientDB.query(
+                `INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [orderId, student.id, student.name, pointsChange, 0, `手動調整:${state.reason.substring(0, 10)}`, 'completed', new Date().toISOString()]
+            );
+
+            const opTextForStudent = state.operation === 'add' ? `增加了 ${state.amount}` : `扣除了 ${state.amount}`;
+            const notifyMessage = { type: 'text', text: `🔔 點數異動通知\n老師 ${user.name} 為您 ${opTextForStudent} 點。\n原因：${state.reason}\n您目前的點數為：${newPoints} 點。` };
+            await enqueuePushTask(student.id, notifyMessage);
+
+            await clientDB.query('COMMIT');
+            delete pendingManualAdjust[userId];
+            return `✅ 已成功為學員 ${student.name} ${state.operation === 'add' ? '增加' : '扣除'} ${state.amount} 點。`;
+        } catch (e) {
+            await clientDB.query('ROLLBACK');
+            console.error('手動調整點數失敗:', e);
+            delete pendingManualAdjust[userId];
+            return '❌ 操作失敗，資料庫發生錯誤，請稍後再試。';
         }
+    });
+}
+// ...
+
         break;
     }
   } else if (pendingStudentSearchQuery[userId]) {
