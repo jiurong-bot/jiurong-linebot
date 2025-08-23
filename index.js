@@ -2932,29 +2932,26 @@ async function showPurchaseHistory(userId, page) {
         const listItems = pageRows.map(order => {
             let typeText, pointsText, pointsColor;
 
-            // 判斷紀錄類型
             if (order.amount === 0) { // 手動調整
                 if (order.points > 0) {
                     typeText = '✨ 手動加點';
                     pointsText = `+${order.points}`;
-                    pointsColor = '#1A759F'; // 深藍色
+                    pointsColor = '#1A759F';
                 } else {
                     typeText = '⚠️ 手動扣點';
                     pointsText = `${order.points}`;
-                    pointsColor = '#D9534F'; // 紅色
+                    pointsColor = '#D9534F';
                 }
             } else { // 一般購點
                 typeText = '✅ 購點成功';
                 pointsText = `+${order.points}`;
-                pointsColor = '#28A745'; // 綠色
-                 // 也可以根據 order.status 顯示不同文字
+                pointsColor = '#28A745';
                 if (order.status !== 'completed') {
                     typeText = '🕒 訂單處理中';
-                    pointsColor = '#6C757D'; // 灰色
+                    pointsColor = '#6C757D';
                 }
             }
 
-            // 回傳代表「一行」的 Flexbox 元件
             return {
                 type: 'box',
                 layout: 'horizontal',
@@ -2983,6 +2980,15 @@ async function showPurchaseHistory(userId, page) {
             };
         });
 
+        // [修改] 改用更穩定的 forEach 迴圈來加入分隔線
+        const bodyContents = [];
+        listItems.forEach((item, index) => {
+            if (index > 0) {
+                bodyContents.push({ type: 'separator' });
+            }
+            bodyContents.push(item);
+        });
+
         // --- 組合成分頁按鈕 ---
         const paginationBubble = createPaginationBubble('action=view_purchase_history', page, hasNextPage);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
@@ -3005,10 +3011,7 @@ async function showPurchaseHistory(userId, page) {
                     layout: 'vertical',
                     paddingAll: 'none',
                     spacing: 'none',
-                    // 將所有列表項目和分隔線放進來
-                    contents: listItems.flatMap((item, index) => 
-                        index === 0 ? [item] : [{ type: 'separator' }, item]
-                    )
+                    contents: bodyContents // 使用新的 bodyContents
                 },
                 footer: {
                     type: 'box',
