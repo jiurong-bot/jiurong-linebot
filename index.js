@@ -4120,6 +4120,7 @@ async function handlePostback(event, user) {
         case 'view_historical_messages': return showHistoricalMessages(decodeURIComponent(data.get('query') || ''), page);
         case 'view_failed_tasks': return showFailedTasks(page);
         case 'manage_course_group': return showSingleCoursesForCancellation(data.get('prefix'), page);
+        case 'view_manual_adjust_history': return showManualAdjustHistory(page);
         
         // ==================================
         // [V34.0 & V34.1] 師資管理
