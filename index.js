@@ -4098,7 +4098,48 @@ async function handlePostback(event, user) {
             const firstDate = getNextDate(state.weekday, state.time);
             const summary = `請確認課程資訊：\n\n` + `標題：${state.title}\n` + `老師：${state.teacher_name}\n` + `時間：每${state.weekday_label} ${state.time}\n` + `堂數：${state.sessions} 堂\n` + `名額：${state.capacity} 位\n` + `費用：${state.points_cost} 點/堂\n\n` + `首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
             return { type: 'text', text: summary, quickReply: { items: [ { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
-        }       
+        }   
+        case 'confirm_join_waiting_list_start': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) return '抱歉，找不到該課程，可能已被老師取消。';
+
+            const message = `您確定要加入以下課程的候補名單嗎？\n\n課程：${getCourseMainTitle(course.title)}\n時間：${formatDateTime(course.time)}\n\n候補不需支付點數，當有名額釋出時，系統將會發送通知給您。`;
+            
+            return {
+                type: 'text',
+                text: message,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認加入候補', data: `action=execute_join_waiting_list&course_id=${course.id}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'join_waiting_list': // <- 這個 case 名稱我們不再使用，但為了相容性可以先留著或刪除
+        case 'execute_join_waiting_list': {
+            const course_id = data.get('course_id');
+            return withDatabaseClient(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const courseRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
+                    if (courseRes.rows.length === 0) { await client.query('ROLLBACK'); return '抱歉，找不到該課程，可能已被老師取消。'; }
+                    const course = courseRes.rows[0];
+                    if ((course.students?.length || 0) < course.capacity) { await client.query('ROLLBACK'); return '好消息！這堂課剛好有名額釋出了，請回到列表直接點擊「預約課程」按鈕。'; }
+                    if (course.waiting?.includes(userId)) { await client.query('ROLLBACK'); return '您已在候補名單中，請耐心等候通知。'; }
+
+                    const newWaitingList = [...(course.waiting || []), userId];
+                    await client.query('UPDATE courses SET waiting = $1 WHERE id = $2', [newWaitingList, course_id]);
+                    await client.query('COMMIT');
+                    return `✅ 已成功將您加入「${getCourseMainTitle(course.title)}」的候補名單！\n當有名額釋出時，系統將會發送通知給您。`;
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error(`加入候補失敗 courseId: ${course_id}`, err);
+                    return '加入候補時發生錯誤，請稍後再試。';
+                }
+            });
+        }
         case 'join_waiting_list': {
             const course_id = data.get('course_id');
             return withDatabaseClient(async (client) => {
