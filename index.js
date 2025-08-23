@@ -3787,8 +3787,8 @@ async function showProductManagementList(page = 1, filter = null) {
                     type: 'image',
                     url: p.image_url,
                     size: 'full',
-                    aspectRatio: '20:13',
-                    aspectMode: 'fit',
+                    aspectRatio: '1:1',
+                    aspectMode: 'cover',
                 } : undefined,
                 body: {
                     type: 'box',
