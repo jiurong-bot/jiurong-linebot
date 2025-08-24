@@ -1,4 +1,6 @@
 // index.js - V35.0 (多功能查詢優化)
+async function main() {
+
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -4587,4 +4589,12 @@ app.post('/webhook', line.middleware(config), (req, res) => {
       console.error(err);
       res.status(500).end();
     });
+});
+
+} // 這是 main 函式新增的結尾括號
+
+main().catch(err => {
+  console.error('!!!!!!!!!! TOP-LEVEL CRASH DETECTED !!!!!!!!!!');
+  console.error('程式啟動時發生了未被捕捉的致命錯誤:', err);
+  process.exit(1);
 });
