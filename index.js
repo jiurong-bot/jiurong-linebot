@@ -2670,30 +2670,30 @@ await enqueuePushTask(targetUser.id, notifyMessage).catch(e => console.error(e))
 }
     }
   } else {
-    if (text === CONSTANTS.COMMANDS.ADMIN.PANEL) {
+        if (text === CONSTANTS.COMMANDS.ADMIN.PANEL) {
       const failedTasksCount = await withDatabaseClient(async (client) => {
           const res = await client.query("SELECT COUNT(*) FROM failed_tasks");
           return parseInt(res.rows[0].count, 10);
       });
-let failedTasksLabel = '失敗任務管理';
+      let failedTasksLabel = '失敗任務管理';
       if (failedTasksCount > 0) {
         failedTasksLabel += ` (${failedTasksCount})`;
-}
+      }
 
       const adminMenu = [
         { type: 'action', action: { type: 'message', label: '系統狀態', text:CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS } },
         { type: 'action', action: { type: 'message', label: failedTasksLabel, text: CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT } },
         { type: 'action', action: { type: 'message', label: '授權老師', text: CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER } },
         { type: 'action', action: { type: 'message', label: '移除老師', text: CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER } },
-        { type: 'action', action: 
-{ type: 'message', label: '模擬學員身份', text: CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT } },
+        { type: 'action', action: { type: 'message', label: '模擬學員身份', text: CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT } },
         { type: 'action', action: { type: 'message', label: '模擬老師身份', text: CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER } },
         { type: 'action', action: { type: 'message', label: '切換推播通知', text: CONSTANTS.COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS } }
       ];
-const currentStatus = await getNotificationStatus();
+      const currentStatus = await getNotificationStatus();
       const statusText = currentStatus ? '【目前為：開啟】' : '【目前為：關閉】';
-return { type: 'text', text: `請選擇管理者功能：\n\n開發者推播通知 ${statusText}`, quickReply: { items: adminMenu } };
-}
+      return { type: 'text', text: `請選擇管理者功能：\n\n開發者推播通知 ${statusText}`, quickReply: { items: adminMenu } };
+    }
+
     else if (text === CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS) {
       return showSystemStatus();
 }   
