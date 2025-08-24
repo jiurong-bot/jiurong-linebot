@@ -2406,7 +2406,6 @@ console.error('手動調整點數失敗:', e);
           });
 }
         break;
-}
   }
   }
   else if (pendingManualAdjustSearch[userId]) {
