@@ -1482,47 +1482,6 @@ let unreadLabel = '💬 查看未回覆留言';
         } 
     };
 }
-async function showStudentManagementMenu(event, user) {
-    const unreadCount = await withDatabaseClient(client => 
-        client.query("SELECT COUNT(*) FROM feedback_messages WHERE status = 'new'")
-    ).then(res => parseInt(res.rows[0].count, 10));
-let unreadLabel = '💬 查看未回覆留言';
-    if (unreadCount > 0) { 
-        unreadLabel += ` (${unreadCount})`;
-}
-
-    return { 
-        type: 'flex', 
-        altText: '學員管理', 
-        contents: { 
-            type: 'bubble', 
-            size: 'giga', 
-            header: { 
-                type: 'box', 
-    
-            layout: 'vertical', 
-                contents: [{ type: 'text', text: '👤 學員管理', color: '#ffffff', weight: 'bold', size: 'lg' }], 
-                backgroundColor: '#343A40', 
-                paddingTop: 'lg', 
-                paddingBottom: 'lg' 
-  
-          }, 
-            body: { 
-                type: 'box', 
-                layout: 'vertical', 
-                spacing: 'md', 
-                paddingAll: 'lg', 
-   
-             contents: [ 
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.SEARCH_STUDENT)}` } }, 
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: unreadLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.VIEW_MESSAGES)}` } }, 
-                    // V35.0 修改按鈕文字與功能
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢歷史留言', data: `action=select_message_history_view_type` } } 
-                ] 
-            } 
-        } 
-    };
-}
 
 async function startStudentSearch(event, user) {
     const userId = user.id;
