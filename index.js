@@ -2548,7 +2548,7 @@ return '❌ 圖片上傳失敗，請稍後再試。';
         return buildProfileConfirmationMessage(userId, state.newData);
 }
   }
-
+}
   // === Refactored Command Handling ===
   const commandFunction = teacherCommandMap[text];
 if (commandFunction) {
