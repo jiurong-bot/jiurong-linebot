@@ -1474,7 +1474,7 @@ let unreadLabel = '💬 查看未回覆留言';
    
              contents: [ 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔍 查詢學員', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.SEARCH_STUDENT)}` } }, 
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: unreadLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.VIEW_MAGES)}` } }, 
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: unreadLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.VIEW_MESSAGES)}` } }, 
                     // V35.0 修改按鈕文字與功能
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢歷史留言', data: `action=select_message_history_view_type` } } 
                 ] 
