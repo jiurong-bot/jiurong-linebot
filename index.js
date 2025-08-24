@@ -2694,6 +2694,7 @@ await enqueuePushTask(targetUser.id, notifyMessage).catch(e => console.error(e))
       return { type: 'text', text: `請選擇管理者功能：\n\n開發者推播通知 ${statusText}`, quickReply: { items: adminMenu } };
     }
 
+
     else if (text === CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS) {
       return showSystemStatus();
 }   
