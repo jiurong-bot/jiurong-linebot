@@ -4836,43 +4836,7 @@ async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
     const userId = user.id;
-    const page = parseInt(data.get('page') || '1', 10);
-     // =======================================================
-    // [新增] 連續點擊三次進入管理模式的隱藏功能
-    // =======================================================
-    if (userId === ADMIN_USER_ID) { // 首先確認是管理員
-        const now = Date.now();
-        const clickState = richMenuClickTracker[userId] || { clickCount: 0, lastAction: null, timestamp: 0 };
-        const CLICK_TIMEOUT_MS = 2000; // 設定超時時間為 2 秒
-
-        // 如果點擊了不同按鈕，或距離上次點擊超過 2 秒，則重置計數
-        if (action !== clickState.lastAction || (now - clickState.timestamp > CLICK_TIMEOUT_MS)) {
-            richMenuClickTracker[userId] = { clickCount: 1, lastAction: action, timestamp: now };
-        } else {
-            // 點擊相同按鈕且未超時，計數加一
-            clickState.clickCount++;
-            clickState.timestamp = now;
-            richMenuClickTracker[userId] = clickState;
-
-            // 如果計數達到 3 次
-            if (clickState.clickCount === 3) {
-                console.log(`[ADMIN-TRIGGER] 管理員 ${userId} 透過連續點擊觸發管理模式。`);
-                delete richMenuClickTracker[userId]; // 重置計數器
-
-                // 模擬一個手動輸入「@管理模式」的事件
-                const simulatedEvent = {
-                    ...event,
-                    type: 'message',
-                    message: { type: 'text', id: `simulated_${Date.now()}`, text: CONSTANTS.COMMANDS.ADMIN.PANEL }
-                };
-                // 直接呼叫並回傳管理指令處理函式的結果
-                return handleAdminCommands(simulatedEvent, user);
-            }
-        }
-    }
-    // =======================================================
-    // [結束] 隱藏功能區塊
-    // =======================================================
+    const page = parseInt(data.get('page') || '1', 10); 
     switch (action) {
 
         // ==================================
