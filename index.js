@@ -1175,11 +1175,11 @@ const cancellableConversationStates = {
     pendingInventoryAdjust,
     pendingTeacherProfileEdit,
     pendingMessageSearchQuery,
-    pendingManualAdjustSearch,
-    // [新增]
+    pendingManualAdjustSearch, // [新增]
     pendingPurchaseHistorySearch,
     pendingExchangeHistorySearch,
     pendingMessageHistorySearch,
+    richMenuClickTracker, // [新增] 將點擊追蹤器也加入可清除列表
 };
 /**
  * 清除使用者所有待處理的對話狀態。
