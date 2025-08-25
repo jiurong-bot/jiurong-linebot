@@ -20,15 +20,15 @@
       "action": { "type": "postback", "data": "action=run_command&text=@學員管理" }
     },
     {
-      "bounds": { "x": 0, "y": 843, "width": 834, "height": 450 },
+      "bounds": { "x": 0, "y": 450, "width": 834, "height": 450 },
       "action": { "type": "postback", "data": "action=run_command&text=@公告管理" }
     },
     {
-      "bounds": { "x": 833, "y": 843, "width": 834, "height": 450 },
+      "bounds": { "x": 833, "y": 450, "width": 834, "height": 450 },
       "action": { "type": "postback", "data": "action=run_command&text=@商城管理" }
     },
     {
-      "bounds": { "x": 1666, "y": 843, "width": 834, "height": 450 },
+      "bounds": { "x": 1666, "y": 450, "width": 834, "height": 450 },
       "action": { "type": "postback", "data": "action=run_command&text=@統計報表" }
     }
   ]
