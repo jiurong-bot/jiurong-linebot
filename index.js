@@ -1,4 +1,4 @@
-// index.js - V35.1 (管理功能優化)
+// index.js - V35.2 (刪除重複程式碼)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
