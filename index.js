@@ -1156,6 +1156,7 @@ const userLastInteraction = {}; // [V28.0 新增] 用於智慧回覆機制的 Se
 const pendingPurchaseHistorySearch = {};
 const pendingExchangeHistorySearch = {};
 const pendingMessageHistorySearch = {};
+const richMenuClickTracker = {}; // [新增] 用於追蹤 Rich Menu 連續點擊
 const cancellableConversationStates = {
     pendingCourseCreation,
     pendingManualAdjust,
