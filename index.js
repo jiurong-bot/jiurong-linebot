@@ -2846,7 +2846,7 @@ async function handleStudentCommands(event, userId) {
       const unreadCount = await withDatabaseClient(client => 
         client.query("SELECT COUNT(*) FROM feedback_messages WHERE user_id = $1 AND status = 'replied' AND is_student_read = false", [userId])
       ).then(res => parseInt(res.rows[0].count, 10));
-      let historyLabel = '📜 查看歷史留言';
+      let historyLabel = '📜 查詢歷史留言';
       if (unreadCount > 0) {
         historyLabel += ` (${unreadCount})`;
       }
