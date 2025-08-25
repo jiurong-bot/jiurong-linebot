@@ -20,11 +20,11 @@
       "action": { "type": "postback", "data": "action=run_command&text=@聯絡我們" }
     },
     {
-      "bounds": { "x": 0, "y": 450, "width": 834, "height": 450 },
+      "bounds": { "x": 0, "y": 450, "width": 833, "height": 450 },
       "action": { "type": "postback", "data": "action=run_command&text=@預約課程" }
     },
     {
-      "bounds": { "x": 833, "y": 450, "width": 834, "height": 450 },
+      "bounds": { "x": 833, "y": 450, "width": 833, "height": 450 },
       "action": { "type": "postback", "data": "action=run_command&text=@我的課程" }
     },
     {
