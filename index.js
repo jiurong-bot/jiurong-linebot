@@ -5224,31 +5224,70 @@ async function handlePostback(event, user) {
             return flexMessage;
         }
         case 'execute_product_purchase': {
+            // [V35.5 重構] 處理現金/轉帳訂單生成
             const productId = data.get('product_id');
+            const paymentMethod = data.get('method');
+            
             const result = await withDatabaseClient(async (client) => {
                 await client.query('BEGIN');
                 try {
+                    // 鎖定資料，避免多人同時購買造成庫存問題
                     const productRes = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [productId]);
-                    const userRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [user.id]);
+                    const studentRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [user.id]);
+                    
                     const product = productRes.rows[0];
-                    const student = userRes.rows[0];
-                    if (!product || product.status !== 'available') { await client.query('ROLLBACK'); return '兌換失敗，找不到此商品或已下架。'; }
-                    if (product.inventory <= 0) { await client.query('ROLLBACK'); return '抱歉，您慢了一步！商品已被兌換完畢。'; }
-                    if (student.points < product.price) { await client.query('ROLLBACK'); return `抱歉，您的點數不足以兌換！需要 ${product.price} 點。`; }
+                    const student = studentRes.rows[0];
 
+                    if (!product || product.status !== 'available') {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '兌換失敗，找不到此商品或已下架。' };
+                    }
+                    if (product.inventory <= 0) {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '抱歉，您慢了一步！商品已被購買完畢。' };
+                    }
+
+                    // 扣除庫存
                     await client.query('UPDATE products SET inventory = inventory - 1 WHERE id = $1', [productId]);
-                    await client.query('UPDATE users SET points = points - $1 WHERE id = $2', [product.price, userId]);
+                    
                     const orderUID = `PROD-${Date.now()}-${userId.slice(-4)}`;
-                    await client.query(`INSERT INTO product_orders (order_uid, user_id, user_name, product_id, product_name, points_spent, status) VALUES ($1, $2, $3, $4, $5, $6, 'pending')`, [orderUID, userId, student.name, productId, product.name, product.price]);
-                    const notifyMessage = { type: 'text', text: `🔔 商城新訂單通知\n學員 ${student.name} 兌換了「${product.name}」。\n請至「商城管理」->「訂單管理」查看並處理。` };
+                    
+                    // 寫入新的商品訂單，包含金額和付款方式
+                    await client.query(
+                        `INSERT INTO product_orders (
+                            order_uid, user_id, user_name, product_id, product_name, 
+                            points_spent, status, amount, payment_method
+                         ) VALUES ($1, $2, $3, $4, $5, $6, 'pending_payment', $7, $8)`,
+                        [
+                            orderUID, userId, student.name, productId, product.name, 
+                            0, product.price, paymentMethod // points_spent 為 0，amount 為商品價格
+                        ]
+                    );
+
+                    // 通知老師有新訂單
+                    const notifyMessage = { type: 'text', text: `🔔 商城新訂單通知\n學員 ${student.name} 購買了「${product.name}」。\n付款方式：${paymentMethod === 'transfer' ? '轉帳' : '現金'}\n請至「商城管理」->「訂單管理」查看。` };
                     await notifyAllTeachers(notifyMessage);
+
                     await client.query('COMMIT');
-                    return `✅ 兌換成功！\n您已成功使用 ${product.price} 點兌換「${product.name}」。\n後續請等待老師的通知，您也可以在「我的兌換紀錄」中查看訂單狀態。`;
-                } catch (err) { await client.query('ROLLBACK'); console.error('❌ 商品兌換執行失敗:', err); return '抱歉，兌換過程中發生錯誤，您的點數未被扣除，請稍後再試。';
+
+                    // 根據付款方式回傳不同訊息
+                    if (paymentMethod === 'transfer') {
+                        const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${product.price} 元\n\n匯款完成後，請至「商城」->「我的兌換紀錄」中找到此筆訂單並回報您的後五碼。`;
+                        return { success: true, message: replyText };
+                    } else { // cash
+                        const replyText = `✅ 訂單已成立！\n您選擇了現金付款，請直接與老師聯繫並完成支付。\n付款完成後，老師會為您更新訂單狀態，您將會收到通知。`;
+                        return { success: true, message: replyText };
+                    }
+
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('❌ 商品購買執行失敗:', err);
+                    return { success: false, message: '抱歉，購買過程中發生錯誤，您的訂-單未成立，請稍後再試。' };
                 }
             });
-            delete pendingBookingConfirmation[userId];
-            return result;
+
+            delete pendingBookingConfirmation[userId]; // 清除舊的對話狀態
+            return result.message;
         }
         case 'confirm_shop_order': {
             return withDatabaseClient(async (client) => {
