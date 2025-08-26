@@ -1205,7 +1205,7 @@ const cancellableConversationStates = {
     pendingTeacherProfileEdit,
     pendingMessageSearchQuery,
     pendingManualAdjustSearch,
-    // [新增]
+    pendingShopPayment, // [V35.5 新增]
     pendingPurchaseHistorySearch,
     pendingExchangeHistorySearch,
     pendingMessageHistorySearch,
