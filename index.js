@@ -5005,6 +5005,34 @@ async function handlePostback(event, user) {
                 quickReply: { items: getCancelMenu() }
             };
         }
+        case 'start_purchase_history_search': {
+            pendingPurchaseHistorySearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingPurchaseHistorySearch, 'pendingPurchaseHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋購點紀錄操作逾時，自動取消。' }));
+            return {
+                type: 'text',
+                text: '請輸入您想查詢購點紀錄的學員姓名或 User ID：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+        case 'start_exchange_history_search': {
+            pendingExchangeHistorySearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingExchangeHistorySearch, 'pendingExchangeHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋兌換紀錄操作逾時，自動取消。' }));
+            return {
+                type: 'text',
+                text: '請輸入您想查詢兌換紀錄的學員姓名或 User ID：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+        case 'start_message_history_search': {
+            pendingMessageHistorySearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingMessageHistorySearch, 'pendingMessageHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋歷史留言操作逾時，自動取消。' }));
+            return {
+                type: 'text',
+                text: '請輸入您想查詢歷史留言的學員姓名或 User ID：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+
         case 'confirm_add_product': {
             const state = pendingProductCreation[userId];
             if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
