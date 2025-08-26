@@ -1181,6 +1181,7 @@ const pendingInventoryAdjust = {};
 const pendingManualAdjustSearch = {}; 
 const userProfileCache = new Map();
 const userLastInteraction = {}; // [V28.0 新增] 用於智慧回覆機制的 Session 追蹤
+const pendingShopPayment = {}; // [V35.5 新增] 處理商城現金支付的對話狀態
 // [新增] 查詢歷史紀錄的對話狀態
 const pendingPurchaseHistorySearch = {};
 const pendingExchangeHistorySearch = {};
