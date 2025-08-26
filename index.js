@@ -1,4 +1,4 @@
-// index.js - V35.2 (移除重複程式碼)
+// index.js - V35.3 (老師通知發送)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
