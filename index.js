@@ -5157,15 +5157,71 @@ async function handlePostback(event, user) {
             const productId = data.get('product_id');
             const product = await getProduct(productId);
             if (!product || product.status !== 'available') return '找不到此商品，或商品已下架。';
-            if (product.inventory <= 0) return '抱歉，此商品庫存不足，無法兌換。';
-            if (user.points < product.price) return `抱歉，您的點數不足！\n兌換此商品需要 ${product.price} 點，您目前擁有 ${user.points} 點。`;
-            
-            pendingBookingConfirmation[userId] = { type: 'product_purchase', product_id: product.id };
-            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
-                enqueuePushTask(u, { type: 'text', text: '兌換操作已逾時，自動取消。' });
-            });
-            const confirmationMessage = `您確定要兌換「${product.name}」嗎？\n\n將花費：${product.price} 點\n您目前的點數：${user.points} 點\n兌換後剩餘：${user.points - product.price} 點`;
-            return { type: 'flex', altText: '確認兌換商品', contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [ { type: 'text', text: '請確認兌換資訊', weight: 'bold', size: 'lg' }, { type: 'separator', margin: 'md' }, { type: 'text', text: confirmationMessage, wrap: true, margin: 'md' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'button', style: 'primary', color: '#52B69A', action: { type: 'postback', label: '✅ 確認兌換', data: `action=execute_product_purchase&product_id=${product.id}` } }, { type: 'button', style: 'secondary', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } } };
+            if (product.inventory <= 0) return '抱歉，此商品庫存不足，無法購買。';
+
+            // [V35.5 修改] 不再檢查點數，而是跳出付款方式選項
+            const flexMessage = {
+                type: 'flex',
+                altText: '請選擇付款方式',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '請選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                        backgroundColor: '#52B69A'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: product.name, weight: 'bold', size: 'md', wrap: true },
+                            { type: 'text', text: `金額：${product.price} 元`, size: 'sm' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                color: '#34A0A4',
+                                action: {
+                                    type: 'postback',
+                                    label: '🏦 轉帳付款',
+                                    // 注意這裡的 action 改為 execute_product_purchase 並帶上 method 參數
+                                    data: `action=execute_product_purchase&product_id=${product.id}&method=transfer`
+                                }
+                            },
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                color: '#1A759F',
+                                action: {
+                                    type: 'postback',
+                                    label: '🤝 現金面交',
+                                    data: `action=execute_product_purchase&product_id=${product.id}&method=cash`
+                                }
+                            },
+                            {
+                                type: 'button',
+                                style: 'secondary',
+                                height: 'sm',
+                                margin: 'md',
+                                action: {
+                                    type: 'message',
+                                    label: '取消',
+                                    text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                }
+                            }
+                        ]
+                    }
+                }
+            };
+            return flexMessage;
         }
         case 'execute_product_purchase': {
             const productId = data.get('product_id');
