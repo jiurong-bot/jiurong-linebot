@@ -5391,6 +5391,23 @@ async function handlePostback(event, user) {
             if (!order) return '找不到該訂單。';
             return { type: 'text', text: `您確定要取消學員 ${order.user_name} 的訂單「${order.product_name}」嗎？\n\n⚠️ 此操作將會歸還 ${order.points_spent} 點給學員，並將商品庫存加回 1。`, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_shop_order_execute&orderUID=${orderUID}` } }, { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } } ] } };
         }
+         case 'reject_shop_order': {
+            const orderUID = data.get('orderUID');
+            return withDatabaseClient(async (client) => {
+                const res = await client.query(
+                    "UPDATE product_orders SET status = 'pending_payment', last_5_digits = NULL, updated_at = NOW() WHERE order_uid = $1 AND status = 'pending_confirmation' RETURNING user_id, user_name, product_name",
+                    [orderUID]
+                );
+
+                if (res.rowCount > 0) {
+                    const order = res.rows[0];
+                    const notifyMessage = { type: 'text', text: `❗️ 訂單退回通知\n您購買「${order.product_name}」的回報資訊已被退回。\n請檢查後五碼或金額是否有誤，並重新回報。` };
+                    await enqueuePushTask(order.user_id, notifyMessage);
+                    return `✅ 已退回學員 ${order.user_name} 的訂單，並通知對方重新提交資訊。`;
+                }
+                return '找不到該筆待確認訂單，或已被處理。';
+            });
+         }
         case 'cancel_shop_order_execute': {
             const orderUID = data.get('orderUID');
             return withDatabaseClient(async (client) => {
