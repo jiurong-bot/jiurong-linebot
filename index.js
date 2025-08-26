@@ -2828,7 +2828,7 @@ event.message.text.trim().normalize() : '';
                 body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
                     contents: [
                         { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 瀏覽商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的兌換紀錄', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY)}` } }
+                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的購買紀錄', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY)}` } }
                     ]
                 }
             }
