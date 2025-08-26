@@ -5396,11 +5396,11 @@ async function handlePostback(event, user) {
             });
         }
         case 'cancel_shop_order_start': {
-            const orderUID = data.get('orderUID');
-            const order = await getProductOrder(orderUID);
-            if (!order) return '找不到該訂單。';
-            return { type: 'text', text: `您確定要取消學員 ${order.user_name} 的訂單「${order.product_name}」嗎？\n\n⚠️ 此操作將會歸還 ${order.points_spent} 點給學員，並將商品庫存加回 1。`, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_shop_order_execute&orderUID=${orderUID}` } }, { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } } ] } };
-        }
+    const orderUID = data.get('orderUID');
+    const order = await getProductOrder(orderUID);
+    if (!order) return '找不到該訂單。';
+    return { type: 'text', text: `您確定要取消學員 ${order.user_name} 的訂單「${order.product_name}」嗎？\n\n⚠️ 此操作將會歸還 ${order.points_spent} 點給學員，並將商品庫存加回 1。`, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_shop_order_execute&orderUID=${orderUID}` } }, { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } } ] } };
+         }
          case 'reject_shop_order': {
             const orderUID = data.get('orderUID');
             return withDatabaseClient(async (client) => {
