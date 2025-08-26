@@ -1973,6 +1973,31 @@ async function showStudentManagementMenu(event, user) {
         } 
     };
 }
+/**
+ * [重構] 處理搜尋特定學員以檢視歷史紀錄的通用流程
+ * @param {string} userId - 使用者 ID
+ * @param {string} text - 使用者輸入的搜尋文字
+ * @param {object} conversationState - 要清除的對話狀態物件 (例如 pendingPurchaseHistorySearch)
+ * @param {function(Array): object} showSelectionFn - 找到學員後，要用來顯示選單的函式
+ * @returns {Promise<object>} - 回傳給 Line 的訊息物件
+ */
+async function handleStudentSearchFlow(userId, text, conversationState, showSelectionFn) {
+    const searchQuery = text;
+    delete conversationState[userId];
+
+    const res = await withDatabaseClient(client => 
+        client.query(
+            `SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`,
+            [`%${searchQuery.toLowerCase()}%`, searchQuery]
+        )
+    );
+
+    if (res.rows.length === 0) {
+        return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
+    }
+    
+    return showSelectionFn(res.rows);
+}
 
 
 async function handleTeacherCommands(event, userId) {
