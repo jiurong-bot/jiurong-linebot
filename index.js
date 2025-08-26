@@ -1,4 +1,4 @@
-// index.js - V35.3 (老師通知發送)
+// index.js - V35.4 (商品現金購)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
