@@ -5308,7 +5308,20 @@ async function handlePostback(event, user) {
             // [V35.5 重構] 處理現金/轉帳訂單生成
             const productId = data.get('product_id');
             const paymentMethod = data.get('method');
+
+            // [V35.5 修正] 在建立訂單前，先檢查是否已有待付款的相同商品訂單
+            const existingOrderRes = await withDatabaseClient(client => 
+                client.query(
+                    "SELECT * FROM product_orders WHERE user_id = $1 AND product_id = $2 AND status IN ('pending_payment', 'pending_confirmation')",
+                    [userId, productId]
+                )
+            );
+
+            if (existingOrderRes.rows.length > 0) {
+                return '您已經有此商品的待付款訂單，請至「我的購買紀錄」查看或完成付款。';
+            }
             
+            // 只有在沒有待付款訂單時，才繼續執行後續的購買流程
             const result = await withDatabaseClient(async (client) => {
                 await client.query('BEGIN');
                 try {
@@ -5321,7 +5334,7 @@ async function handlePostback(event, user) {
 
                     if (!product || product.status !== 'available') {
                         await client.query('ROLLBACK');
-                        return { success: false, message: '兌換失敗，找不到此商品或已下架。' };
+                        return { success: false, message: '購買失敗，找不到此商品或已下架。' };
                     }
                     if (product.inventory <= 0) {
                         await client.query('ROLLBACK');
@@ -5333,7 +5346,7 @@ async function handlePostback(event, user) {
                     
                     const orderUID = `PROD-${Date.now()}-${userId.slice(-4)}`;
                     
-                    // 寫入新的商品訂單，包含金額和付款方式
+                    // 寫入新的商品訂單
                     await client.query(
                         `INSERT INTO product_orders (
                             order_uid, user_id, user_name, product_id, product_name, 
@@ -5341,7 +5354,7 @@ async function handlePostback(event, user) {
                          ) VALUES ($1, $2, $3, $4, $5, $6, 'pending_payment', $7, $8)`,
                         [
                             orderUID, userId, student.name, productId, product.name, 
-                            0, product.price, paymentMethod // points_spent 為 0，amount 為商品價格
+                            0, product.price, paymentMethod
                         ]
                     );
 
@@ -5353,7 +5366,7 @@ async function handlePostback(event, user) {
 
                     // 根據付款方式回傳不同訊息
                     if (paymentMethod === 'transfer') {
-                        const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${product.price} 元\n\n匯款完成後，請至「商城」->「我的兌換紀錄」中找到此筆訂單並回報您的後五碼。`;
+                        const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${product.price} 元\n\n匯款完成後，請至「商城」->「我的購買紀錄」中找到此筆訂單並回報您的後五碼。`;
                         return { success: true, message: replyText };
                     } else { // cash
                         const replyText = `✅ 訂單已成立！\n您選擇了現金付款，請直接與老師聯繫並完成支付。\n付款完成後，老師會為您更新訂單狀態，您將會收到通知。`;
@@ -5363,11 +5376,11 @@ async function handlePostback(event, user) {
                 } catch (err) {
                     await client.query('ROLLBACK');
                     console.error('❌ 商品購買執行失敗:', err);
-                    return { success: false, message: '抱歉，購買過程中發生錯誤，您的訂-單未成立，請稍後再試。' };
+                    return { success: false, message: '抱歉，購買過程中發生錯誤，您的訂單未成立，請稍後再試。' };
                 }
             });
 
-            delete pendingBookingConfirmation[userId]; // 清除舊的對話狀態
+            delete pendingBookingConfirmation[userId];
             return result.message;
         }
         case 'confirm_shop_order': {
