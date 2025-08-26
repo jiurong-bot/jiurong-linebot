@@ -1548,9 +1548,11 @@ async function showAnnouncementsForDeletionList(event, user) {
 }
 
 async function showShopManagementMenu(event, user) {
+    // [V35.5 修正] 更新查詢條件以計數所有待處理的現金/轉帳訂單
     const pendingShopOrdersCount = await withDatabaseClient(client => 
-        client.query("SELECT COUNT(*) FROM product_orders WHERE status = 'pending'")
+        client.query("SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')")
     ).then(res => parseInt(res.rows[0].count, 10));
+
     let pendingShopOrdersLabel = '📋 查看待處理訂單';
     if (pendingShopOrdersCount > 0) { 
         pendingShopOrdersLabel += ` (${pendingShopOrdersCount})`;
@@ -1587,6 +1589,7 @@ async function showShopManagementMenu(event, user) {
         } 
     };
 }
+
 
 async function startAddProduct(event, user) {
     const userId = user.id;
