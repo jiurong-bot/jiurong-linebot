@@ -1978,7 +1978,7 @@ async function handleTeacherCommands(event, userId) {
         case 'await_name': state.name = text;
         state.step = 'await_description'; return { type: 'text', text: '請輸入商品描述 (可換行)，或輸入「無」：', quickReply: { items: getCancelMenu() } };
         case 'await_description': state.description = text === '無' ? null : text; state.step = 'await_price';
-        return { type: 'text', text: '請輸入商品兌換價格 (點數，純數字)：', quickReply: { items: getCancelMenu() } };
+            return { type: 'text', text: '請輸入商品售價 (元整，純數字)：', quickReply: { items: getCancelMenu() } };
         case 'await_price':
             const price = parseInt(text, 10);
             if (isNaN(price) || price < 0) { proceed = false; errorMessage = '價格格式不正確，請輸入一個非負整數。';
