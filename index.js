@@ -4275,7 +4275,7 @@ async function showShopProducts(page) {
         const productBubbles = pageProducts.map(p => {
             const isSoldOut = p.inventory <= 0;
             const buttonStyle = isSoldOut ? 'secondary' : 'primary';
-            const buttonLabel = isSoldOut ? '已售完' : '我要兌換';
+            const buttonLabel = isSoldOut ? '已售完' : '我要購買';
             const buttonAction = isSoldOut
                 ? { type: 'message', label: buttonLabel, text: '此商品已售完' }
                 : { type: 'postback', label: buttonLabel, data: `action=confirm_product_purchase&product_id=${p.id}` };
@@ -4293,7 +4293,7 @@ async function showShopProducts(page) {
                             layout: 'horizontal',
                             margin: 'md',
                             contents: [
-                                { type: 'text', text: `${p.price} 點`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
+                                { type: 'text', text: `${p.price} 元整`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
                                 { type: 'text', text: `庫存: ${p.inventory}`, size: 'sm', color: '#666666', align: 'end', flex: 1, gravity: 'bottom' }
                             ]
                         },
