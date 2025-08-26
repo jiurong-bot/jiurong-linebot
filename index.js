@@ -4363,7 +4363,9 @@ async function showProductManagementList(page = 1, filter = null) {
         return { type: 'flex', altText: '商品管理列表', contents: { type: 'carousel', contents: productBubbles } };
     });
 }
-
+// =======================================================
+// 程式碼修改：V35.5 (商品現金購 - Part 2)
+// =======================================================
 async function showStudentExchangeHistory(userId, page = 1) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
@@ -4380,63 +4382,91 @@ async function showStudentExchangeHistory(userId, page = 1) {
         }
 
         const listItems = pageOrders.map(order => {
-            let statusText, statusColor;
+            let statusText, statusColor, footerButton;
+
             switch (order.status) {
-                case 'completed': statusText = '✅ 已完成/可領取'; statusColor = '#52b69a'; break;
-                case 'pending': statusText = '🕒 處理中'; statusColor = '#ff9e00'; break;
-                case 'cancelled': statusText = '❌ 已取消'; statusColor = '#d90429'; break;
-                default: statusText = '未知狀態';
-                statusColor = '#6c757d';
+                case 'completed':
+                    statusText = '✅ 已完成/可領取';
+                    statusColor = '#52b69a';
+                    break;
+                case 'pending_payment':
+                    if (order.payment_method === 'transfer') {
+                        statusText = '❗ 待回報匯款';
+                        statusColor = '#f28482';
+                        // [核心功能] 提供回報後五碼的按鈕
+                        footerButton = { type: 'button', style: 'primary', height: 'sm', color: '#f28482', action: { type: 'postback', label: '輸入匯款後五碼', data: `action=report_shop_last5&orderUID=${order.order_uid}` } };
+                    } else { // cash
+                        statusText = '🤝 待現金付款';
+                        statusColor = '#1A759F';
+                    }
+                    break;
+                case 'pending_confirmation':
+                    statusText = '🕒 款項確認中';
+                    statusColor = '#ff9e00';
+                    break;
+                case 'cancelled':
+                    statusText = '❌ 已取消';
+                    statusColor = '#d90429';
+                    break;
+                default:
+                    statusText = '未知狀態';
+                    statusColor = '#6c757d';
             }
+            
+            const contents = [
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 3,
+                    contents: [
+                        { type: 'text', text: order.product_name, weight: 'bold', size: 'sm', wrap: true },
+                        { type: 'text', text: statusText, color: statusColor, size: 'xs', weight: 'bold' },
+                        { type: 'text', text: `金額：${order.amount} 元`, size: 'sm', margin: 'sm' },
+                        { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' },
+                    ]
+                }
+            ];
 
             return {
-                type: 'box',
-                layout: 'horizontal',
-                paddingAll: 'md',
-                contents: [
-                    {
+                type: 'bubble',
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'lg',
+                    contents: contents
+                },
+                ...(footerButton && { // 如果 footerButton 存在，才加入 footer
+                    footer: {
                         type: 'box',
                         layout: 'vertical',
-                        flex: 3,
-                        contents: [
-                            { type: 'text', text: order.product_name, weight: 'bold', size: 'sm', wrap: true },
-                            { type: 'text', text: statusText, color: statusColor, size: 'xs', weight: 'bold' },
-                            { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' },
-                        ]
-                    },
-                    {
-                        type: 'text',
-                        text: `-${order.points_spent} 點`,
-                        gravity: 'center',
-                        align: 'end',
-                        flex: 2,
-                        weight: 'bold',
-                        size: 'sm',
-                        color: '#D9534F',
+                        contents: [footerButton]
                     }
-                ]
+                })
             };
         });
 
         const paginationBubble = createPaginationBubble('action=view_exchange_history', page, hasNextPage);
-        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+        if (paginationBubble) {
+            listItems.push(paginationBubble);
+        }
+        
         const flexMessage = {
             type: 'flex',
             altText: '兌換紀錄',
-            contents: {
-                type: 'bubble',
-                size: 'giga',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '我的兌換紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#343A40' },
-                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
-                footer: { type: 'box', layout: 'vertical', contents: footerContents }
+            contents: { 
+                type: 'carousel',
+                // 我們回傳的是 bubble 陣列，所以直接用 listItems
+                contents: listItems
             }
         };
+
         if (page === 1) {
-            return [{ type: 'text', text: '以下是您近期的商品兌換紀錄：' }, flexMessage ];
+            return [{ type: 'text', text: '以下是您的訂單紀錄與狀態：' }, flexMessage ];
         }
         return flexMessage;
     });
 }
+
 async function showCourseRosterSummary(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
