@@ -1304,7 +1304,7 @@ async function handlePurchaseFlow(event, userId) {
                     
                     if (TEACHER_ID) {
                         const notifyMessage = { type: 'text', text: `🔔 購點審核通知\n學員 ${user.name} 已提交匯款資訊。\n訂單ID: ${order_id}\n後五碼: ${text}\n請至「點數管理」->「待確認點數訂單」審核。`};
-                        await enqueuePushTask(TEACHER_ID, notifyMessage).catch(e => console.error(e));
+                        await notifyAllTeachers(notifyMessage);
                     }
                 } else {
                     replyContent = '找不到您的訂單，請重新操作。';
