@@ -5350,7 +5350,6 @@ async function handlePostback(event, user) {
     }
 }
 
-
 async function handleEvent(event) {
     if (event.type === 'unfollow' || event.type === 'leave') {
         console.log(`用戶 ${event.source.userId} 已封鎖或離開`);
@@ -5394,8 +5393,7 @@ async function handleEvent(event) {
             const welcomeMessage = { type: 'text', text: `歡迎 ${user.name}！感謝您加入九容瑜伽。`};
             await enqueuePushTask(userId, welcomeMessage);
             if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
-        } catch (error) { console.error(`創建新用戶時出錯: `, error); return;
-        }
+        } catch (error) { console.error(`創建新用戶時出錯: `, error); return; }
     } else {
         const cachedData = userProfileCache.get(userId);
         const now = Date.now();
@@ -5431,20 +5429,19 @@ async function handleEvent(event) {
     try {
         const text = (event.type === 'message' && event.message.type === 'text') ? event.message.text.trim() : '';
 
-        let shouldClear = true;
-        if (event.type === 'postback') {
-            const postbackData = new URLSearchParams(event.postback.data);
-            const action = postbackData.get('action');
-            // [新增] 將新的持續性對話流程動作加入到白名單
-            const continuationActions = [ 'set_course_weekday', 'select_teacher_for_course', 'confirm_add_product', 'edit_product_field', 'start_booking_confirmation', 'execute_booking', 'execute_product_purchase',  'confirm_teacher_profile_update', 'start_purchase_history_search', 'start_exchange_history_search', 'start_message_history_search', 'select_student_for_purchase_history', 'select_student_for_exchange_history', 'select_student_for_message_history'];
-            if (continuationActions.includes(action)) {
-                shouldClear = false;
+        let shouldClear = true;
+        if (event.type === 'postback') {
+            const postbackData = new URLSearchParams(event.postback.data);
+            const action = postbackData.get('action');
+            const continuationActions = [ 'set_course_weekday', 'select_teacher_for_course', 'confirm_add_product', 'edit_product_field', 'start_booking_confirmation', 'execute_booking', 'execute_product_purchase',  'confirm_teacher_profile_update', 'start_purchase_history_search', 'start_exchange_history_search', 'start_message_history_search', 'select_student_for_purchase_history', 'select_student_for_exchange_history', 'select_student_for_message_history'];
+            if (continuationActions.includes(action)) {
+                shouldClear = false;
             }
-        }
+        }
 
-        if (shouldClear && (text && text.startsWith('@') || event.type === 'postback')) {
-            const wasCleared = clearPendingConversations(userId);
-            if (wasCleared) console.log(`使用者 ${userId} 的待辦任務已由新操作自動取消。`);
+        if (shouldClear && (text && text.startsWith('@') || event.type === 'postback')) {
+            const wasCleared = clearPendingConversations(userId);
+            if (wasCleared) console.log(`使用者 ${userId} 的待辦任務已由新操作自動取消。`);
         }
         
         if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
@@ -5462,8 +5459,7 @@ async function handleEvent(event) {
         else if (event.type === 'message') {
             contextForError = `處理訊息: ${text}`;
             switch(user.role) {
-                case 'admin': mainReplyContent = await handleAdminCommands(event, userId);
-                break;
+                case 'admin': mainReplyContent = await handleAdminCommands(event, userId); break;
                 case 'teacher': mainReplyContent = await handleTeacherCommands(event, userId); break;
                 default: mainReplyContent = await handleStudentCommands(event, userId); break;
             }
