@@ -3730,12 +3730,13 @@ async function showHistoricalMessagesAsTeacher(page, userId = null) {
         };
     });
 }
-   
+
 async function showPendingShopOrders(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
+        // [V35.5 修改] 查詢所有未完成的訂單
         const res = await client.query(
-            "SELECT * FROM product_orders WHERE status = 'pending' ORDER BY created_at ASC LIMIT $1 OFFSET $2",
+            "SELECT * FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation') ORDER BY created_at ASC LIMIT $1 OFFSET $2",
             [CONSTANTS.PAGINATION_SIZE + 1, offset]
         );
 
@@ -3749,46 +3750,62 @@ async function showPendingShopOrders(page) {
             return '沒有更多待處理的訂單了。';
         }
 
-        const listItems = pageOrders.map(order => ({
-            type: 'box',
-            layout: 'horizontal',
-            paddingAll: 'md',
-            spacing: 'md',
-            contents: [
-                {
+        const listItems = pageOrders.map(order => {
+            const bodyContents = [
+                { type: 'text', text: order.product_name, weight: 'bold', size: 'md', wrap: true },
+                { type: 'text', text: `購買者: ${order.user_name}`, size: 'sm' },
+                { type: 'text', text: `金額: ${order.amount} 元`, size: 'sm', color: '#666666' },
+                { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' },
+                { type: 'separator', margin: 'md' }
+            ];
+            
+            let footerContents = [];
+
+            if (order.status === 'pending_payment' && order.payment_method === 'cash') {
+                bodyContents.push({ type: 'text', text: '付款方式：現金面交', margin: 'md', size: 'sm', weight: 'bold', color: '#1A759F' });
+                footerContents.push({ type: 'button', style: 'primary', color: '#28a745', height: 'sm', action: { type: 'postback', label: '✅ 確認收款', data: `action=confirm_shop_order&orderUID=${order.order_uid}` } });
+                footerContents.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消訂單', data: `action=cancel_shop_order_start&orderUID=${order.order_uid}` } });
+            } else if (order.status === 'pending_confirmation' && order.payment_method === 'transfer') {
+                bodyContents.push({ type: 'text', text: '付款方式：轉帳', margin: 'md', size: 'sm', color: '#34A0A4' });
+                bodyContents.push({ type: 'text', text: `後五碼: ${order.last_5_digits}`, size: 'lg', weight: 'bold', margin: 'sm' });
+                footerContents.push({ type: 'button', style: 'primary', color: '#28a745', height: 'sm', action: { type: 'postback', label: '核准', data: `action=confirm_shop_order&orderUID=${order.order_uid}` } });
+                footerContents.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '退回', data: `action=reject_shop_order&orderUID=${order.order_uid}` } });
+            } else {
+                 bodyContents.push({ type: 'text', text: '狀態：等待學員付款中...', margin: 'md', size: 'sm', color: '#6c757d' });
+            }
+            
+            return {
+                type: 'bubble',
+                size: 'giga',
+                body: {
                     type: 'box',
                     layout: 'vertical',
-                    flex: 3,
-                    contents: [
-                        { type: 'text', text: order.product_name, weight: 'bold', size: 'md', wrap: true },
-                        { type: 'text', text: `兌換者: ${order.user_name}`, size: 'sm' },
-                        { type: 'text', text: `花費: ${order.points_spent} 點`, size: 'sm', color: '#666666' },
-                        { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' }
-                    ]
+                    paddingAll: 'lg',
+                    spacing: 'sm',
+                    contents: bodyContents
                 },
-                {
-                    type: 'box',
-                    layout: 'vertical',
-                    flex: 2,
-                    justifyContent: 'space-around',
-                    contents: [
-                        { type: 'button', style: 'primary', color: '#28a745', height: 'sm', action: { type: 'postback', label: '確認', data: `action=confirm_shop_order&orderUID=${order.order_uid}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消', data: `action=cancel_shop_order_start&orderUID=${order.order_uid}` } }
-                    ]
-                }
-            ]
-        }));
+                ...(footerContents.length > 0 && {
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: footerContents
+                    }
+                })
+            };
+        });
+
         const paginationBubble = createPaginationBubble('action=view_pending_shop_orders', page, hasNextPage);
-        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+        if (paginationBubble) {
+            listItems.push(paginationBubble);
+        }
+        
         return {
             type: 'flex',
             altText: '待處理的商品訂單',
             contents: {
-                type: 'bubble',
-                size: 'giga',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '待處理商城訂單', weight: 'bold', size: 'lg', color: '#FFFFFF' }], backgroundColor: '#343A40' },
-                body: { type: 'box', layout: 'vertical', paddingAll: 'none', contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) },
-                footer: { type: 'box', layout: 'vertical', contents: footerContents }
+                type: 'carousel',
+                contents: listItems
             }
         };
     });
