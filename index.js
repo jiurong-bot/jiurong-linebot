@@ -5388,10 +5388,16 @@ async function handlePostback(event, user) {
                 const orderRes = await client.query("SELECT * FROM product_orders WHERE order_uid = $1", [data.get('orderUID')]);
                 if (orderRes.rows.length === 0) return '找不到該筆訂單，可能已被處理。';
                 const order = orderRes.rows[0];
-                if (order.status !== 'pending') return `此訂單狀態為「${order.status}」，無法再次確認。`;
+
+                // [V35.5 修正] 讓檢查條件可以接受新的訂單狀態
+                if (!['pending_payment', 'pending_confirmation'].includes(order.status)) {
+                    return `此訂單狀態為「${order.status}」，無法再次確認。`;
+                }
+                
                 await client.query("UPDATE product_orders SET status = 'completed', updated_at = NOW() WHERE order_uid = $1", [data.get('orderUID')]);
-                const notifyMessage = { type: 'text', text: `🛍️ 訂單更新通知\n您兌換的「${order.product_name}」訂單已處理完成！\n請隨時與我們聯繫領取商品，謝謝。` };
+                const notifyMessage = { type: 'text', text: `🛍️ 訂單更新通知\n您購買的「${order.product_name}」訂單已確認收款！\n後續請與我們聯繫領取商品，謝謝。` };
                 await enqueuePushTask(order.user_id, notifyMessage).catch(e => console.error(e));
+          
                 return `✅ 已成功確認訂單 (ID: ...${data.get('orderUID').slice(-6)})。\n系統已發送通知給學員 ${order.user_name}。`;
             });
         }
