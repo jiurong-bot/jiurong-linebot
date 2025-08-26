@@ -5532,6 +5532,20 @@ async function handlePostback(event, user) {
                 return result.rowCount > 0 ? `✅ 已成功刪除失敗任務 #${failedTaskId}。` : '找不到該失敗任務，可能已被刪除。';
             }
         }
+        case 'report_shop_last5': {
+            const orderUID = data.get('orderUID');
+            if (!orderUID) return '操作無效，缺少訂單資訊。';
+
+            pendingShopPayment[userId] = { orderUID };
+            setupConversationTimeout(userId, pendingShopPayment, 'pendingShopPayment', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '輸入後五碼操作已逾時，自動取消。' });
+            });
+            return {
+                type: 'text',
+                text: '請輸入您的匯款帳號後五碼 (5位數字)：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
         case 'run_command': {
             const commandText = decodeURIComponent(data.get('text'));
             if (commandText) {
