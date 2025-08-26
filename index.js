@@ -3059,131 +3059,91 @@ async function showStudentSelectionForAdjustHistory(users, originalQuery) {
         contents: { type: 'carousel', contents: userBubbles }
     };
 }
+// =======================================================
+// [重構] 整合產生學員選擇介面的函式
+// =======================================================
 
-// [新增] 顯示學員選單以查詢購點歷史
+/**
+ * [重構] 建立一個通用的學員選擇 Flex Carousel
+ * @param {Array<object>} users - 從資料庫查詢到的使用者物件陣列
+ * @param {object} options - 設定物件
+ * @param {string} options.altText - Flex Message 的替代文字
+ * @param {string} options.buttonLabel - 按鈕上顯示的文字
+ * @param {string} options.postbackAction - 按鈕 Postback 的基礎 action 字串
+ * @returns {object} - Flex Message 物件
+ */
+function createStudentSelectionCarousel(users, options) {
+    const { altText, buttonLabel, postbackAction } = options;
+    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+
+    const userBubbles = users.map(u => ({
+        type: 'bubble',
+        body: {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'md',
+            contents: [
+                { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 3,
+                    justifyContent: 'center',
+                    contents: [
+                        { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true },
+                        { type: 'text', text: `ID: ${formatIdForDisplay(u.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm' }
+                    ]
+                }
+            ]
+        },
+        footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [{
+                type: 'button',
+                style: 'primary',
+                color: '#1A759F',
+                height: 'sm',
+                action: { type: 'postback', label: buttonLabel, data: `action=${postbackAction}&user_id=${u.id}&page=1` }
+            }]
+        }
+    }));
+
+    return {
+        type: 'flex',
+        altText: altText,
+        contents: { type: 'carousel', contents: userBubbles }
+    };
+}
+
+// [重構] 簡化後的函式，呼叫新的共用函式
 async function showStudentSelectionForPurchaseHistory(users) {
-    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
-    const userBubbles = users.map(u => ({
-        type: 'bubble',
-        body: {
-            type: 'box',
-            layout: 'horizontal',
-            spacing: 'md',
-            contents: [
-                { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
-                {
-                    type: 'box',
-                    layout: 'vertical',
-                    flex: 3,
-                    justifyContent: 'center',
-                    contents: [
-                        { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true },
-                        { type: 'text', text: `ID: ${formatIdForDisplay(u.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm' }
-                    ]
-                }
-            ]
-        },
-        footer: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [{
-                type: 'button',
-                style: 'primary',
-                color: '#1A759F',
-                height: 'sm',
-                action: { type: 'postback', label: '查看此學員紀錄', data: `action=view_purchase_history_as_teacher&user_id=${u.id}&page=1` }
-            }]
-        }
-    }));
-    return {
-        type: 'flex',
+    return createStudentSelectionCarousel(users, {
         altText: `請選擇要查詢購點紀錄的學員`,
-        contents: { type: 'carousel', contents: userBubbles }
-    };
+        buttonLabel: '查看此學員紀錄',
+        postbackAction: 'view_purchase_history_as_teacher'
+    });
 }
 
-// [新增] 顯示學員選單以查詢兌換歷史
 async function showStudentSelectionForExchangeHistory(users) {
-    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
-    const userBubbles = users.map(u => ({
-        type: 'bubble',
-        body: {
-            type: 'box',
-            layout: 'horizontal',
-            spacing: 'md',
-            contents: [
-                { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
-                {
-                    type: 'box',
-                    layout: 'vertical',
-                    flex: 3,
-                    justifyContent: 'center',
-                    contents: [
-                        { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true },
-                        { type: 'text', text: `ID: ${formatIdForDisplay(u.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm' }
-                    ]
-                }
-            ]
-        },
-        footer: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [{
-                type: 'button',
-                style: 'primary',
-                color: '#1A759F',
-                height: 'sm',
-                action: { type: 'postback', label: '查看此學員紀錄', data: `action=view_exchange_history_as_teacher&user_id=${u.id}&page=1` }
-            }]
-        }
-    }));
-    return {
-        type: 'flex',
+    return createStudentSelectionCarousel(users, {
         altText: `請選擇要查詢兌換紀錄的學員`,
-        contents: { type: 'carousel', contents: userBubbles }
-    };
+        buttonLabel: '查看此學員紀錄',
+        postbackAction: 'view_exchange_history_as_teacher'
+    });
 }
-// [新增] 顯示學員選單以查詢歷史留言
+
 async function showStudentSelectionForMessageHistory(users) {
-    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
-    const userBubbles = users.map(u => ({
-        type: 'bubble',
-        body: {
-            type: 'box',
-            layout: 'horizontal',
-            spacing: 'md',
-            contents: [
-                { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
-                {
-                    type: 'box',
-                    layout: 'vertical',
-                    flex: 3,
-                    justifyContent: 'center',
-                    contents: [
-                        { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true },
-                        { type: 'text', text: `ID: ${formatIdForDisplay(u.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm' }
-                    ]
-                }
-            ]
-        },
-        footer: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [{
-                type: 'button',
-                style: 'primary',
-                color: '#1A759F',
-                height: 'sm',
-                action: { type: 'postback', label: '查看此學員留言', data: `action=view_historical_messages_as_teacher&user_id=${u.id}&page=1` }
-            }]
-        }
-    }));
-    return {
-        type: 'flex',
+    return createStudentSelectionCarousel(users, {
         altText: `請選擇要查詢留言的學員`,
-        contents: { type: 'carousel', contents: userBubbles }
-    };
+        buttonLabel: '查看此學員留言',
+        postbackAction: 'view_historical_messages_as_teacher'
+    });
 }
+
+// 這裡接著原本的 showAllTeachersList 函式
+async function showAllTeachersList(page) {
+//...
 
 
 async function showAllTeachersList(page) {
