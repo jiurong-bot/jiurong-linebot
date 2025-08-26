@@ -3141,11 +3141,6 @@ async function showStudentSelectionForMessageHistory(users) {
     });
 }
 
-// 這裡接著原本的 showAllTeachersList 函式
-async function showAllTeachersList(page) {
-//...
-
-
 async function showAllTeachersList(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return withDatabaseClient(async (client) => {
