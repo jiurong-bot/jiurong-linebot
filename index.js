@@ -2722,7 +2722,7 @@ async function handleStudentCommands(event, userId) {
       delete pendingFeedback[userId];
       if (TEACHER_ID) { 
           const notifyMessage = { type: 'text', text: `🔔 新留言通知\n來自: ${user.name}\n內容: ${text}\n\n請至「學員管理」->「查看學員留言」回覆。`};
-          await enqueuePushTask(TEACHER_ID, notifyMessage).catch(e => console.error(e)); 
+          await notifyAllTeachers(notifyMessage);
       }
       return '感謝您的留言，我們已收到您的訊息，老師會盡快查看！';
     }
