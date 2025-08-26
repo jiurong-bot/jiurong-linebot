@@ -2624,6 +2624,42 @@ async function handleAdminCommands(event, userId) {
 }
 
 async function handleStudentCommands(event, userId) {
+  const text = event.message.text ?
+event.message.text.trim().normalize() : '';
+    const user = await getUser(userId);
+
+    // [V35.5 新增] 處理商品訂單的後五碼回報
+    if (pendingShopPayment[userId]) {
+        const state = pendingShopPayment[userId];
+        if (!/^\d{5}$/.test(text)) {
+            return {
+                type: 'text',
+                text: '格式錯誤，請輸入5位數字的匯款帳號後五碼。',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+
+        const wasSuccessful = await withDatabaseClient(async (client) => {
+            const res = await client.query(
+                "UPDATE product_orders SET last_5_digits = $1, status = 'pending_confirmation', updated_at = NOW() WHERE order_uid = $2 AND user_id = $3 AND status = 'pending_payment' RETURNING product_name",
+                [text, state.orderUID, userId]
+            );
+            return res.rowCount > 0 ? res.rows[0].product_name : null;
+        });
+
+        delete pendingShopPayment[userId];
+
+        if (wasSuccessful) {
+            const productName = wasSuccessful;
+            const notifyMessage = { type: 'text', text: `🔔 付款回報通知\n學員 ${user.name} 已回報「${productName}」訂單的匯款資訊。\n後五碼: ${text}\n請至「訂單管理」審核。`};
+            await notifyAllTeachers(notifyMessage);
+            return `感謝您！已收到您的匯款後五碼「${text}」。\n我們將盡快為您審核，審核通過後您會收到通知。`;
+        } else {
+            return '找不到您的待付款訂單，或訂單狀態已變更，請重新操作。';
+        }
+    }
+    
+    const purchaseFlowResult = await handlePurchaseFlow(event, userId);
   const text = event.message.text ? event.message.text.trim().normalize() : '';
   const user = await getUser(userId);
 
