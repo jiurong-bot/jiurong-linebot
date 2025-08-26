@@ -5185,7 +5185,7 @@ async function handlePostback(event, user) {
                     const orderUID = `PROD-${Date.now()}-${userId.slice(-4)}`;
                     await client.query(`INSERT INTO product_orders (order_uid, user_id, user_name, product_id, product_name, points_spent, status) VALUES ($1, $2, $3, $4, $5, $6, 'pending')`, [orderUID, userId, student.name, productId, product.name, product.price]);
                     const notifyMessage = { type: 'text', text: `🔔 商城新訂單通知\n學員 ${student.name} 兌換了「${product.name}」。\n請至「商城管理」->「訂單管理」查看並處理。` };
-                    await enqueuePushTask(TEACHER_ID, notifyMessage);
+                    await notifyAllTeachers(notifyMessage);
                     await client.query('COMMIT');
                     return `✅ 兌換成功！\n您已成功使用 ${product.price} 點兌換「${product.name}」。\n後續請等待老師的通知，您也可以在「我的兌換紀錄」中查看訂單狀態。`;
                 } catch (err) { await client.query('ROLLBACK'); console.error('❌ 商品兌換執行失敗:', err); return '抱歉，兌換過程中發生錯誤，您的點數未被扣除，請稍後再試。';
