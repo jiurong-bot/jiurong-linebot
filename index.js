@@ -2660,10 +2660,7 @@ event.message.text.trim().normalize() : '';
     }
     
     const purchaseFlowResult = await handlePurchaseFlow(event, userId);
-  const text = event.message.text ? event.message.text.trim().normalize() : '';
-  const user = await getUser(userId);
-
-  const purchaseFlowResult = await handlePurchaseFlow(event, userId);
+  
   if (purchaseFlowResult.handled) {
       return purchaseFlowResult.reply;
   }
