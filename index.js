@@ -463,6 +463,35 @@ async function enqueueBatchPushTasks(tasks) {
   }
 }
 /**
+ * [V35.3 新增] 查詢所有老師並發送通知給他們
+ * @param {object|object[]} message - 要發送的 LINE 訊息物件或陣列
+ */
+async function notifyAllTeachers(message) {
+  try {
+    const teachers = await withDatabaseClient(async (db) => {
+      const res = await db.query("SELECT id FROM users WHERE role = 'teacher'");
+      return res.rows;
+    });
+
+    if (teachers.length === 0) {
+      console.log('[Notify] 找不到任何老師可以發送通知。');
+      return;
+    }
+
+    const notificationTasks = teachers.map(teacher => ({
+      recipientId: teacher.id,
+      message: message
+    }));
+
+    await enqueueBatchPushTasks(notificationTasks);
+    console.log(`[Notify] 已成功將通知任務加入佇列，準備發送給 ${teachers.length} 位老師。`);
+
+  } catch (err) {
+    console.error('❌ notifyAllTeachers 函式執行失敗:', err);
+  }
+}
+
+/**
  /**
  * [V24.0] 取消超過 24 小時未付款的訂單
  * [V31.1] 優化為批次處理通知任務
