@@ -4749,6 +4749,49 @@ async function handlePostback(event, user) {
         case 'view_all_exchange_history_as_teacher': return showExchangeHistoryAsTeacher(page);
         case 'view_exchange_history_as_teacher': return showExchangeHistoryAsTeacher(page, data.get('user_id'));
         case 'view_all_historical_messages_as_teacher': return showHistoricalMessagesAsTeacher(page);
+                // ==================================
+        // [新增] 老師查詢購點/兌換紀錄、歷史留言
+        // ==================================
+        // 點數管理
+        case 'select_purchase_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的購點紀錄，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部紀錄', data: 'action=view_all_purchase_history_as_teacher&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_purchase_history_search' } }
+                    ]
+                }
+            };
+        }
+        // 商城管理
+        case 'select_exchange_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的兌換紀錄，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部紀錄', data: 'action=view_all_exchange_history_as_teacher&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_exchange_history_search' } }
+                    ]
+                }
+            };
+        }
+        // 學員管理
+        case 'select_message_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的留言，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部留言', data: 'action=view_all_historical_messages_as_teacher&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_message_history_search' } }
+                    ]
+                }
+            };
+        }
+
         case 'view_historical_messages_as_teacher': return showHistoricalMessagesAsTeacher(page, data.get('user_id'));
         
         // ==================================
