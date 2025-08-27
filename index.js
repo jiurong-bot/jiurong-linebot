@@ -1332,9 +1332,11 @@ async function showPointManagementMenu(event, user) {
     const pendingCount = await withDatabaseClient(client => 
         client.query("SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'")
     ).then(res => parseInt(res.rows[0].count, 10));
-    let pendingOrdersLabel = '✅ 確認處理訂單';
+
+    // 準備帶有計數的按鈕標籤文字
+    let pendingPointOrdersLabel = '✅ 待確認點數訂單';
     if (pendingCount > 0) { 
-        pendingOrdersLabel = `✅ 確認處理訂單 (${pendingCount})`;
+        pendingPointOrdersLabel = `✅ 待確認點數訂單 (${pendingCount})`;
     }
     
     return { 
@@ -1357,10 +1359,10 @@ async function showPointManagementMenu(event, user) {
                 spacing: 'md', 
                 paddingAll: 'lg', 
                 contents: [ 
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✅ 待確認點數訂單', data: `action=view_pending_orders_page&page=1` } }, 
+                    // [V35.6 修正] 在按鈕 label 中使用動態變數
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: pendingPointOrdersLabel, data: `action=view_pending_orders_page&page=1` } }, 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✍️ 手動調整點數', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANUAL_ADJUST_POINTS)}` } },
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢購點紀錄', data: `action=select_purchase_history_view_type` } },
-                    // [這裡就是我們新增的按鈕]
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⚙️ 查詢手動紀錄', data: `action=select_adjust_history_view_type` } } 
                 ] 
             } 
