@@ -1863,29 +1863,128 @@ async function showTeacherListForRemoval(page) {
 }
 
 // [新增] 處理顯示購點歷史的功能
-async function showPurchaseHistoryList(event, user) {
-  return {
-    type: 'flex',
-    altText: '選擇查詢方式',
-    contents: {
-      type: 'bubble',
-      header: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [{ type: 'text', text: '📜 查詢購點紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
-        backgroundColor: '#52b69a'
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '顯示全部紀錄', data: `action=view_all_purchase_history_as_teacher&page=1` } },
-          { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '搜尋特定學員', data: `action=start_purchase_history_search` } }
-        ]
-      }
-    }
-  };
+// [V35.6 重構] 將購點紀錄改為條列式，並整合待處理訂單
+async function showPurchaseHistory(userId, page) { // page 參數暫時保留
+    return withDatabaseClient(async (client) => {
+        // 抓取最近 20 筆相關紀錄
+        const res = await client.query(
+            `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 20`,
+            [userId]
+        );
+
+        if (res.rows.length === 0) {
+            return '您沒有任何購點紀錄。';
+        }
+
+        // 步驟 1: 將訂單分組
+        const pendingPointOrders = [];
+        const historyPointOrders = [];
+
+        res.rows.forEach(order => {
+            if (['pending_payment', 'pending_confirmation', 'rejected'].includes(order.status)) {
+                pendingPointOrders.push(order);
+            } else {
+                historyPointOrders.push(order);
+            }
+        });
+
+        const bodyContents = [];
+        const separator = { type: 'separator', margin: 'md' };
+
+        // 步驟 2: 產生「待處理訂單」列表
+        if (pendingPointOrders.length > 0) {
+            bodyContents.push({ type: 'text', text: '待處理訂單', weight: 'bold', size: 'lg', margin: 'md', color: '#1A759F' });
+            
+            pendingPointOrders.forEach(order => {
+                // 這段邏輯是從舊的 buildPointsMenuFlex 搬過來的
+                let actionButtonLabel, cardColor, statusText, actionCmd, additionalInfo = '';
+                if (order.status === 'pending_confirmation') {
+                    actionButtonLabel = '修改匯款後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardColor = '#ff9e00'; statusText = '已提交，等待老師確認';
+                } else if (order.status === 'rejected') {
+                    actionButtonLabel = '重新提交後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardColor = '#d90429'; statusText = '訂單被老師退回'; additionalInfo = '請檢查金額或後五碼，並重新提交。';
+                } else { // pending_payment
+                    actionButtonLabel = '輸入匯款後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER; cardColor = '#f28482'; statusText = '待付款';
+                }
+
+                bodyContents.push({
+                    type: 'box',
+                    layout: 'vertical',
+                    margin: 'lg',
+                    spacing: 'sm',
+                    contents: [
+                        { type: 'text', text: `${order.points} 點 / ${order.amount} 元`, weight: 'bold', wrap: true },
+                        { type: 'text', text: `狀態: ${statusText}`, size: 'sm', color: cardColor, weight: 'bold' },
+                        { type: 'text', text: formatDateTime(order.timestamp), size: 'sm', color: '#AAAAAA' },
+                        ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', color: '#B00020', wrap: true, margin: 'sm' }] : []),
+                        {
+                            type: 'button', style: 'primary', height: 'sm', margin: 'md', color: cardColor,
+                            action: { type: 'postback', label: actionButtonLabel, data: `action=run_command&text=${encodeURIComponent(actionCmd)}` }
+                        }
+                    ]
+                });
+                bodyContents.push(separator);
+            });
+        }
+
+        // 步驟 3: 產生「歷史紀錄」列表
+        if (historyPointOrders.length > 0) {
+            bodyContents.push({ type: 'text', text: '歷史紀錄', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
+
+            historyPointOrders.forEach(order => {
+                let typeText, pointsText, pointsColor;
+                if (order.amount === 0) { // 手動調整
+                    if (order.points > 0) { typeText = '✨ 手動加點'; pointsText = `+${order.points}`; pointsColor = '#1A759F'; } 
+                    else { typeText = '⚠️ 手動扣點'; pointsText = `${order.points}`; pointsColor = '#D9534F'; }
+                } else { // 一般購點
+                    typeText = '✅ 購點成功'; pointsText = `+${order.points}`; pointsColor = '#28A745';
+                }
+
+                bodyContents.push({
+                    type: 'box',
+                    layout: 'horizontal',
+                    margin: 'lg',
+                    contents: [
+                        {
+                            type: 'box', layout: 'vertical', flex: 3,
+                            contents: [
+                                { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
+                                { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
+                            ]
+                        },
+                        { type: 'text', text: `${pointsText} 點`, gravity: 'center', align: 'end', flex: 2, weight: 'bold', size: 'sm', color: pointsColor }
+                    ]
+                });
+                bodyContents.push(separator);
+            });
+        }
+        
+        if (bodyContents.length > 0 && bodyContents[bodyContents.length - 1].type === 'separator') {
+            bodyContents.pop();
+        }
+
+        return {
+            type: 'flex',
+            altText: '購點紀錄',
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [{ type: 'text', text: '📜 查詢購點紀錄', weight: 'bold', size: 'xl', color: '#FFFFFF' }],
+                    backgroundColor: '#343A40',
+                    paddingAll: 'lg'
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'md',
+                    paddingAll: 'lg',
+                    contents: bodyContents.length > 0 ? bodyContents : [{type: 'text', text: '目前沒有任何紀錄。', align: 'center'}]
+                }
+            }
+        };
+    });
 }
 
 // [新增] 處理顯示兌換歷史的功能
