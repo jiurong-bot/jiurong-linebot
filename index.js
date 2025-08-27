@@ -1,4 +1,4 @@
-// index.js - V35.5 (商品現金流,數量)
+// index.js - V35.5.1 (商品現金流,數量)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
