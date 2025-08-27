@@ -1,4 +1,4 @@
-// index.js - V36 (點數卡)
+// index.js - V36 (系列課程顯示)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
