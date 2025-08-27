@@ -4237,11 +4237,27 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 ...dateButtons
             ];
             
-            // 建立卡片 Footer ("顯示更多")
+            // 建立卡片 Footer (處理系列內部分頁)
             let footerContents = [];
+            const hasPreviousSessions = currentPage > 1;
+
+            const pageButtons = [];
+            if (hasPreviousSessions) {
+                const prevSeriesPage = currentPage - 1;
+                pageButtons.push({
+                    type: 'button',
+                    style: 'link',
+                    height: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: '⬅️ 上一頁日期',
+                        data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}`
+                    }
+                });
+            }
             if (hasMoreSessions) {
                 const nextSeriesPage = currentPage + 1;
-                footerContents.push({
+                pageButtons.push({
                     type: 'button',
                     style: 'link',
                     height: 'sm',
@@ -4250,6 +4266,14 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                         label: '顯示更多日期 ➡️',
                         data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}`
                     }
+                });
+            }
+            
+            if (pageButtons.length > 0) {
+                footerContents.push({
+                    type: 'box',
+                    layout: 'horizontal',
+                    contents: pageButtons
                 });
             }
 
