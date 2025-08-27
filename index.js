@@ -1,4 +1,4 @@
-﻿// index.js - V35.7 (資料庫連線優化)
+﻿// index.js - V36 (點數卡)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
