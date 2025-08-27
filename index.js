@@ -1,4 +1,4 @@
-﻿// index.js - V35.6 (商城現金流)
+﻿// index.js - V35.7 (資料庫連線優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6161,4 +6161,5 @@ async function handleEvent(event) {
     }
 
         }
+
 
