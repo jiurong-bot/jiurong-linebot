@@ -2138,6 +2138,31 @@ async function showExchangeHistoryList(event, user) {
         }
     };
 }
+// 處理老師查詢購點歷史的初始選單
+async function showPurchaseHistoryList(event, user) {
+  return {
+    type: 'flex',
+    altText: '選擇查詢方式',
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [{ type: 'text', text: '📜 查詢購點紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+        backgroundColor: '#52b69a'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '顯示全部紀錄', data: `action=view_all_purchase_history_as_teacher&page=1` } },
+          { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '搜尋特定學員', data: `action=start_purchase_history_search` } }
+        ]
+      }
+    }
+  };
+}
 
 async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
