@@ -3620,7 +3620,7 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
 // [V35.6 優化] 老師用來查看購買紀錄的函式
 async function showExchangeHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-    return withDatabaseClient(async (client) => {
+    return executeDbQuery(async (client) => {
         let query = `SELECT * FROM product_orders`;
         const queryParams = [];
         let paramIndex = 1;
