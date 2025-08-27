@@ -5373,10 +5373,20 @@ async function handlePostback(event, user) {
                         const attendanceRate = totalCapacity > 0 ? (totalStudents / totalCapacity * 100).toFixed(1) : 0;
                         return `📊 ${periodText} 課程報表 📊\n\n- 課程總數：${res.rows.length} 堂\n- 總計名額：${totalCapacity} 人\n- 預約人次：${totalStudents} 人\n- **整體出席率：${attendanceRate}%**`.trim();
                     } else if (reportType === 'order') {
-                        const res = await client.query("SELECT COUNT(*), SUM(amount) FROM orders WHERE status = 'completed' AND timestamp BETWEEN $1 AND $2", [start, end]);
-                        const count = parseInt(res.rows[0].count, 10) || 0;
-                        const sum = parseInt(res.rows[0].sum, 10) || 0;
-                        return `💰 ${periodText} 訂單報表 💰\n\n- 已完成訂單：${count} 筆\n- **點數總收入：${sum} 元**`.trim();
+                        // [V35.6 修正] 分別查詢點數訂單和商品訂單的收入
+                        const pointsOrderRes = await client.query("SELECT COUNT(*), SUM(amount) FROM orders WHERE status = 'completed' AND amount > 0 AND timestamp BETWEEN $1 AND $2", [start, end]);
+                        const productOrderRes = await client.query("SELECT COUNT(*), SUM(amount) FROM product_orders WHERE status = 'completed' AND created_at BETWEEN $1 AND $2", [start, end]);
+
+                        const pointsOrderCount = parseInt(pointsOrderRes.rows[0].count, 10) || 0;
+                        const pointsOrderSum = parseInt(pointsOrderRes.rows[0].sum, 10) || 0;
+                        const productOrderCount = parseInt(productOrderRes.rows[0].count, 10) || 0;
+                        const productOrderSum = parseInt(productOrderRes.rows[0].sum, 10) || 0;
+
+                        const totalCount = pointsOrderCount + productOrderCount;
+                        const totalSum = pointsOrderSum + productOrderSum;
+
+                        // [V35.6 優化] 產生合併後的報表文字
+                        return `💰 ${periodText} 營收總報表 💰\n\n- 點數銷售：${pointsOrderSum} 元 (${pointsOrderCount} 筆)\n- 商品銷售：${productOrderSum} 元 (${productOrderCount} 筆)\n--------------------\n- **總計收入：${totalSum} 元**\n- **總計訂單：${totalCount} 筆**`.trim();
                     }
                 });
             };
