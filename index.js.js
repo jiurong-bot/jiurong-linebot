@@ -327,20 +327,6 @@ async function createPaginatedCarousel(options) {
   });
 }
 
-/**
- * [V30 新增] 執行一個需要資料庫客戶端的操作，並自動管理連線的開啟與關閉。
- * @param {function(object): Promise<any>} callback - 要執行的函式，會接收一個 db client 作為參數。
- * @returns {Promise<any>} - 回傳 callback 函式的執行結果。
- */
-async function withDatabaseClient(callback) {
-  const client = await pgPool.connect();
-  try {
-    return await callback(client);
-  } finally {
-    if (client) client.release();
-  }
-}
-/**
  * [V31.3 重構] 使用通用快取工具來讀取推播設定
  */
 async function getNotificationStatus() {
