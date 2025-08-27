@@ -2970,7 +2970,7 @@ event.message.text.trim().normalize() : '';
   } else {
     // --- 處理一般指令 ---
     if (text === CONSTANTS.COMMANDS.STUDENT.BOOK_COURSE) {
-        return showAvailableCourses(userId, 1);
+        return showAvailableCourses(userId, new URLSearchParams());
     } else if (text === CONSTANTS.COMMANDS.STUDENT.MY_COURSES) {
         return showMyCourses(userId, 1);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.LATEST_ANNOUNCEMENT) {
