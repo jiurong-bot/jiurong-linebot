@@ -342,7 +342,7 @@ async function createPaginatedCarousel(options) {
   });
 }
 
- * [V31.3 重構] 使用通用快取工具來讀取推播設定
+ /* [V31.3 重構] 使用通用快取工具來讀取推播設定
  */
 async function getNotificationStatus() {
     const cacheKey = 'notifications_enabled';
@@ -6161,6 +6161,7 @@ async function handleEvent(event) {
     }
 
         }
+
 
 
 
