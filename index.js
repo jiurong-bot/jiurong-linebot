@@ -4419,104 +4419,142 @@ async function showProductManagementList(page = 1, filter = null) {
 // =======================================================
 // 程式碼修改：V35.5 (商品現金購 - Part 2)
 // =======================================================
-async function showStudentExchangeHistory(userId, page = 1) {
-    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+// [V35.6 優化] 將購買紀錄改為條列式，並區分待處理與歷史訂單
+async function showStudentExchangeHistory(userId, page = 1) { // page 參數暫時保留，但不再使用
     return withDatabaseClient(async (client) => {
-        const res = await client.query(`SELECT * FROM product_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, [userId, CONSTANTS.PAGINATION_SIZE + 1, offset]);
+        // 抓取最近 20 筆訂單以避免訊息過長
+        const res = await client.query(`SELECT * FROM product_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20`, [userId]);
 
-        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageOrders = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
-
-        if (pageOrders.length === 0 && page === 1) {
-            return '您沒有任何商品兌換紀錄。';
-        }
-         if (pageOrders.length === 0) {
-            return '沒有更多紀錄了。';
+        if (res.rows.length === 0) {
+            return '您沒有任何商品購買紀錄。';
         }
 
-        const listItems = pageOrders.map(order => {
-            let statusText, statusColor, footerButton;
+        // 步驟 1: 將訂單分組
+        const pendingOrders = [];
+        const historyOrders = [];
 
-            switch (order.status) {
-                case 'completed':
-                    statusText = '✅ 已完成/可領取';
-                    statusColor = '#52b69a';
-                    break;
-                case 'pending_payment':
-                    if (order.payment_method === 'transfer') {
-                        statusText = '❗ 待回報匯款';
-                        statusColor = '#f28482';
-                        // [核心功能] 提供回報後五碼的按鈕
-                        footerButton = { type: 'button', style: 'primary', height: 'sm', color: '#f28482', action: { type: 'postback', label: '輸入匯款後五碼', data: `action=report_shop_last5&orderUID=${order.order_uid}` } };
-                    } else { // cash
-                        statusText = '🤝 待現金付款';
-                        statusColor = '#1A759F';
-                    }
-                    break;
-                case 'pending_confirmation':
+        res.rows.forEach(order => {
+            if (['pending_payment', 'pending_confirmation'].includes(order.status)) {
+                pendingOrders.push(order);
+            } else {
+                historyOrders.push(order);
+            }
+        });
+
+        const bodyContents = [];
+        const separator = { type: 'separator', margin: 'md' };
+
+        // 步驟 2: 產生「待處理訂單」列表
+        if (pendingOrders.length > 0) {
+            bodyContents.push({ type: 'text', text: '待處理訂單', weight: 'bold', size: 'lg', margin: 'md', color: '#1A759F' });
+            
+            pendingOrders.forEach(order => {
+                let statusText, statusColor, actionButton;
+                if (order.status === 'pending_payment' && order.payment_method === 'transfer') {
+                    statusText = '❗ 待回報匯款';
+                    statusColor = '#f28482';
+                    actionButton = {
+                        type: 'button',
+                        style: 'primary',
+                        height: 'sm',
+                        color: '#f28482',
+                        action: { type: 'postback', label: '輸入匯款後五碼', data: `action=report_shop_last5&orderUID=${order.order_uid}` },
+                        margin: 'md'
+                    };
+                } else if (order.status === 'pending_payment' && order.payment_method === 'cash') {
+                    statusText = '🤝 待現金付款';
+                    statusColor = '#1A759F';
+                } else { // pending_confirmation
                     statusText = '🕒 款項確認中';
                     statusColor = '#ff9e00';
-                    break;
-                case 'cancelled':
-                    statusText = '❌ 已取消';
-                    statusColor = '#d90429';
-                    break;
-                default:
-                    statusText = '未知狀態';
-                    statusColor = '#6c757d';
-            }
-            
-            const contents = [
-                {
+                }
+
+                bodyContents.push({
                     type: 'box',
                     layout: 'vertical',
-                    flex: 3,
+                    margin: 'lg',
+                    spacing: 'sm',
                     contents: [
-                        { type: 'text', text: order.product_name, weight: 'bold', size: 'sm', wrap: true },
-                        { type: 'text', text: statusText, color: statusColor, size: 'xs', weight: 'bold' },
-                        { type: 'text', text: `金額：${order.amount} 元`, size: 'sm', margin: 'sm' },
-                        { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' },
+                        { type: 'text', text: order.product_name, weight: 'bold', wrap: true },
+                        { type: 'text', text: `金額：${order.amount} 元`, size: 'sm' },
+                        {
+                            type: 'box',
+                            layout: 'horizontal',
+                            contents: [
+                                { type: 'text', text: statusText, size: 'sm', color: statusColor, weight: 'bold' },
+                                { type: 'text', text: formatDateTime(order.created_at), size: 'sm', color: '#AAAAAA', align: 'end' }
+                            ]
+                        },
+                        ...(actionButton ? [actionButton] : []) // 如果有按鈕，就加進來
                     ]
-                }
-            ];
+                });
+                bodyContents.push(separator);
+            });
+        }
 
-            return {
+        // 步驟 3: 產生「歷史訂單」列表
+        if (historyOrders.length > 0) {
+            bodyContents.push({ type: 'text', text: '歷史訂單', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
+
+            historyOrders.forEach(order => {
+                let statusText, statusColor;
+                if (order.status === 'completed') {
+                    statusText = '✅ 已完成';
+                    statusColor = '#28a745';
+                } else { // cancelled
+                    statusText = '❌ 已取消';
+                    statusColor = '#dc3545';
+                }
+
+                bodyContents.push({
+                    type: 'box',
+                    layout: 'vertical',
+                    margin: 'lg',
+                    spacing: 'sm',
+                    contents: [
+                        { type: 'text', text: order.product_name, weight: 'bold', wrap: true, color: '#888888' },
+                        { type: 'text', text: `金額：${order.amount} 元`, size: 'sm', color: '#888888' },
+                        {
+                            type: 'box',
+                            layout: 'horizontal',
+                            contents: [
+                                { type: 'text', text: statusText, size: 'sm', color: statusColor },
+                                { type: 'text', text: formatDateTime(order.created_at), size: 'sm', color: '#AAAAAA', align: 'end' }
+                            ]
+                        }
+                    ]
+                });
+                bodyContents.push(separator);
+            });
+        }
+        
+        // 移除最後一個多餘的分隔線
+        if (bodyContents.length > 0 && bodyContents[bodyContents.length - 1].type === 'separator') {
+            bodyContents.pop();
+        }
+
+        return {
+            type: 'flex',
+            altText: '我的購買紀錄',
+            contents: {
                 type: 'bubble',
+                size: 'giga',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [{ type: 'text', text: '📜 我的購買紀錄', weight: 'bold', size: 'xl', color: '#FFFFFF' }],
+                    backgroundColor: '#343A40',
+                    paddingAll: 'lg'
+                },
                 body: {
                     type: 'box',
                     layout: 'vertical',
+                    spacing: 'md',
                     paddingAll: 'lg',
-                    contents: contents
-                },
-                ...(footerButton && { // 如果 footerButton 存在，才加入 footer
-                    footer: {
-                        type: 'box',
-                        layout: 'vertical',
-                        contents: [footerButton]
-                    }
-                })
-            };
-        });
-
-        const paginationBubble = createPaginationBubble('action=view_exchange_history', page, hasNextPage);
-        if (paginationBubble) {
-            listItems.push(paginationBubble);
-        }
-        
-        const flexMessage = {
-            type: 'flex',
-            altText: '兌換紀錄',
-            contents: { 
-                type: 'carousel',
-                // 我們回傳的是 bubble 陣列，所以直接用 listItems
-                contents: listItems
+                    contents: bodyContents.length > 0 ? bodyContents : [{type: 'text', text: '目前沒有任何紀錄。', align: 'center'}]
+                }
             }
         };
-
-        if (page === 1) {
-            return [{ type: 'text', text: '以下是您的訂單紀錄與狀態：' }, flexMessage ];
-        }
-        return flexMessage;
     });
 }
 
