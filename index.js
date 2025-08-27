@@ -1218,15 +1218,17 @@ async function handlePurchaseFlow(event, userId) {
                 await saveOrder(order);
                 delete pendingPurchase[userId];
 
-                const replyText = `感謝您的購買！訂單已成立 (ID: ${formatIdForDisplay(order_id)})。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${order.amount} 元\n\n匯款完成後，請隨時回到「點數查詢」選單，點擊「❗ 匯款待處理」卡片中的按鈕來回報您的後五碼。\n\n⚠️提醒：為確保您的權益，請於24小時內完成匯款與回報，逾時訂單將會自動取消。`;
+                // [V35.6 優化] 更新提示文字以符合新流程
+                const replyText = `感謝您的購買！訂單已成立 (ID: ${formatIdForDisplay(order_id)})。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${order.amount} 元\n\n匯款完成後，請至「點數查詢」➜「查詢購點紀錄」，找到此筆待付款訂單，並點擊按鈕來回報您的後五碼。\n\n⚠️提醒：為確保您的權益，請於24小時內完成匯款與回報，逾時訂單將會自動取消。`;
 
-                const flexMenu = await buildPointsMenuFlex(userId);
-                replyContent = [{ type: 'text', text: replyText }, flexMenu];
+                // 因為主頁面已簡化，這裡不再需要回傳 flexMenu
+                replyContent = replyText;
 
             } else {
                 replyContent = '請點擊「✅ 確認購買」或「❌ 取消操作」。';
             }
             return { handled: true, reply: replyContent };
+
         case 'input_last5':
         case 'edit_last5':
             if (/^\d{5}$/.test(text)) {
