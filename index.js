@@ -5237,6 +5237,66 @@ async function handlePostback(event, user) {
                 } catch(e) { await client.query('ROLLBACK'); console.error("切換商品狀態失敗:", e); return '操作失敗，請稍後再試。'; }
             });
         }
+        // [V35.6 新增] 處理商品購買數量選擇
+        case 'select_product_quantity': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product || product.status !== 'available' || product.inventory <= 0) {
+                return '抱歉，此商品目前無法購買。';
+            }
+
+            // 最多可以一次購買 5 個，或商品的剩餘庫存量，取較小者
+            const maxQuantity = Math.min(5, product.inventory);
+
+            // 動態產生數量按鈕
+            const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
+                const quantity = i + 1;
+                const totalAmount = product.price * quantity;
+                return {
+                    type: 'button',
+                    style: 'secondary',
+                    height: 'sm',
+                    margin: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: `${quantity} 個 (共 ${totalAmount} 元)`,
+                        // 將選擇的數量 (qty) 傳遞到下一步
+                        data: `action=confirm_product_purchase&product_id=${product.id}&qty=${quantity}`
+                    }
+                };
+            });
+
+            return {
+                type: 'flex',
+                altText: '請選擇購買數量',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '請選擇購買數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                        backgroundColor: '#52B69A'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
+                            { type: 'text', text: `單價：${product.price} 元`, size: 'sm', color: '#666666', margin: 'md' },
+                            { type: 'text', text: `剩餘庫存：${product.inventory} 個`, size: 'sm', color: '#666666' },
+                            { type: 'separator', margin: 'lg' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: quantityButtons
+                    }
+                }
+            };
+        }
+
         case 'confirm_product_purchase': {
             const productId = data.get('product_id');
             const product = await getProduct(productId);
