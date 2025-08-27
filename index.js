@@ -5377,20 +5377,25 @@ async function handlePostback(event, user) {
             };
             return flexMessage;
         }
-        
+
         case 'execute_product_purchase': {
             const productId = data.get('product_id');
             const paymentMethod = data.get('method');
-            // [V35.6 修改] 讀取數量
             const quantity = parseInt(data.get('qty') || '1', 10);
 
-            const existingOrderRes = await withDatabaseClient(client => 
-                // ... (這段檢查邏輯不變)
+            // 檢查是否已有待付款的相同商品訂單
+            const existingOrderRes = await withDatabaseClient(client =>
+                client.query(
+                    "SELECT * FROM product_orders WHERE user_id = $1 AND product_id = $2 AND status IN ('pending_payment', 'pending_confirmation')",
+                    [userId, productId]
+                )
             );
+
             if (existingOrderRes.rows.length > 0) {
-                // ... (這段不變)
+                return '您已經有此商品的待付款訂單，請至「我的購買紀錄」查看或完成付款。';
             }
-            
+
+            // 執行購買流程
             const result = await withDatabaseClient(async (client) => {
                 await client.query('BEGIN');
                 try {
@@ -5400,14 +5405,15 @@ async function handlePostback(event, user) {
                     const product = productRes.rows[0];
                     const student = studentRes.rows[0];
 
-                    if (!product || product.status !== 'available') { /* ... */ }
-                    // [V35.6 修改] 再次檢查庫存
+                    if (!product || product.status !== 'available') {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '購買失敗，找不到此商品或已下架。' };
+                    }
                     if (product.inventory < quantity) {
                         await client.query('ROLLBACK');
                         return { success: false, message: `抱歉，您慢了一步！商品庫存僅剩 ${product.inventory} 個。` };
                     }
                     
-                    // [V35.6 修改] 計算總價並扣除對應庫存
                     const totalAmount = product.price * quantity;
                     await client.query('UPDATE products SET inventory = inventory - $1 WHERE id = $2', [quantity, productId]);
                     
@@ -5419,8 +5425,8 @@ async function handlePostback(event, user) {
                             points_spent, status, amount, payment_method
                          ) VALUES ($1, $2, $3, $4, $5, $6, 'pending_payment', $7, $8)`,
                         [
-                            orderUID, userId, student.name, productId, `${product.name} x${quantity}`, // 品名加上數量
-                            0, totalAmount, paymentMethod // amount 為計算後的總價
+                            orderUID, userId, student.name, productId, `${product.name} x${quantity}`,
+                            0, totalAmount, paymentMethod
                         ]
                     );
 
@@ -5437,13 +5443,17 @@ async function handlePostback(event, user) {
                         return { success: true, message: replyText };
                     }
 
-                } catch (err) { /* ... */ }
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('❌ 商品購買執行失敗:', err);
+                    return { success: false, message: '抱歉，購買過程中發生錯誤，您的訂單未成立，請稍後再試。' };
+                }
             });
 
             delete pendingBookingConfirmation[userId];
             return result.message;
         }
-                   
+
         case 'confirm_shop_order': {
             return withDatabaseClient(async (client) => {
                 const orderRes = await client.query("SELECT * FROM product_orders WHERE order_uid = $1", [data.get('orderUID')]);
