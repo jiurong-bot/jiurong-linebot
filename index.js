@@ -886,6 +886,28 @@ function formatDateTime(isoString) {
     return `${month}-${day}（${weekday}）${hour}:${minute}`;
 }
 /**
+ * [V36.0 新增] 根據給定的日期，計算其所在週的週一和週日的日期
+ * @param {Date} [targetDate=new Date()] - 目標日期，預設為今天
+ * @returns {{weekStart: Date, weekEnd: Date}} - 包含週一和週日 Date 物件的物件
+ */
+function getWeekDates(targetDate = new Date()) {
+    targetDate = new Date(targetDate.toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+    const dayOfWeek = targetDate.getDay(); // 0 = 週日, 1 = 週一, ..., 6 = 週六
+
+    // 計算到週一需要減去的天數
+    const diff = targetDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); 
+    
+    const weekStart = new Date(targetDate.setDate(diff));
+    weekStart.setHours(0, 0, 0, 0); // 設定為週一的 00:00:00
+
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999); // 設定為週日的 23:59:59
+
+    return { weekStart, weekEnd };
+}
+
+/**
  * [V23.2 新增] 取得課程主標題，移除 "- 第 x 堂"
  * @param {string} fullTitle - 完整的課程標題
  * @returns {string} - 主標題
