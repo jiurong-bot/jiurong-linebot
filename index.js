@@ -4184,7 +4184,8 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
 
                 if (!isFull) {
                     buttonLabel = formatDateTime(session.time);
-                    buttonActionData = `action=start_booking_confirmation&course_id=${session.id}&spots=1`;
+                    // [V36.3 修正] 將按鈕目的地改回選擇人數的流程
+                    buttonActionData = `action=select_booking_spots&course_id=${session.id}`;
                     subText = `剩餘 ${remainingSpots} 位`;
                     subTextColor = '#666666';
                 } else {
@@ -4218,7 +4219,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     margin: 'md'
                 };
             });
-
             // 建立卡片 Body
             const bodyContents = [
                 { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true },
