@@ -3617,32 +3617,26 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
         };
     });
 }
-
-
-// [新增] 老師用來查看購買紀錄的函式
+// [V35.6 優化] 老師用來查看購買紀錄的函式
 async function showExchangeHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-    return executeDbQuery(async (client) => {
+    return withDatabaseClient(async (client) => {
         let query = `SELECT * FROM product_orders`;
         const queryParams = [];
         let paramIndex = 1;
-
 
         if (userId) {
             query += ` WHERE user_id = $${paramIndex++}`;
             queryParams.push(userId);
         }
 
-
         query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
         
         const res = await client.query(query, queryParams);
 
-
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
-
 
         if (pageRows.length === 0 && page === 1) {
             return userId ? '這位學員沒有任何購買紀錄。' : '目前沒有任何學員的購買紀錄。';
@@ -3651,18 +3645,16 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
             return '沒有更多紀錄了。';
         }
 
-
         const statusMap = {
             'completed': { text: '✅ 已完成', color: '#52b69a' },
-            'pending': { text: '🕒 處理中', color: '#ff9e00' },
+            'pending_payment': { text: '❗ 待付款', color: '#f28482' },
+            'pending_confirmation': { text: '🕒 款項確認中', color: '#ff9e00' },
             'cancelled': { text: '❌ 已取消', color: '#d90429' }
         };
-
 
         const listItems = pageRows.map(order => {
             const statusInfo = statusMap[order.status] || { text: order.status, color: '#6c757d' };
             const titleText = userId ? order.product_name : `${order.user_name} 購買了 ${order.product_name}`;
-
 
             return {
                 type: 'box',
@@ -3681,13 +3673,15 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
                     },
                     {
                         type: 'text',
-                        text: `-${order.points_spent} 點`,
+                        // [V35.6 修正] 改為顯示 amount 欄位的台幣金額
+                        text: `$${order.amount} 元`,
                         gravity: 'center',
                         align: 'end',
                         flex: 2,
                         weight: 'bold',
                         size: 'sm',
-                        color: '#D9534F',
+                        // [V35.6 優化] 金額使用代表收入的綠色
+                        color: '#28A745',
                     }
                 ]
             };
@@ -3727,9 +3721,6 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
         };
     });
 }
-
-
-
 
 async function showUnreadMessages(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
