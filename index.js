@@ -5170,7 +5170,7 @@ async function handlePostback(event, user) {
         case 'view_unread_messages': return showUnreadMessages(page);
         case 'view_announcements_for_deletion': return showAnnouncementsForDeletion(page);
         case 'view_purchase_history': return showPurchaseHistory(userId, page);
-        case 'view_available_courses': return showAvailableCourses(userId, page);
+        case 'view_available_courses': return showAvailableCourses(userId, data);
         case 'view_my_courses': return showMyCourses(userId, page);
         case 'view_shop_products': return showShopProducts(page);
         case 'view_my_messages': return showMyMessages(userId, page);
