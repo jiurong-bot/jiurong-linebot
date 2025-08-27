@@ -1,4 +1,4 @@
-// index.js - V35.5.1 (商品現金流,數量)
+// index.js - V35.6 (商城現金流)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -4800,7 +4800,7 @@ app.listen(PORT, async () => {
     console.log('✅ 資料庫結構已由 Build Command 處理。');
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V35.5 (商城現金流,數量)`);
+    console.log(`Bot 版本 V35.6 (商城現金流)`);
 
     setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
     setInterval(cancelExpiredPendingOrders, CONSTANTS.TIME.ONE_HOUR_IN_MS);
