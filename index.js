@@ -5068,7 +5068,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V35.6 (商城現金流)`);
+    console.log(`Bot 版本 V35.7 (資料庫連線優化)`);
 
 
     setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
@@ -6161,5 +6161,6 @@ async function handleEvent(event) {
     }
 
         }
+
 
 
