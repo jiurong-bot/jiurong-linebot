@@ -5299,11 +5299,17 @@ async function handlePostback(event, user) {
 
         case 'confirm_product_purchase': {
             const productId = data.get('product_id');
+            // [V35.6 修改] 從 postback data 讀取數量
+            const quantity = parseInt(data.get('qty') || '1', 10);
+
             const product = await getProduct(productId);
             if (!product || product.status !== 'available') return '找不到此商品，或商品已下架。';
-            if (product.inventory <= 0) return '抱歉，此商品庫存不足，無法購買。';
+            // 檢查庫存是否足夠
+            if (product.inventory < quantity) return `抱歉，此商品庫存不足！\n您想購買 ${quantity} 個，但僅剩 ${product.inventory} 個。`;
 
-            // [V35.5 修改] 不再檢查點數，而是跳出付款方式選項
+            // 計算總金額
+            const totalAmount = product.price * quantity;
+
             const flexMessage = {
                 type: 'flex',
                 altText: '請選擇付款方式',
@@ -5312,7 +5318,7 @@ async function handlePostback(event, user) {
                     header: {
                         type: 'box',
                         layout: 'vertical',
-                        contents: [{ type: 'text', text: '請選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                        contents: [{ type: 'text', text: '請確認訂單並選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }],
                         backgroundColor: '#52B69A'
                     },
                     body: {
@@ -5321,7 +5327,11 @@ async function handlePostback(event, user) {
                         spacing: 'md',
                         contents: [
                             { type: 'text', text: product.name, weight: 'bold', size: 'md', wrap: true },
-                            { type: 'text', text: `金額：${product.price} 元`, size: 'sm' }
+                            // 顯示單價、數量和總金額
+                            { type: 'text', text: `單價：${product.price} 元`, size: 'sm' },
+                            { type: 'text', text: `數量：${quantity} 個`, size: 'sm' },
+                            { type: 'separator', margin: 'sm' },
+                            { type: 'text', text: `總金額：${totalAmount} 元`, size: 'lg', weight: 'bold', margin: 'sm' }
                         ]
                     },
                     footer: {
@@ -5336,8 +5346,8 @@ async function handlePostback(event, user) {
                                 action: {
                                     type: 'postback',
                                     label: '🏦 轉帳付款',
-                                    // 注意這裡的 action 改為 execute_product_purchase 並帶上 method 參數
-                                    data: `action=execute_product_purchase&product_id=${product.id}&method=transfer`
+                                    // 將數量 (qty) 繼續傳遞到最後一步
+                                    data: `action=execute_product_purchase&product_id=${product.id}&method=transfer&qty=${quantity}`
                                 }
                             },
                             {
@@ -5347,7 +5357,7 @@ async function handlePostback(event, user) {
                                 action: {
                                     type: 'postback',
                                     label: '🤝 現金面交',
-                                    data: `action=execute_product_purchase&product_id=${product.id}&method=cash`
+                                    data: `action=execute_product_purchase&product_id=${product.id}&method=cash&qty=${quantity}`
                                 }
                             },
                             {
@@ -5367,6 +5377,7 @@ async function handlePostback(event, user) {
             };
             return flexMessage;
         }
+
         case 'execute_product_purchase': {
             // [V35.5 重構] 處理現金/轉帳訂單生成
             const productId = data.get('product_id');
