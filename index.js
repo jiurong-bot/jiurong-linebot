@@ -97,7 +97,7 @@ const CONSTANTS = {
         MANAGE_UNAVAILABLE_PRODUCTS: '@管理已下架商品',
         SHOP_ORDER_MANAGEMENT: '@訂單管理',
         // [新增]
-        VIEW_SHOP_EXCHANGE_HISTORY: '@查詢兌換紀錄',
+        VIEW_SHOP_EXCHANGE_HISTORY: '@查詢購買紀錄',
       REPORT: '@統計報表',
         COURSE_REPORT: '@課程報表',
         ORDER_REPORT: '@訂單報表',
@@ -124,7 +124,7 @@ const CONSTANTS = {
       LATEST_ANNOUNCEMENT: '@最新公告',
       CONTACT_US: '@聯絡我們',
       VIEW_SHOP_PRODUCTS: '@瀏覽商品',
-      EXCHANGE_HISTORY: '@兌換紀錄',
+      EXCHANGE_HISTORY: '@購買紀錄',
       CHECK_POINTS: '@查看剩餘點數',
       BUY_POINTS: '@購買點數',
       PURCHASE_HISTORY: '@購點紀錄',
@@ -1602,7 +1602,7 @@ async function showShopManagementMenu(event, user) {
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 管理已下架商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_UNAVAILABLE_PRODUCTS)}` } }, 
                     { type: 'separator', margin: 'md'}, 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: pendingShopOrdersLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT)}` } },
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢兌換紀錄', data: `action=select_exchange_history_view_type` } } 
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢購買紀錄', data: `action=select_exchange_history_view_type` } } 
                 ] 
             } 
         } 
@@ -1785,7 +1785,7 @@ const teacherCommandMap = {
     [CONSTANTS.COMMANDS.TEACHER.POINT_REPORT]: generatePointReport,
     [CONSTANTS.COMMANDS.TEACHER.PENDING_ORDERS]: showPendingPointOrders, // Alias
     [CONSTANTS.COMMANDS.TEACHER.MANUAL_ADJUST_POINTS]: startManualAdjust,
-    // [新增] 購點紀錄與兌換紀錄的指令處理
+    // [新增] 購點紀錄與購買紀錄的指令處理
     [CONSTANTS.COMMANDS.TEACHER.VIEW_PURCHASE_HISTORY]: showPurchaseHistoryList,
     [CONSTANTS.COMMANDS.TEACHER.VIEW_SHOP_EXCHANGE_HISTORY]: showExchangeHistoryList,
 };
@@ -2099,7 +2099,7 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
 }
 
 
-// [新增] 處理顯示兌換歷史的功能
+// [新增] 處理顯示購買歷史的功能
 async function showExchangeHistoryList(event, user) {
     return {
         type: 'flex',
@@ -2109,7 +2109,7 @@ async function showExchangeHistoryList(event, user) {
             header: {
                 type: 'box',
                 layout: 'vertical',
-                contents: [{ type: 'text', text: '📜 查詢兌換紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                contents: [{ type: 'text', text: '📜 查詢購買紀錄', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
                 backgroundColor: '#52b69a'
             },
             body: {
@@ -2521,7 +2521,7 @@ async function handleTeacherCommands(event, userId) {
     return showStudentSelectionForPurchaseHistory(res.rows);
   }
   
-  // [新增] 兌換歷史查詢的處理
+  // [新增] 購買歷史查詢的處理
   else if (pendingExchangeHistorySearch[userId]) {
       const searchQuery = text;
       delete pendingExchangeHistorySearch[userId];
@@ -2950,7 +2950,7 @@ event.message.text.trim().normalize() : '';
         case 'product_purchase':
              if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
                 delete pendingBookingConfirmation[userId];
-                return '已取消兌換。';
+                return '已取消購買。';
             }
             break;
     }
@@ -3231,7 +3231,7 @@ async function showStudentSelectionForPurchaseHistory(users) {
 }
 
 
-// [新增] 顯示學員選單以查詢兌換歷史
+// [新增] 顯示學員選單以查詢購買歷史
 async function showStudentSelectionForExchangeHistory(users) {
     const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
     const userBubbles = users.map(u => ({
@@ -3268,7 +3268,7 @@ async function showStudentSelectionForExchangeHistory(users) {
     }));
     return {
         type: 'flex',
-        altText: `請選擇要查詢兌換紀錄的學員`,
+        altText: `請選擇要查詢購買紀錄的學員`,
         contents: { type: 'carousel', contents: userBubbles }
     };
 }
@@ -3619,7 +3619,7 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
 }
 
 
-// [新增] 老師用來查看兌換紀錄的函式
+// [新增] 老師用來查看購買紀錄的函式
 async function showExchangeHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -3645,7 +3645,7 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
 
 
         if (pageRows.length === 0 && page === 1) {
-            return userId ? '這位學員沒有任何兌換紀錄。' : '目前沒有任何學員的兌換紀錄。';
+            return userId ? '這位學員沒有任何購買紀錄。' : '目前沒有任何學員的購買紀錄。';
         }
         if (pageRows.length === 0) {
             return '沒有更多紀錄了。';
@@ -3661,7 +3661,7 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
 
         const listItems = pageRows.map(order => {
             const statusInfo = statusMap[order.status] || { text: order.status, color: '#6c757d' };
-            const titleText = userId ? order.product_name : `${order.user_name} 兌換了 ${order.product_name}`;
+            const titleText = userId ? order.product_name : `${order.user_name} 購買了 ${order.product_name}`;
 
 
             return {
@@ -3697,7 +3697,7 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
         const paginationBubble = createPaginationBubble('action=view_exchange_history_as_teacher', page, hasNextPage, customParams);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
         
-        const headerText = userId ? `${pageRows[0].user_name} 的兌換紀錄` : '所有學員兌換紀錄';
+        const headerText = userId ? `${pageRows[0].user_name} 的購買紀錄` : '所有學員購買紀錄';
         return {
             type: 'flex',
             altText: headerText,
@@ -5119,7 +5119,7 @@ async function handlePostback(event, user) {
         case 'view_manual_adjust_history': return showManualAdjustHistory(page, data.get('user_id'));
         
         // ==================================
-        // [新增] 老師查詢購點/兌換紀錄、歷史留言
+        // [新增] 老師查詢購點/購買紀錄、歷史留言
         // ==================================
         case 'view_all_purchase_history_as_teacher': return showPurchaseHistoryAsTeacher(page);
         case 'view_purchase_history_as_teacher': return showPurchaseHistoryAsTeacher(page, data.get('user_id'));
@@ -5127,7 +5127,7 @@ async function handlePostback(event, user) {
         case 'view_exchange_history_as_teacher': return showExchangeHistoryAsTeacher(page, data.get('user_id'));
         case 'view_all_historical_messages_as_teacher': return showHistoricalMessagesAsTeacher(page);
                 // ==================================
-        // [新增] 老師查詢購點/兌換紀錄、歷史留言
+        // [新增] 老師查詢購點/購買紀錄、歷史留言
         // ==================================
         // 點數管理
         case 'select_purchase_history_view_type': {
@@ -5146,7 +5146,7 @@ async function handlePostback(event, user) {
         case 'select_exchange_history_view_type': {
             return {
                 type: 'text',
-                text: '請問您要查詢所有學員的兌換紀錄，還是特定學員？',
+                text: '請問您要查詢所有學員的購買紀錄，還是特定學員？',
                 quickReply: {
                     items: [
                         { type: 'action', action: { type: 'postback', label: '📜 顯示全部紀錄', data: 'action=view_all_exchange_history_as_teacher&page=1' } },
@@ -5441,10 +5441,10 @@ async function handlePostback(event, user) {
         }
         case 'start_exchange_history_search': {
             pendingExchangeHistorySearch[userId] = { step: 'await_student_name' };
-            setupConversationTimeout(userId, pendingExchangeHistorySearch, 'pendingExchangeHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋兌換紀錄操作逾時，自動取消。' }));
+            setupConversationTimeout(userId, pendingExchangeHistorySearch, 'pendingExchangeHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋購買紀錄操作逾時，自動取消。' }));
             return {
                 type: 'text',
-                text: '請輸入您想查詢兌換紀錄的學員姓名或 User ID：',
+                text: '請輸入您想查詢購買紀錄的學員姓名或 User ID：',
                 quickReply: { items: getCancelMenu() }
             };
         }
@@ -5796,7 +5796,7 @@ async function handlePostback(event, user) {
                     await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [order.points_spent, order.user_id]);
                     await client.query("UPDATE products SET inventory = inventory + 1 WHERE id = $1", [order.product_id]);
                     await client.query("UPDATE product_orders SET status = 'cancelled', updated_at = NOW() WHERE order_uid = $1", [orderUID]);
-                    const notifyMessage = { type: 'text', text: `❗️ 訂單取消通知\n您兌換的「${order.product_name}」訂單已被老師取消。\n已將花費的 ${order.points_spent} 點歸還至您的帳戶。` };
+                    const notifyMessage = { type: 'text', text: `❗️ 訂單取消通知\n您購買的「${order.product_name}」訂單已被老師取消。\n已將花費的 ${order.points_spent} 點歸還至您的帳戶。` };
                     await enqueuePushTask(order.user_id, notifyMessage);
                     await client.query('COMMIT');
                     return `✅ 已成功取消訂單 (ID: ...${orderUID.slice(-6)}) 並歸還點數及庫存。`;
