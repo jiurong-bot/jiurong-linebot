@@ -8,14 +8,6 @@ const axios = require('axios');
 const ImageKit = require("imagekit");
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-
-
-
-
-
-
-
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
@@ -8094,4 +8086,5 @@ async function handleEvent(event) {
             }
         }
     }
+
         }
