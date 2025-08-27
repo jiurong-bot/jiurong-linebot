@@ -4281,7 +4281,7 @@ async function showShopProducts(page) {
             const buttonLabel = isSoldOut ? '已售完' : '我要購買';
             const buttonAction = isSoldOut
                 ? { type: 'message', label: buttonLabel, text: '此商品已售完' }
-                : { type: 'postback', label: buttonLabel, data: `action=confirm_product_purchase&product_id=${p.id}` };
+                : { type: 'postback', label: buttonLabel, data: `action=select_product_quantity&product_id=${p.id}` };
             return {
                 type: 'bubble',
                 hero: (p.image_url && p.image_url.startsWith('https')) ?
