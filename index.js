@@ -3064,17 +3064,22 @@ event.message.text.trim().normalize() : '';
         return showMyCourses(userId, 1);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.LATEST_ANNOUNCEMENT) {
         return executeDbQuery(async (client) => {
-            // [V38.0 修改] 抓取最近 8 筆公告，而非 1 筆
-            const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 8');
+            const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 6');
             
             if (res.rows.length === 0) { 
                 return '目前沒有任何公告。'; 
             }
             
-            // [V38.0 修改] 將單一 bubble 改為 carousel
+            // 更新學員的 last_seen_announcement_id
+            const latestAnnId = res.rows[0].id;
+            if (user.last_seen_announcement_id !== latestAnnId) {
+                user.last_seen_announcement_id = latestAnnId;
+                await saveUser(user, client);
+            }
+            
             const announcementBubbles = res.rows.map(announcement => ({
                 type: 'bubble',
-                size: 'giga', // 讓卡片大一點，方便閱讀
+                size: 'giga',
                 header: { 
                     type: 'box', 
                     layout: 'vertical', 
@@ -3086,8 +3091,8 @@ event.message.text.trim().normalize() : '';
                 body: { 
                     type: 'box', 
                     layout: 'vertical', 
-                    paddingAll: 'lg', // 增加邊距
-                    spacing: 'md',   // 增加間距
+                    paddingAll: 'lg',
+                    spacing: 'md',
                     contents: [ 
                         { type: 'text', text: announcement.content, wrap: true } 
                     ]
@@ -3115,8 +3120,7 @@ event.message.text.trim().normalize() : '';
                     contents: announcementBubbles
                 }
             };
-        });
-
+        });       
     } else if (text === CONSTANTS.COMMANDS.STUDENT.ADD_NEW_MESSAGE) {
         pendingFeedback[userId] = { step: 'await_message' };
         setupConversationTimeout(userId, pendingFeedback, 'pendingFeedback', (u) => {
