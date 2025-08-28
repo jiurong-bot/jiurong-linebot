@@ -5658,22 +5658,78 @@ async function handlePostback(event, user) {
             setupConversationTimeout(userId, pendingInventoryAdjust, 'pendingInventoryAdjust', u => enqueuePushTask(u, { type: 'text', text: '調整庫存操作逾時，自動取消。' }));
             return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
         }
-        case 'toggle_product_status': {
+                case 'toggle_product_status': {
             const productId = data.get('product_id');
-            return executeDbQuery(async (client) => {
+            const result = await executeDbQuery(async (client) => {
                 await client.query('BEGIN');
                 try {
                     const productRes = await client.query('SELECT status, name FROM products WHERE id = $1 FOR UPDATE', [productId]);
-                    if (productRes.rows.length === 0) { await client.query('ROLLBACK'); return '找不到該商品。'; }
+                    if (productRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '找不到該商品。' };
+                    }
                     const product = productRes.rows[0];
                     const newStatus = product.status === 'available' ? 'unavailable' : 'available';
                     await client.query('UPDATE products SET status = $1 WHERE id = $2', [newStatus, productId]);
                     await client.query('COMMIT');
-                    const statusText = newStatus === 'available' ? '上架' : '下架';
-                    return `✅ 已成功將商品「${product.name}」設定為「${statusText}」狀態。`;
-                } catch(e) { await client.query('ROLLBACK'); console.error("切換商品狀態失敗:", e); return '操作失敗，請稍後再試。'; }
+                    
+                    // 如果是重新上架，則準備公告
+                    if (newStatus === 'available') {
+                        const prefilledContent = `🔥 熱銷補貨到！\n\n「${product.name}」再度上架，上次沒買到的朋友別再錯過囉！`;
+                        pendingAnnouncementCreation[userId] = {
+                            step: 'await_final_confirmation',
+                            content: prefilledContent
+                        };
+                        setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                           enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+                        });
+                        return { success: true, product: product, shouldAnnounce: true, announcementContent: prefilledContent };
+                    }
+                    
+                    return { success: true, product: product, shouldAnnounce: false };
+                } catch(e) {
+                    await client.query('ROLLBACK');
+                    console.error("切換商品狀態失敗:", e);
+                    return { success: false, message: '操作失敗，請稍後再試。' };
+                }
             });
+
+            if (!result.success) {
+                return result.message;
+            }
+
+            if (result.shouldAnnounce) {
+                // 回傳 "發佈補貨公告的預覽畫面"
+                return {
+                    type: 'flex',
+                    altText: '發佈補貨公告？',
+                    contents: {
+                        type: 'bubble',
+                        header: {
+                            type: 'box',
+                            layout: 'vertical',
+                            contents: [{ type: 'text', text: '📢 發佈補貨公告', weight: 'bold', color: '#FFFFFF' }],
+                            backgroundColor: '#52B69A',
+                            paddingAll: 'lg'
+                        },
+                        body: {
+                            type: 'box',
+                            layout: 'vertical',
+                            contents: [{ type: 'text', text: result.announcementContent, wrap: true }]
+                        }
+                    },
+                    quickReply: {
+                        items: [
+                            { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
+                            { type: 'action', action: { type: 'message', label: '❌ 暫不發佈', text: '好的，暫不發佈。' } }
+                        ]
+                    }
+                };
+            } else {
+                return `✅ 已成功將商品「${result.product.name}」設定為「下架」狀態。`;
+            }
         }
+
         // [V35.6 新增] 處理商品購買數量選擇
         case 'select_product_quantity': {
             const productId = data.get('product_id');
