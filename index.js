@@ -1885,6 +1885,109 @@ async function showFailedTasks(page) {
     });
 }
 
+/**
+ * [V39.0 新增] 取得所有全局通知設定
+ * @returns {Promise<object>} 一個包含所有通知設定狀態的物件
+ */
+async function getGlobalNotificationSettings() {
+    const settings = {
+        developer: true,      // 開發者/老師通知
+        class_reminder: true, // 學員課程提醒
+        announcement: true    // 學員公告提醒
+    };
+    await executeDbQuery(async (db) => {
+        const res = await db.query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'student_%_enabled' OR setting_key = 'notifications_enabled'");
+        res.rows.forEach(row => {
+            const value = row.setting_value === 'true';
+            if (row.setting_key === 'notifications_enabled') {
+                settings.developer = value;
+            } else if (row.setting_key === 'student_class_reminders_enabled') {
+                settings.class_reminder = value;
+            } else if (row.setting_key === 'student_announcement_reminders_enabled') {
+                settings.announcement = value;
+            }
+        });
+    });
+    return settings;
+}
+
+/**
+ * [V39.0 新增] 建立管理者控制面板的 Flex Message
+ * @returns {Promise<object>} Flex Message 物件
+ */
+async function buildAdminPanelFlex() {
+    const settings = await getGlobalNotificationSettings();
+
+    const createSwitch = (label, settingKey, isEnabled) => ({
+        type: 'box',
+        layout: 'horizontal',
+        alignItems: 'center',
+        paddingAll: 'md',
+        contents: [
+            { type: 'text', text: label, wrap: true, flex: 3 },
+            { type: 'text', text: isEnabled ? '【開啟】' : '【關閉】', color: isEnabled ? '#28a745' : '#dc3545', weight: 'bold', align: 'center', flex: 1 },
+            {
+                type: 'button',
+                action: {
+                    type: 'postback',
+                    label: isEnabled ? '關閉' : '開啟',
+                    data: `action=toggle_global_setting&key=${settingKey}&value=${isEnabled}`
+                },
+                style: 'secondary',
+                height: 'sm',
+                flex: 1
+            }
+        ]
+    });
+
+    const otherCommands = [
+        { label: '系統狀態', command: CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS },
+        { label: '失敗任務管理', command: CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT },
+        { label: '授權老師', command: CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER },
+        { label: '移除老師', command: CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER },
+        { label: '模擬學員身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT },
+        { label: '模擬老師身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER }
+    ];
+
+    return {
+        type: 'flex',
+        altText: '管理者控制面板',
+        contents: {
+            type: 'bubble',
+            size: 'giga',
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{ type: 'text', text: '⚙️ 管理者控制面板', color: '#FFFFFF', weight: 'bold', size: 'lg' }],
+                backgroundColor: '#343A40',
+                paddingAll: 'lg'
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                    { type: 'text', text: '全局通知開關', weight: 'bold', size: 'md', margin: 'md' },
+                    createSwitch('開發者/老師通知', 'notifications_enabled', settings.developer),
+                    createSwitch('學員課程提醒', 'student_class_reminders_enabled', settings.class_reminder),
+                    createSwitch('學員公告提醒', 'student_announcement_reminders_enabled', settings.announcement),
+                    { type: 'separator', margin: 'xl' },
+                    { type: 'text', text: '常用管理功能', weight: 'bold', size: 'md', margin: 'md' },
+                    ...otherCommands.map(cmd => ({
+                        type: 'button',
+                        style: 'secondary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: cmd.label,
+                            data: `action=run_command&text=${encodeURIComponent(cmd.command)}`
+                        }
+                    }))
+                ]
+            }
+        }
+    };
+}
 
 async function showSystemStatus() {
   return executeDbQuery(async (db) => {
