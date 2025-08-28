@@ -4169,27 +4169,31 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
             const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
             const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
             const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
-
+            
             const dateButtons = sessionsToShow.map(session => {
                 const remainingSpots = session.capacity - (session.students || []).length;
                 const isFull = remainingSpots <= 0;
                 const waitingCount = (session.waiting || []).length;
-                let buttonActionData, subText, subTextColor, buttonColor;
+                let buttonActionData, subText, subTextColor, buttonColor, buttonStyle;
+
                 if (!isFull) {
                     buttonActionData = `action=select_booking_spots&course_id=${session.id}`;
                     subText = `剩餘 ${remainingSpots} 位`;
                     subTextColor = '#666666';
-                    buttonColor = '#52B69A';
+                    buttonStyle = 'secondary'; // [UI調整] 恢復為與其他選單一致的灰色
+                    buttonColor = undefined;     // 使用 secondary 預設顏色
                 } else {
                     buttonActionData = `action=confirm_join_waiting_list_start&course_id=${session.id}`;
                     const nextPosition = waitingCount + 1;
                     subText = `候補第 ${nextPosition} 位`;
                     subTextColor = '#DE5246';
-                    buttonColor = '#AAAAAA';
+                    buttonStyle = 'secondary'; // [UI調整] 額滿時也用 secondary 風格
+                    buttonColor = '#808080';   // 但指定一個更深的灰色
                 }
+                
                 return {
                     type: 'box', layout: 'vertical', contents: [
-                        { type: 'button', action: { type: 'postback', label: formatDateTime(session.time), data: buttonActionData }, height: 'sm', style: 'primary', color: buttonColor },
+                        { type: 'button', action: { type: 'postback', label: formatDateTime(session.time), data: buttonActionData }, height: 'sm', style: buttonStyle, color: buttonColor },
                         { type: 'text', text: subText, size: 'xs', color: subTextColor, align: 'end', margin: 'xs' }
                     ], spacing: 'xs', margin: 'md'
                 };
