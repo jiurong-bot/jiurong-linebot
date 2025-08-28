@@ -2431,7 +2431,7 @@ async function handleTeacherCommands(event, userId) {
                         // 直接回傳成功訊息與最終操作按鈕
                         const successFlex = {
                             type: 'flex',
-                            altText: '課程新增成功！是否要發布公告？',
+                            altText: '課程新增成功！是否要發佈公告？',
                             contents: {
                                 type: 'bubble',
                                 body: {
@@ -2451,7 +2451,7 @@ async function handleTeacherCommands(event, userId) {
                                         type: 'action',
                                         action: {
                                             type: 'postback',
-                                            label: '✅ 直接發布公告',
+                                            label: '✅ 直接發佈公告',
                                             data: 'action=publish_prefilled_announcement'
                                         }
                                     },
@@ -2459,8 +2459,8 @@ async function handleTeacherCommands(event, userId) {
                                         type: 'action',
                                         action: {
                                             type: 'message',
-                                            label: '❌ 暫不發布',
-                                            text: '好的，暫不發布。'
+                                            label: '❌ 暫不發佈',
+                                            text: '好的，暫不發佈。'
                                         }
                                     }
                                 ]
@@ -3040,7 +3040,7 @@ event.message.text.trim().normalize() : '';
             const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 1');
             if (res.rows.length === 0) { return '目前沒有任何公告。'; }
             const announcement = res.rows[0];
-            return { type: 'flex', altText: '最新公告', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', backgroundColor: '#de5246', contents: [ { type: 'text', text: '‼️ 最新公告', color: '#ffffff', weight: 'bold', size: 'lg' } ]}, body: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: announcement.content, wrap: true } ]}, footer: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: `由 ${announcement.creator_name} 於 ${formatDateTime(announcement.created_at)} 發布`, size: 'xs', color: '#aaaaaa', align: 'center' } ]} } };
+            return { type: 'flex', altText: '最新公告', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', backgroundColor: '#de5246', contents: [ { type: 'text', text: '‼️ 最新公告', color: '#ffffff', weight: 'bold', size: 'lg' } ]}, body: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: announcement.content, wrap: true } ]}, footer: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: `由 ${announcement.creator_name} 於 ${formatDateTime(announcement.created_at)} 發佈`, size: 'xs', color: '#aaaaaa', align: 'center' } ]} } };
         });
     } else if (text === CONSTANTS.COMMANDS.STUDENT.ADD_NEW_MESSAGE) {
         pendingFeedback[userId] = { step: 'await_message' };
@@ -4040,7 +4040,7 @@ async function showAnnouncementsForDeletion(page) {
                     flex: 4,
                     contents: [
                         { type: 'text', text: ann.content, wrap: true, size: 'sm' },
-                        { type: 'text', text: `由 ${ann.creator_name} 於 ${formatDateTime(ann.created_at)} 發布`, size: 'xxs', color: '#AAAAAA', margin: 'lg', wrap: true }
+                        { type: 'text', text: `由 ${ann.creator_name} 於 ${formatDateTime(ann.created_at)} 發佈`, size: 'xxs', color: '#AAAAAA', margin: 'lg', wrap: true }
                     ]
                 },
                 {
@@ -5981,7 +5981,7 @@ async function handlePostback(event, user) {
                                 color: '#28a745',
                                 action: {
                                     type: 'postback',
-                                    label: '✅ 直接發布',
+                                    label: '✅ 直接發佈',
                                     data: 'action=publish_prefilled_announcement'
                                 }
                             },
@@ -6000,7 +6000,7 @@ async function handlePostback(event, user) {
             };
         }
 
-        // [V37.1 新增] 處理 "直接發布" 的動作
+        // [V37.1 新增] 處理 "直接發佈" 的動作
         case 'publish_prefilled_announcement': {
             const state = pendingAnnouncementCreation[userId];
             if (!state || !state.content) return '操作已逾時或無效，請重新操作。';
