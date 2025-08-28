@@ -5908,7 +5908,6 @@ async function handlePostback(event, user) {
             const prefix = data.get('prefix');
             if (!prefix) return '操作無效，缺少課程系列資訊。';
 
-            // 從資料庫撈取課程主標題，確保資訊正確
             const course = await executeDbQuery(client => 
                 client.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`])
             ).then(res => res.rows[0]);
@@ -5916,25 +5915,99 @@ async function handlePostback(event, user) {
             if (!course) return '找不到對應的課程系列來建立公告。';
             
             const mainTitle = getCourseMainTitle(course.title);
+            const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
             
-            // 設定好公告內容，並進入待確認狀態
+            // 將範本內容暫存起來
             pendingAnnouncementCreation[userId] = {
-                step: 'await_content', // 直接跳到輸入內容的步驟，並預填
-                prefilledContent: `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`
+                step: 'await_final_confirmation',
+                content: prefilledContent
             };
-            
             setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
-                const timeoutMessage = { type: 'text', text: '頒佈公告操作逾時，自動取消。'}; 
-                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e)); 
+                enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
             });
 
-            // 回傳預填好的內容供老師確認
+            // 回傳帶有操作按鈕的 Flex Message
+            return {
+                type: 'flex',
+                altText: '確認公告內容',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '📢 建立新課程公告', weight: 'bold', color: '#FFFFFF' }],
+                        backgroundColor: '#52B69A'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: '系統已為您產生以下公告範本：', size: 'sm', wrap: true },
+                            { type: 'separator' },
+                            { type: 'text', text: prefilledContent, wrap: true }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                color: '#28a745',
+                                action: {
+                                    type: 'postback',
+                                    label: '✅ 直接發布',
+                                    data: 'action=publish_prefilled_announcement'
+                                }
+                            },
+                            {
+                                type: 'button',
+                                style: 'secondary',
+                                action: {
+                                    type: 'postback',
+                                    label: '✏️ 我要修改',
+                                    data: 'action=edit_prefilled_announcement'
+                                }
+                            }
+                        ]
+                    }
+                }
+            };
+        }
+
+        // [V37.1 新增] 處理 "直接發布" 的動作
+        case 'publish_prefilled_announcement': {
+            const state = pendingAnnouncementCreation[userId];
+            if (!state || !state.content) return '操作已逾時或無效，請重新操作。';
+            
+            const contentToPublish = state.content;
+            delete pendingAnnouncementCreation[userId];
+
+            await executeDbQuery(client => 
+                client.query( "INSERT INTO announcements (content, creator_id, creator_name) VALUES ($1, $2, $3)", [contentToPublish, userId, user.name])
+            );
+            return '✅ 公告已成功頒佈！學員可在「最新公告」中查看。';
+        }
+
+        // [V37.1 新增] 處理 "我要修改" 的動作
+        case 'edit_prefilled_announcement': {
+            const state = pendingAnnouncementCreation[userId];
+            if (!state) return '操作已逾時或無效，請重新操作。';
+            
+            state.step = 'await_content'; // 將狀態推進到等待輸入
+            
             return { 
                 type: 'text', 
-                text: `系統已為您產生以下公告範本，您可以直接傳送以發布，或修改後再傳送：\n\n${pendingAnnouncementCreation[userId].prefilledContent}`,
+                text: '請輸入您修改後的完整公告內容：',
                 quickReply: { items: getCancelMenu() } 
             };
         }
+
+// ...
+
         case 'cancel_course_group_confirm': {
             const prefix = data.get('prefix');
             const courseTitle = await executeDbQuery(client => client.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`])).then(res => res.rows[0]?.title);
