@@ -1886,28 +1886,49 @@ async function showFailedTasks(page) {
 }
 
 /**
- * [V39.0 新增] 取得所有全局通知設定
+ * [V39.0 修改] 取得所有全局通知設定
  * @returns {Promise<object>} 一個包含所有通知設定狀態的物件
  */
 async function getGlobalNotificationSettings() {
+    // 預設所有通知都是開啟的，確保在資料庫沒有設定時系統仍能正常運作
     const settings = {
-        developer: true,      // 開發者/老師通知
-        class_reminder: true, // 學員課程提醒
-        announcement: true    // 學員公告提醒
+        // 課程通知
+        student_class_reminder_1hr: true,
+        teacher_class_reminder_24hr: true,
+        // 訂單通知
+        student_order_result: true,
+        teacher_new_order: true,
+        // 互動通知
+        student_message_reply: true,
+        teacher_new_message: true,
+        // 系統通知
+        student_welcome_message: true,
+        student_new_announcement: true
     };
+    const allSettingKeys = [
+        'student_class_reminder_1hr_enabled', 'teacher_class_reminder_24hr_enabled',
+        'student_order_result_enabled', 'teacher_new_order_enabled',
+        'student_message_reply_enabled', 'teacher_new_message_enabled',
+        'student_welcome_message_enabled', 'student_new_announcement_enabled'
+    ];
+
     await executeDbQuery(async (db) => {
-        const res = await db.query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'student_%_enabled' OR setting_key = 'notifications_enabled'");
-        res.rows.forEach(row => {
-            const value = row.setting_value === 'true';
-            if (row.setting_key === 'notifications_enabled') {
-                settings.developer = value;
-            } else if (row.setting_key === 'student_class_reminders_enabled') {
-                settings.class_reminder = value;
-            } else if (row.setting_key === 'student_announcement_reminders_enabled') {
-                settings.announcement = value;
-            }
-        });
+        const res = await db.query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key = ANY($1::text[])", [allSettingKeys]);
+        
+        // 建立一個 map 以方便查找資料庫中的值
+        const dbSettings = new Map(res.rows.map(row => [row.setting_key, row.setting_value === 'true']));
+
+        // 用資料庫的值更新預設設定
+        settings.student_class_reminder_1hr = dbSettings.get('student_class_reminder_1hr_enabled') ?? true;
+        settings.teacher_class_reminder_24hr = dbSettings.get('teacher_class_reminder_24hr_enabled') ?? true;
+        settings.student_order_result = dbSettings.get('student_order_result_enabled') ?? true;
+        settings.teacher_new_order = dbSettings.get('teacher_new_order_enabled') ?? true;
+        settings.student_message_reply = dbSettings.get('student_message_reply_enabled') ?? true;
+        settings.teacher_new_message = dbSettings.get('teacher_new_message_enabled') ?? true;
+        settings.student_welcome_message = dbSettings.get('student_welcome_message_enabled') ?? true;
+        settings.student_new_announcement = dbSettings.get('student_new_announcement_enabled') ?? true;
     });
+
     return settings;
 }
 
