@@ -5358,6 +5358,26 @@ async function handlePostback(event, user) {
     const page = parseInt(data.get('page') || '1', 10);
     switch (action) {
 
+        // [V39.0 新增] 處理全局通知設定的切換
+        case 'toggle_global_setting': {
+            const key = data.get('key');
+            const currentValue = data.get('value') === 'true';
+            const newValue = !currentValue;
+
+            await executeDbQuery(async (db) => {
+                await db.query(
+                    `INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ($1, $2, NOW())
+                     ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2, updated_at = NOW()`,
+                    [key, newValue.toString()]
+                );
+            });
+            
+            // 清除快取，讓設定立即生效
+            simpleCache.clear(key);
+            
+            // 重新顯示面板以展示最新狀態
+            return buildAdminPanelFlex();
+        }
 
         // ==================================
         // 頁面檢視 (Pagination & Views)
