@@ -3044,8 +3044,8 @@ event.message.text.trim().normalize() : '';
         return showMyCourses(userId, 1);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.LATEST_ANNOUNCEMENT) {
         return executeDbQuery(async (client) => {
-            // [V38.0 修改] 抓取最近 5 筆公告，而非 1 筆
-            const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 5');
+            // [V38.0 修改] 抓取最近 8 筆公告，而非 1 筆
+            const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 8');
             
             if (res.rows.length === 0) { 
                 return '目前沒有任何公告。'; 
@@ -3096,7 +3096,6 @@ event.message.text.trim().normalize() : '';
                 }
             };
         });
-// ...
 
     } else if (text === CONSTANTS.COMMANDS.STUDENT.ADD_NEW_MESSAGE) {
         pendingFeedback[userId] = { step: 'await_message' };
