@@ -1,4 +1,4 @@
-// index.js - V36.0 (報表優化)
+// index.js - V36.1 (報表優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -5245,7 +5245,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V37.0 (報表圖像化)`);
+    console.log(`Bot 版本 V36.1 (報表優化)`);
 
 
     setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
