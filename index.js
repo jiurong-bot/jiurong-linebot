@@ -6070,6 +6070,38 @@ async function handlePostback(event, user) {
             state.step = 'await_time';
             return { type: 'text', text: `好的，課程固定在每${state.weekday_label}。\n\n請問上課時間是幾點？（請輸入四位數時間，例如：19:30）`, quickReply: { items: getCancelMenu() } };
         }
+        // [V37.0 新增] 處理一鍵建立課程公告的動作
+        case 'create_announcement_for_course': {
+            const prefix = data.get('prefix');
+            if (!prefix) return '操作無效，缺少課程系列資訊。';
+
+            // 從資料庫撈取課程主標題，確保資訊正確
+            const course = await executeDbQuery(client => 
+                client.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`])
+            ).then(res => res.rows[0]);
+
+            if (!course) return '找不到對應的課程系列來建立公告。';
+            
+            const mainTitle = getCourseMainTitle(course.title);
+            
+            // 設定好公告內容，並進入待確認狀態
+            pendingAnnouncementCreation[userId] = {
+                step: 'await_content', // 直接跳到輸入內容的步驟，並預填
+                prefilledContent: `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`
+            };
+            
+            setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                const timeoutMessage = { type: 'text', text: '頒佈公告操作逾時，自動取消。'}; 
+                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e)); 
+            });
+
+            // 回傳預填好的內容供老師確認
+            return { 
+                type: 'text', 
+                text: `系統已為您產生以下公告範本，您可以直接傳送以發布，或修改後再傳送：\n\n${pendingAnnouncementCreation[userId].prefilledContent}`,
+                quickReply: { items: getCancelMenu() } 
+            };
+        }
         case 'cancel_course_group_confirm': {
             const prefix = data.get('prefix');
             const courseTitle = await executeDbQuery(client => client.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`])).then(res => res.rows[0]?.title);
