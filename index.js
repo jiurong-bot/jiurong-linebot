@@ -4115,12 +4115,15 @@ async function showPendingOrders(page) {
         noDataMessage: '目前沒有待您確認的點數訂單。'
     });
 }
-// ############
- /**
- * [V36.6 偵錯] 暫時移除照片元件以測試訊息結構
+/**
+ * [V36.7 最終版] 顯示可預約課程，使用 hero 區塊穩定顯示照片
+ * @param {string} userId - 使用者 ID
+ * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
+ * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
  */
 async function showAvailableCourses(userId, postbackData = new URLSearchParams()) {
     return executeDbQuery(async (client) => {
+        // ... (資料查詢與分組的邏輯不變)
         const coursesRes = await client.query(
             `SELECT
                 c.*,
@@ -4158,6 +4161,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         const showMorePrefix = postbackData.get('show_more');
         const seriesPage = parseInt(postbackData.get('series_page') || '1', 10);
         
+        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
         const allSeries = Object.values(courseSeries);
         const seriesBubbles = allSeries.map(series => {
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
@@ -4191,18 +4195,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 };
             });
 
-            // const imageComponent = {
-            //     type: 'image',
-            //     url: series.teacherImageUrl || 'https://i.imgur.com/s43t5tQ.jpeg',
-            //     size: 'full',
-            //     aspectRatio: '1:1',
-            //     aspectMode: 'cover',
-            //     cornerRadius: 'md',
-            //     margin: 'md'
-            // };
-
             const bodyContents = [
-                // imageComponent, // 暫時移除照片
                 { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true, margin: 'md' },
                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
                 ...(series.teacherBio ? [{ type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' }] : []),
@@ -4233,6 +4226,14 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
             return {
                 type: 'bubble',
                 size: 'giga',
+                // [API 修正] 將照片加回最穩定的 hero 區塊
+                hero: {
+                    type: 'image',
+                    url: series.teacherImageUrl || placeholder_avatar,
+                    size: 'full',
+                    aspectRatio: '1:1',
+                    aspectMode: 'cover'
+                },
                 body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md', contents: bodyContents },
                 ...(footerContents.length > 0 && { footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'md', contents: footerContents } })
             };
@@ -4248,7 +4249,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
     });
 }
 
-// #############     
+           
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
