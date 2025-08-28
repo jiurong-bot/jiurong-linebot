@@ -556,20 +556,43 @@ async function getPendingNotificationsForUser(user) {
     try {
         await executeDbQuery(async (client) => {
             if (user.role === 'teacher') {
-                const [newMessages, pendingPointOrders, pendingShopOrders] = await Promise.all([
+                const [newMessages, pendingPointOrders, pendingShopOrders, upcomingCoursesRes] = await Promise.all([
                     client.query("SELECT COUNT(*) FROM feedback_messages WHERE status = 'new'"),
                     client.query("SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'"),
-                    client.query("SELECT COUNT(*) FROM product_orders WHERE status = 'pending'")
+                    client.query("SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')"),
+                    client.query(`
+                        SELECT title, time 
+                        FROM courses 
+                        WHERE time BETWEEN NOW() AND NOW() + interval '24 hours' 
+                        ORDER BY time ASC
+                    `)
                 ]);
                 notifications.newMessages = parseInt(newMessages.rows[0].count, 10);
                 notifications.pendingPointOrders = parseInt(pendingPointOrders.rows[0].count, 10);
                 notifications.pendingShopOrders = parseInt(pendingShopOrders.rows[0].count, 10);
+                
+                // 處理即將到來的課程
+                notifications.upcomingCourses = upcomingCoursesRes.rows;
+
             } else if (user.role === 'admin') {
                 const failedTasks = await client.query("SELECT COUNT(*) FROM failed_tasks");
                 notifications.failedTasks = parseInt(failedTasks.rows[0].count, 10);
+
             } else if (user.role === 'student') {
-                const unreadReplies = await client.query("SELECT COUNT(*) FROM feedback_messages WHERE user_id = $1 AND status = 'replied' AND is_student_read = false", [user.id]);
+                const [unreadReplies, newAnnouncements, upcomingCoursesRes] = await Promise.all([
+                    client.query("SELECT COUNT(*) FROM feedback_messages WHERE user_id = $1 AND status = 'replied' AND is_student_read = false", [user.id]),
+                    client.query("SELECT COUNT(*) FROM announcements WHERE id > $1", [user.last_seen_announcement_id || 0]),
+                    client.query(`
+                        SELECT title, time 
+                        FROM courses 
+                        WHERE students @> ARRAY[$1]::text[] 
+                        AND time BETWEEN NOW() AND NOW() + interval '24 hours' 
+                        ORDER BY time ASC
+                    `, [user.id])
+                ]);
                 notifications.unreadReplies = parseInt(unreadReplies.rows[0].count, 10);
+                notifications.newAnnouncements = parseInt(newAnnouncements.rows[0].count, 10);
+                notifications.upcomingCourses = upcomingCoursesRes.rows;
             }
         });
     } catch (error) {
@@ -578,10 +601,7 @@ async function getPendingNotificationsForUser(user) {
     return notifications;
 }
 
-
 // --- 資料庫輔助函式 (Database Helper Functions) ---
-
-
 /**
  * [V33.0 新增] 執行一個資料庫查詢，並自動管理連線。
  * 此函式支援傳入一個已存在的 client (用於交易)，或自動建立新連線。
