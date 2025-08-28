@@ -1,4 +1,4 @@
-// index.js - V38.0 (管理者控制面板)
+// index.js - V38.1 (管理者控制面板)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
