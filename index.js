@@ -3044,11 +3044,60 @@ event.message.text.trim().normalize() : '';
         return showMyCourses(userId, 1);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.LATEST_ANNOUNCEMENT) {
         return executeDbQuery(async (client) => {
-            const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 1');
-            if (res.rows.length === 0) { return '目前沒有任何公告。'; }
-            const announcement = res.rows[0];
-            return { type: 'flex', altText: '最新公告', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', backgroundColor: '#de5246', contents: [ { type: 'text', text: '‼️ 最新公告', color: '#ffffff', weight: 'bold', size: 'lg' } ]}, body: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: announcement.content, wrap: true } ]}, footer: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: `由 ${announcement.creator_name} 於 ${formatDateTime(announcement.created_at)} 發佈`, size: 'xs', color: '#aaaaaa', align: 'center' } ]} } };
+            // [V38.0 修改] 抓取最近 5 筆公告，而非 1 筆
+            const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 5');
+            
+            if (res.rows.length === 0) { 
+                return '目前沒有任何公告。'; 
+            }
+            
+            // [V38.0 修改] 將單一 bubble 改為 carousel
+            const announcementBubbles = res.rows.map(announcement => ({
+                type: 'bubble',
+                size: 'giga', // 讓卡片大一點，方便閱讀
+                header: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    backgroundColor: '#de5246', 
+                    contents: [ 
+                        { type: 'text', text: '📢 近期公告', color: '#ffffff', weight: 'bold', size: 'lg' } 
+                    ]
+                }, 
+                body: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    paddingAll: 'lg', // 增加邊距
+                    spacing: 'md',   // 增加間距
+                    contents: [ 
+                        { type: 'text', text: announcement.content, wrap: true } 
+                    ]
+                }, 
+                footer: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    contents: [ 
+                        { 
+                            type: 'text', 
+                            text: `由 ${announcement.creator_name} 於 ${formatDateTime(announcement.created_at)} 發佈`, 
+                            size: 'xs', 
+                            color: '#aaaaaa', 
+                            align: 'center' 
+                        } 
+                    ]
+                } 
+            }));
+
+            return {
+                type: 'flex',
+                altText: '近期公告列表',
+                contents: {
+                    type: 'carousel',
+                    contents: announcementBubbles
+                }
+            };
         });
+// ...
+
     } else if (text === CONSTANTS.COMMANDS.STUDENT.ADD_NEW_MESSAGE) {
         pendingFeedback[userId] = { step: 'await_message' };
         setupConversationTimeout(userId, pendingFeedback, 'pendingFeedback', (u) => {
