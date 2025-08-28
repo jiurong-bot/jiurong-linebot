@@ -6466,7 +6466,7 @@ async function handleEvent(event) {
             } catch (e) { console.error(`[Cache] 更新用戶 ${userId} 資料時出錯:`, e.message); }
         }
     }
-    
+    // ####################
     const now = Date.now();
     const lastInteraction = userLastInteraction[userId] || 0;
     const isNewSession = (now - lastInteraction) > CONSTANTS.INTERVALS.SESSION_TIMEOUT_MS;
