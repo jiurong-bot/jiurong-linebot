@@ -1933,32 +1933,44 @@ async function getGlobalNotificationSettings() {
 }
 
 /**
- * [V39.0 新增] 建立管理者控制面板的 Flex Message
+ * [V39.0 修改] 建立管理者控制面板的 Flex Message
  * @returns {Promise<object>} Flex Message 物件
  */
 async function buildAdminPanelFlex() {
     const settings = await getGlobalNotificationSettings();
 
+    // 輔助函式，建立一個開關元件
     const createSwitch = (label, settingKey, isEnabled) => ({
         type: 'box',
         layout: 'horizontal',
         alignItems: 'center',
         paddingAll: 'md',
         contents: [
-            { type: 'text', text: label, wrap: true, flex: 3 },
-            { type: 'text', text: isEnabled ? '【開啟】' : '【關閉】', color: isEnabled ? '#28a745' : '#dc3545', weight: 'bold', align: 'center', flex: 1 },
+            { type: 'text', text: label, wrap: true, flex: 4 }, // 增加文字顯示空間
             {
                 type: 'button',
                 action: {
                     type: 'postback',
-                    label: isEnabled ? '關閉' : '開啟',
+                    label: isEnabled ? '開啟' : '關閉',
+                    displayText: `正在切換「${label}」為「${isEnabled ? '關閉' : '開啟'}」`,
                     data: `action=toggle_global_setting&key=${settingKey}&value=${isEnabled}`
                 },
-                style: 'secondary',
+                style: isEnabled ? 'primary' : 'secondary',
+                color: isEnabled ? '#28a745' : '#dc3545',
                 height: 'sm',
                 flex: 1
             }
         ]
+    });
+    
+    // 輔助函式，建立一個分類標題
+    const createSectionHeader = (title) => ({
+        type: 'text',
+        text: title,
+        weight: 'bold',
+        size: 'md',
+        margin: 'lg',
+        color: '#343A40'
     });
 
     const otherCommands = [
@@ -1986,12 +1998,28 @@ async function buildAdminPanelFlex() {
             body: {
                 type: 'box',
                 layout: 'vertical',
-                spacing: 'md',
+                spacing: 'sm', // 縮小間距讓版面更緊湊
                 contents: [
-                    { type: 'text', text: '全局通知開關', weight: 'bold', size: 'md', margin: 'md' },
-                    createSwitch('開發者/老師通知', 'notifications_enabled', settings.developer),
-                    createSwitch('學員課程提醒', 'student_class_reminders_enabled', settings.class_reminder),
-                    createSwitch('學員公告提醒', 'student_announcement_reminders_enabled', settings.announcement),
+                    // 課程通知
+                    createSectionHeader('課程通知 (Class Notifications)'),
+                    createSwitch('(學員) 上課前一小時提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr),
+                    createSwitch('(老師) 未來 24 小時課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr),
+                    
+                    // 訂單通知
+                    createSectionHeader('訂單通知 (Order Notifications)'),
+                    createSwitch('(學員) 訂單審核結果 (核准/退回)', 'student_order_result_enabled', settings.student_order_result),
+                    createSwitch('(老師) 收到新訂單或付款資訊', 'teacher_new_order_enabled', settings.teacher_new_order),
+
+                    // 互動通知
+                    createSectionHeader('互動通知 (Interaction Notifications)'),
+                    createSwitch('(學員) 收到老師的留言回覆', 'student_message_reply_enabled', settings.student_message_reply),
+                    createSwitch('(老師) 收到學員的新留言', 'teacher_new_message_enabled', settings.teacher_new_message),
+                    
+                    // 系統通知
+                    createSectionHeader('系統通知 (System Notifications)'),
+                    createSwitch('(學員) 新好友歡迎訊息', 'student_welcome_message_enabled', settings.student_welcome_message),
+                    createSwitch('(學員) 新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement),
+
                     { type: 'separator', margin: 'xl' },
                     { type: 'text', text: '常用管理功能', weight: 'bold', size: 'md', margin: 'md' },
                     ...otherCommands.map(cmd => ({
