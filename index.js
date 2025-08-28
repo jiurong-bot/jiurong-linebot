@@ -1706,6 +1706,138 @@ async function showTimePeriodMenuForReport(event, user) {
     };
 }
 
+// [新增] 產生營收趨s勢圖的函式
+const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+
+/**
+ * 產生指定時間範圍內的營收趨勢圖
+ * @param {string} startDateISO - ISO 格式的開始日期
+ * @param {string} endDateISO - ISO 格式的結束日期
+ * @param {string} periodText - 報表的週期文字 (例如: 本月)
+ * @returns {Promise<string|null>} - 成功時回傳圖片 URL，失敗時回傳 null
+ */
+async function generateRevenueChart(startDateISO, endDateISO, periodText) {
+  try {
+    const data = await executeDbQuery(async (client) => {
+      // 使用 UNION ALL 合併點數訂單和商品訂單的資料
+      const query = `
+        SELECT
+          date_trunc('day', timestamp AT TIME ZONE 'Asia/Taipei')::date AS day,
+          'points' as source,
+          SUM(amount) as daily_revenue
+        FROM orders
+        WHERE status = 'completed' AND amount > 0 AND timestamp BETWEEN $1 AND $2
+        GROUP BY day
+        UNION ALL
+        SELECT
+          date_trunc('day', created_at AT TIME ZONE 'Asia/Taipei')::date AS day,
+          'products' as source,
+          SUM(amount) as daily_revenue
+        FROM product_orders
+        WHERE status = 'completed' AND created_at BETWEEN $1 AND $2
+        GROUP BY day
+        ORDER BY day;
+      `;
+      const res = await client.query(query, [startDateISO, endDateISO]);
+      return res.rows;
+    });
+
+    if (data.length === 0) {
+      console.log('[Chart] 期間內無營收資料，不產生圖表。');
+      return null;
+    }
+
+    // 處理資料以符合圖表格式
+    const labels = [];
+    const pointsData = {};
+    const productsData = {};
+
+    data.forEach(row => {
+      const dateString = new Date(row.day).toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+      if (!labels.includes(dateString)) {
+        labels.push(dateString);
+      }
+      if (row.source === 'points') {
+        pointsData[dateString] = (pointsData[dateString] || 0) + parseInt(row.daily_revenue, 10);
+      } else {
+        productsData[dateString] = (productsData[dateString] || 0) + parseInt(row.daily_revenue, 10);
+      }
+    });
+
+    const finalPointsData = labels.map(label => pointsData[label] || 0);
+    const finalProductsData = labels.map(label => productsData[label] || 0);
+
+    // 設定圖表
+    const width = 800;
+    const height = 600;
+    const configuration = {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: '點數銷售',
+            data: finalPointsData,
+            borderColor: '#34A0A4',
+            backgroundColor: 'rgba(52, 160, 164, 0.5)',
+            fill: false,
+            tension: 0.1
+          },
+          {
+            label: '商品銷售',
+            data: finalProductsData,
+            borderColor: '#1A759F',
+            backgroundColor: 'rgba(26, 117, 159, 0.5)',
+            fill: false,
+            tension: 0.1
+          }
+        ]
+      },
+      options: {
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(value) {
+                return 'NT$ ' + value;
+              }
+            }
+          }
+        },
+        plugins: {
+          title: {
+            display: true,
+            text: ` ${periodText}營收趨勢圖`,
+            font: {
+              size: 20
+            }
+          },
+          legend: {
+            position: 'top',
+          }
+        }
+      }
+    };
+
+    // 產生圖片
+    const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height, backgroundColour: '#FFFFFF' });
+    const imageBuffer = await chartJSNodeCanvas.renderToBuffer(configuration);
+
+    // 上傳到 ImageKit
+    const uploadResponse = await imagekit.upload({
+      file: imageBuffer,
+      fileName: `revenue_chart_${Date.now()}.png`,
+      useUniqueFileName: true,
+      folder: "yoga_reports"
+    });
+
+    return uploadResponse.url;
+
+  } catch (err) {
+    console.error('❌ 產生營收圖表時發生錯誤:', err);
+    return null;
+  }
+}
 
 async function generatePointReport(event, user) {
     const userId = user.id;
