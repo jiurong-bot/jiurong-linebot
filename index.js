@@ -5548,52 +5548,68 @@ async function handlePostback(event, user) {
             const period = data.get('period');
             const periodMap = { week: '本週', month: '本月', quarter: '本季', year: '今年' };
             const periodText = periodMap[period] || period;
-            const generateReportTask = async () => {
-                const { start, end } = getDateRange(period);
-                return executeDbQuery(async (client) => {
+            
+            // 使用非同步 IIFE (立即調用函式表達式) 來處理背景任務
+            (async () => {
+                try {
+                    const { start, end } = getDateRange(period);
+                    let reportText;
+                    let chartImageUrl = null;
+
+                    // 1. 產生文字報告
                     if (reportType === 'course') {
-                        const res = await client.query("SELECT capacity, students FROM courses WHERE time BETWEEN $1 AND $2", [start, end]);
-                        if (res.rows.length === 0) return `📊 ${periodText}課程報表 📊\n\n此期間內沒有任何課程。`;
-                        let totalStudents = 0, totalCapacity = 0;
-                        res.rows.forEach(c => { totalCapacity += c.capacity; totalStudents += (c.students || []).length; });
-                        const attendanceRate = totalCapacity > 0 ? (totalStudents / totalCapacity * 100).toFixed(1) : 0;
-                        return `📊 ${periodText} 課程報表 📊\n\n- 課程總數：${res.rows.length} 堂\n- 總計名額：${totalCapacity} 人\n- 預約人次：${totalStudents} 人\n- **整體出席率：${attendanceRate}%**`.trim();
-                    } else if (reportType === 'order') {
-                        // [V35.6 修正] 分別查詢點數訂單和商品訂單的收入
-                        const pointsOrderRes = await client.query("SELECT COUNT(*), SUM(amount) FROM orders WHERE status = 'completed' AND amount > 0 AND timestamp BETWEEN $1 AND $2", [start, end]);
-                        const productOrderRes = await client.query("SELECT COUNT(*), SUM(amount) FROM product_orders WHERE status = 'completed' AND created_at BETWEEN $1 AND $2", [start, end]);
-
-                        const pointsOrderCount = parseInt(pointsOrderRes.rows[0].count, 10) || 0;
-                        const pointsOrderSum = parseInt(pointsOrderRes.rows[0].sum, 10) || 0;
-                        const productOrderCount = parseInt(productOrderRes.rows[0].count, 10) || 0;
-                        const productOrderSum = parseInt(productOrderRes.rows[0].sum, 10) || 0;
-
-                        const totalCount = pointsOrderCount + productOrderCount;
-                        const totalSum = pointsOrderSum + productOrderSum;
-
-                        // [V35.6 優化] 產生合併後的報表文字
-                        return `💰 ${periodText} 營收總報表 💰\n\n- 點數銷售：${pointsOrderSum} 元 (${pointsOrderCount} 筆)\n- 商品銷售：${productOrderSum} 元 (${productOrderCount} 筆)\n--------------------\n- **總計收入：${totalSum} 元**\n- **總計訂單：${totalCount} 筆**`.trim();
-                    }
-                });
-            };
-            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 8000));
-            try {
-                const result = await Promise.race([generateReportTask(), timeoutPromise]);
-                if (result === 'timeout') {
-                    (async () => {
-                        try {
-                            const reportText = await generateReportTask();
-                            await enqueuePushTask(userId, { type: 'text', text: reportText });
-                        } catch (bgErr) {
-                            console.error('❌ 背景生成報表失敗:', bgErr);
-                            await enqueuePushTask(userId, { type: 'text', text: `抱歉，產生 ${periodText} 報表時發生錯誤。` });
+                        // ... 課程報表的邏輯維持不變 ...
+                        const res = await executeDbQuery(client => client.query("SELECT capacity, students FROM courses WHERE time BETWEEN $1 AND $2", [start, end]));
+                        if (res.rows.length === 0) {
+                           reportText = `📊 ${periodText}課程報表 📊\n\n此期間內沒有任何課程。`;
+                        } else {
+                            let totalStudents = 0, totalCapacity = 0;
+                            res.rows.forEach(c => { totalCapacity += c.capacity; totalStudents += (c.students || []).length; });
+                            const attendanceRate = totalCapacity > 0 ? (totalStudents / totalCapacity * 100).toFixed(1) : 0;
+                            reportText = `📊 ${periodText} 課程報表 📊\n\n- 課程總數：${res.rows.length} 堂\n- 總計名額：${totalCapacity} 人\n- 預約人次：${totalStudents} 人\n- **整體出席率：${attendanceRate}%**`.trim();
                         }
-                    })();
-                    return '📊 報表生成中，資料量較大，請稍候... 完成後將會推播通知您。';
-                } else { return result; }
-            } catch (err) { console.error(`❌ 即時生成 ${reportType} 報表失敗:`, err);
-            return `❌ 產生 ${periodText} 報表時發生錯誤，請稍後再試。`; }
+                    } else if (reportType === 'order') {
+                        const pointsOrderRes = await executeDbQuery(client => client.query("SELECT COUNT(*), SUM(amount) FROM orders WHERE status = 'completed' AND amount > 0 AND timestamp BETWEEN $1 AND $2", [start, end]));
+                        const productOrderRes = await executeDbQuery(client => client.query("SELECT COUNT(*), SUM(amount) FROM product_orders WHERE status = 'completed' AND created_at BETWEEN $1 AND $2", [start, end]));
+                        
+                        const pointsOrderCount = parseInt(pointsOrderRes.rows[0].count, 10) || 0;
+                        const pointsOrderSum = parseInt(pointsOrderRes.rows[0].sum, 10) || 0;
+                        const productOrderCount = parseInt(productOrderRes.rows[0].count, 10) || 0;
+                        const productOrderSum = parseInt(productOrderRes.rows[0].sum, 10) || 0;
+                        const totalCount = pointsOrderCount + productOrderCount;
+                        const totalSum = pointsOrderSum + productOrderSum;
+
+                        reportText = `💰 ${periodText} 營收總報表 💰\n\n- 點數銷售：${pointsOrderSum} 元 (${pointsOrderCount} 筆)\n- 商品銷售：${productOrderSum} 元 (${productOrderCount} 筆)\n--------------------\n- **總計收入：${totalSum} 元**\n- **總計訂單：${totalCount} 筆**`.trim();
+
+                        // 2. [新] 產生營收圖表
+                        chartImageUrl = await generateRevenueChart(start, end, periodText);
+                    }
+
+                    // 3. 組合並發送最終訊息
+                    const finalMessages = [];
+                    finalMessages.push({ type: 'text', text: reportText });
+
+                    if (chartImageUrl) {
+                        finalMessages.push({
+                            type: 'image',
+                            originalContentUrl: chartImageUrl,
+                            previewImageUrl: chartImageUrl
+                        });
+                    }
+                    
+                    await enqueuePushTask(userId, finalMessages);
+
+                } catch (bgErr) {
+                    console.error('❌ 背景生成報表失敗:', bgErr);
+                    await enqueuePushTask(userId, { type: 'text', text: `抱歉，產生 ${periodText} 報表時發生錯誤。` });
+                }
+            })();
+
+            // 立即回覆使用者，告知系統正在處理
+            return '📊 報表生成中，請稍候... 完成後將會推播通知您。';
         }
+// ... 其他 case ...
+
         case 'select_adjust_history_view_type': {
             return {
                 type: 'text',
