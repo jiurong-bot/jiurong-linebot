@@ -4116,7 +4116,7 @@ async function showPendingOrders(page) {
     });
 }
 /**
- * [V36.2 重構] 顯示可預約課程，改為以「課程系列」為單位的總覽式卡片介面
+ * [V36.4 視覺優化] 顯示可預約課程，套用最終版卡片 UI 設計
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4180,20 +4180,19 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 const isFull = remainingSpots <= 0;
                 const waitingCount = (session.waiting || []).length;
 
-                let buttonLabel, buttonActionData, subText, subTextColor;
+                let buttonActionData, subText, subTextColor, buttonColor;
 
                 if (!isFull) {
-                    buttonLabel = formatDateTime(session.time);
-                    // [V36.3 修正] 將按鈕目的地改回選擇人數的流程
                     buttonActionData = `action=select_booking_spots&course_id=${session.id}`;
                     subText = `剩餘 ${remainingSpots} 位`;
                     subTextColor = '#666666';
+                    buttonColor = '#52B69A'; // [UI調整] 明亮的按鈕顏色
                 } else {
-                    buttonLabel = `${formatDateTime(session.time)} - 加入候補`;
                     buttonActionData = `action=confirm_join_waiting_list_start&course_id=${session.id}`;
                     const nextPosition = waitingCount + 1;
-                    subText = `候補第 ${nextPosition} 位 (候補成功將扣點)`;
+                    subText = `候補第 ${nextPosition} 位`;
                     subTextColor = '#DE5246';
+                    buttonColor = '#AAAAAA'; // [UI調整] 額滿時按鈕為灰色
                 }
 
                 return {
@@ -4202,16 +4201,17 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     contents: [
                         {
                             type: 'button',
-                            action: { type: 'postback', label: buttonLabel, data: buttonActionData },
+                            action: { type: 'postback', label: formatDateTime(session.time), data: buttonActionData },
                             height: 'sm',
-                            style: 'secondary'
+                            style: 'primary',
+                            color: buttonColor
                         },
                         {
                             type: 'text',
                             text: subText,
                             size: 'xs',
                             color: subTextColor,
-                            align: 'center',
+                            align: 'end', // [UI調整] 文字靠右對齊
                             margin: 'xs'
                         }
                     ],
@@ -4219,10 +4219,22 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     margin: 'md'
                 };
             });
+
+            // [UI調整] 將照片移入 Body 中，實現內縮效果
+            const imageComponent = {
+                type: 'image',
+                url: series.teacherImageUrl || placeholder_avatar,
+                size: 'full',
+                aspectRatio: '1:1',
+                aspectMode: 'cover',
+                cornerRadius: 'md'
+            };
+
             // 建立卡片 Body
             const bodyContents = [
-                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true },
-                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm', margin: 'md' },
+                { type: 'box', layout: 'vertical', contents: [imageComponent], paddingAll: 'md', cornerRadius: 'md' },
+                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true, margin: 'md' },
+                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
                 ...(series.teacherBio ? [{ type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' }] : []),
                 {
                     type: 'box',
@@ -4240,48 +4252,31 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
             // 建立卡片 Footer (處理系列內部分頁)
             let footerContents = [];
             const hasPreviousSessions = currentPage > 1;
-
             const pageButtons = [];
+
             if (hasPreviousSessions) {
                 const prevSeriesPage = currentPage - 1;
                 pageButtons.push({
-                    type: 'button',
-                    style: 'link',
-                    height: 'sm',
-                    action: {
-                        type: 'postback',
-                        label: '⬅️ 上一頁日期',
-                        data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}`
-                    }
+                    type: 'button', style: 'link', height: 'sm',
+                    action: { type: 'postback', label: '⬅️ 上一頁', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}` }
                 });
             }
             if (hasMoreSessions) {
                 const nextSeriesPage = currentPage + 1;
                 pageButtons.push({
-                    type: 'button',
-                    style: 'link',
-                    height: 'sm',
-                    action: {
-                        type: 'postback',
-                        label: '顯示更多日期 ➡️',
-                        data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}`
-                    }
+                    type: 'button', style: 'link', height: 'sm',
+                    action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }
                 });
             }
             
             if (pageButtons.length > 0) {
-                footerContents.push({
-                    type: 'box',
-                    layout: 'horizontal',
-                    contents: pageButtons
-                });
+                footerContents.push({ type: 'box', layout: 'horizontal', contents: pageButtons });
             }
 
             return {
                 type: 'bubble',
                 size: 'giga',
-                hero: { type: 'image', url: series.teacherImageUrl || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
-                body: { type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md', contents: bodyContents },
+                body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md', contents: bodyContents },
                 ...(footerContents.length > 0 && { footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'md', contents: footerContents } })
             };
         });
@@ -4290,14 +4285,13 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         const headerText = '🗓️ 預約課程總覽';
         const flexMessage = { type: 'flex', altText: headerText, contents: { type: 'carousel', contents: seriesBubbles } };
         
-        // 只有在第一次進入時才顯示引導文字
         if (!postbackData.has('show_more')) {
             return [{ type: 'text', text: `你好！${headerText}如下，請左右滑動查看：` }, flexMessage];
         }
         return flexMessage;
     });
-}
-
+}                          
+           
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
