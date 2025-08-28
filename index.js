@@ -2522,30 +2522,85 @@ async function handleTeacherCommands(event, userId) {
             state.points_cost = points; 
             state.step = 'await_teacher';
             return buildTeacherSelectionCarousel();
-        case 'await_confirmation':
+         case 'await_confirmation':
             if (text === '✅ 確認新增') {
-                return executeDbQuery(async (client) => {
-                    await client.query('BEGIN');
+                // [V37.0 修改] 將新增課程後的結果改為非同步 IIFE 處理
+                // 以便在成功後可以回傳帶有快速回覆的 Flex Message
+                (async () => {
                     try {
-                        const prefix = await generateUniqueCoursePrefix(client); 
-                        let currentDate = new Date();
-                        for (let i = 0; i < state.sessions; i++) {
-                            const courseDate = getNextDate(state.weekday, state.time, currentDate);
-                            const course = { id: `${prefix}${String(i + 1).padStart(2, '0')}`, title: state.title, time: courseDate.toISOString(), capacity: state.capacity, points_cost: state.points_cost, students: [], waiting: [], teacher_id: state.teacher_id };
-                            await saveCourse(course, client); 
-                            currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
-                        }
-                        await client.query('COMMIT');
-                        delete pendingCourseCreation[userId];
-                        return `✅ 成功新增「${state.title}」系列共 ${state.sessions} 堂課！`;
-                    } catch (e) { 
-                        await client.query('ROLLBACK');
-                        console.error("新增課程系列失敗", e); 
-                        delete pendingCourseCreation[userId]; 
-                        return '新增課程時發生錯誤，請稍後再試。';
+                        const resultMessage = await executeDbQuery(async (client) => {
+                            await client.query('BEGIN');
+                            try {
+                                const prefix = await generateUniqueCoursePrefix(client);
+                                let currentDate = new Date();
+                                for (let i = 0; i < state.sessions; i++) {
+                                    const courseDate = getNextDate(state.weekday, state.time, currentDate);
+                                    const course = {
+                                        id: `${prefix}${String(i + 1).padStart(2, '0')}`,
+                                        title: state.title,
+                                        time: courseDate.toISOString(),
+                                        capacity: state.capacity,
+                                        points_cost: state.points_cost,
+                                        students: [],
+                                        waiting: [],
+                                        teacher_id: state.teacher_id
+                                    };
+                                    await saveCourse(course, client);
+                                    currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
+                                }
+                                await client.query('COMMIT');
+                                
+                                // 準備成功訊息與後續操作按鈕
+                                const successFlex = {
+                                    type: 'flex',
+                                    altText: '課程新增成功',
+                                    contents: {
+                                        type: 'bubble',
+                                        body: {
+                                            type: 'box',
+                                            layout: 'vertical',
+                                            spacing: 'md',
+                                            contents: [
+                                                { type: 'text', text: '✅ 新增成功', weight: 'bold', size: 'lg', align: 'center', color: '#28a745' },
+                                                { type: 'separator', margin: 'md' },
+                                                { type: 'text', text: `已成功新增「${state.title}」系列共 ${state.sessions} 堂課！`, wrap: true, margin: 'md' }
+                                            ]
+                                        }
+                                    },
+                                    quickReply: {
+                                        items: [{
+                                            type: 'action',
+                                            action: {
+                                                type: 'postback',
+                                                label: '📢 建立新課程公告',
+                                                data: `action=create_announcement_for_course&prefix=${prefix}`
+                                            }
+                                        }]
+                                    }
+                                };
+                                return successFlex;
+
+                            } catch (e) {
+                                await client.query('ROLLBACK');
+                                console.error("新增課程系列失敗", e);
+                                return '新增課程時發生錯誤，請稍後再試。';
+                            }
+                        });
+
+                        // 使用 enqueuePushTask 將最終結果推播給老師
+                        await enqueuePushTask(userId, resultMessage);
+
+                    } catch (err) {
+                        console.error('處理課程新增的背景任務失敗:', err);
+                        await enqueuePushTask(userId, '處理您的請求時發生預期外的錯誤。');
                     }
-                });
-            } else { 
+                })();
+                
+                // 立即回覆，避免 timeout
+                delete pendingCourseCreation[userId];
+                return '指令已收到，正在為您建立課程系列...';
+
+            } else {
                 return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
             }
     }
