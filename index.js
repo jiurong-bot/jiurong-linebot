@@ -1,4 +1,4 @@
-// index.js - V36.2 (公告功能優化)
+// index.js - V37.0 (智慧提醒)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
