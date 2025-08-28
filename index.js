@@ -5577,14 +5577,61 @@ async function handlePostback(event, user) {
                 quickReply: { items: getCancelMenu() }
             };
         }
-
-
-        case 'confirm_add_product': {
+                case 'confirm_add_product': {
             const state = pendingProductCreation[userId];
             if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
-            await executeDbQuery(client => client.query( `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) VALUES ($1, $2, $3, $4, $5, 'available', $6, $7)`, [state.name, state.description, state.price, state.inventory, state.image_url, userId, user.name] ) );
+            
+            // 執行資料庫操作並取得新商品的 ID
+            const newProduct = await executeDbQuery(client => 
+                client.query(
+                    `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) 
+                     VALUES ($1, $2, $3, $4, $5, 'available', $6, $7) RETURNING id, name`,
+                    [state.name, state.description, state.price, state.inventory, state.image_url, userId, user.name]
+                )
+            ).then(res => res.rows[0]);
+
             delete pendingProductCreation[userId];
-            return '✅ 商品已成功上架！';
+
+            if (!newProduct) {
+                return '❌ 商品上架失敗，請稍後再試。';
+            }
+
+            // 準備 "新品上架" 公告範本並暫存
+            const prefilledContent = `🛍️ 商城新品上架！\n\n「${newProduct.name}」現正熱賣中，快來逛逛吧！`;
+            pendingAnnouncementCreation[userId] = {
+                step: 'await_final_confirmation',
+                content: prefilledContent
+            };
+            setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+            });
+
+            // 回傳 "發佈公告的預覽畫面"
+            return {
+                type: 'flex',
+                altText: '發佈新品公告？',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '📢 發佈新品上架公告', weight: 'bold', color: '#FFFFFF' }],
+                        backgroundColor: '#52B69A',
+                        paddingAll: 'lg'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: prefilledContent, wrap: true }]
+                    }
+                },
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
+                        { type: 'action', action: { type: 'message', label: '❌ 暫不發佈', text: '好的，暫不發佈。' } }
+                    ]
+                }
+            };
         }
         case 'manage_product': {
             const productId = data.get('product_id');
