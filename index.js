@@ -1,4 +1,4 @@
-// index.js - V36.0 (介面優化)
+// index.js - V36.0 (報表圖形化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
