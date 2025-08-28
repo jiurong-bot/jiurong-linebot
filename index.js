@@ -6627,48 +6627,46 @@ async function handleEvent(event) {
     let notificationMessages = [];
     if (isNewSession) {
         const notifications = await getPendingNotificationsForUser(user);
-        const globalSettings = await getGlobalNotificationSettings();
+        const settings = await getGlobalNotificationSettings(); // 取得最新的八項設定
 
-        // 老師的提醒 (檢查開發者開關)
-        if (globalSettings.developer) {
-            if (notifications.newMessages > 0) notificationMessages.push({ type: 'text', text: `🔔 老師提醒：您有 ${notifications.newMessages} 則新留言待回覆喔！`});
-            if (notifications.pendingPointOrders > 0) notificationMessages.push({ type: 'text', text: `🔔 老師提醒：您有 ${notifications.pendingPointOrders} 筆點數訂單待審核。`});
-            if (notifications.pendingShopOrders > 0) notificationMessages.push({ type: 'text', text: `🔔 老師提醒：您有 ${notifications.pendingShopOrders} 筆商城訂單待處理。`});
+        // 老師的提醒
+        if (user.role === 'teacher' || user.role === 'admin') {
+            if (settings.teacher_new_message && notifications.newMessages > 0) {
+                notificationMessages.push({ type: 'text', text: `🔔 老師提醒：您有 ${notifications.newMessages} 則新留言待回覆喔！`});
+            }
+            if (settings.teacher_new_order && notifications.pendingPointOrders > 0) {
+                notificationMessages.push({ type: 'text', text: `🔔 老師提醒：您有 ${notifications.pendingPointOrders} 筆點數訂單待審核。`});
+            }
+            if (settings.teacher_new_order && notifications.pendingShopOrders > 0) {
+                notificationMessages.push({ type: 'text', text: `🔔 老師提醒：您有 ${notifications.pendingShopOrders} 筆商城訂單待處理。`});
+            }
+            if (settings.teacher_class_reminder_24hr && notifications.upcomingCourses && notifications.upcomingCourses.length > 0) {
+                const courseCount = notifications.upcomingCourses.length;
+                let reminderText = '🔔 課程提醒：\n未來 24 小時內有以下課程即將開始：\n';
+                const coursesToShow = notifications.upcomingCourses.slice(0, 3);
+                coursesToShow.forEach(course => {
+                    reminderText += `\n• ${getCourseMainTitle(course.title)} (${formatDateTime(course.time)})`;
+                });
+                if (courseCount > 3) {
+                    reminderText += `\n\n...還有 ${courseCount - 3} 堂課，請至「課程管理」查詢。`;
+                }
+                notificationMessages.push({ type: 'text', text: reminderText });
+            }
         }
         
-        // 老師課程提醒 (檢查課程提醒開關)
-        if (globalSettings.class_reminder && user.role === 'teacher' && notifications.upcomingCourses && notifications.upcomingCourses.length > 0) {
-            const courseCount = notifications.upcomingCourses.length;
-            let reminderText = '🔔 課程提醒：\n未來 24 小時內有以下課程即將開始：\n';
-            const coursesToShow = notifications.upcomingCourses.slice(0, 3);
-            coursesToShow.forEach(course => {
-                reminderText += `\n• ${getCourseMainTitle(course.title)} (${formatDateTime(course.time)})`;
-            });
-            if (courseCount > 3) {
-                reminderText += `\n\n...還有 ${courseCount - 3} 堂課，請至「課程管理」查詢。`;
-            }
-            notificationMessages.push({ type: 'text', text: reminderText });
+        // 管理員的提醒 (綁定在老師系統通知開關上)
+        if (user.role === 'admin' && settings.teacher_new_order && notifications.failedTasks > 0) {
+            notificationMessages.push({ type: 'text', text: `🚨 管理員注意：系統中有 ${notifications.failedTasks} 個失敗任務，請至管理模式查看。`});
         }
 
-        // 管理員的提醒 (檢查開發者開關)
-        if (globalSettings.developer && notifications.failedTasks > 0) notificationMessages.push({ type: 'text', text: `🚨 管理員注意：系統中有 ${notifications.failedTasks} 個失敗任務，請至管理模式查看。`});
-
         // 學員的提醒
-        if (notifications.unreadReplies > 0) notificationMessages.push({ type: 'text', text: `🔔 學員提醒：您有 ${notifications.unreadReplies} 則老師的新回覆，請至「聯絡我們」查看！`});
-        // 學員公告提醒 (檢查公告提醒開關)
-        if (globalSettings.announcement && notifications.newAnnouncements > 0) notificationMessages.push({ type: 'text', text: `✨ 您有 ${notifications.newAnnouncements} 則新公告，請至「最新公告」查看！`});
-        // 學員課程提醒 (檢查課程提醒開關)
-        if (globalSettings.class_reminder && user.role === 'student' && notifications.upcomingCourses && notifications.upcomingCourses.length > 0) {
-            const courseCount = notifications.upcomingCourses.length;
-            let reminderText = '🔔 課程提醒：\n未來 24 小時內您預約的課程即將開始：\n';
-            const coursesToShow = notifications.upcomingCourses.slice(0, 3);
-            coursesToShow.forEach(course => {
-                reminderText += `\n• ${getCourseMainTitle(course.title)} (${formatDateTime(course.time)})`;
-            });
-            if (courseCount > 3) {
-                reminderText += `\n\n...還有 ${courseCount - 3} 堂課，請至「我的課程」查詢。`;
+        if (user.role === 'student') {
+            if (settings.student_message_reply && notifications.unreadReplies > 0) {
+                notificationMessages.push({ type: 'text', text: `🔔 學員提醒：您有 ${notifications.unreadReplies} 則老師的新回覆，請至「聯絡我們」查看！`});
             }
-            notificationMessages.push({ type: 'text', text: reminderText });
+            if (settings.student_new_announcement && notifications.newAnnouncements > 0) {
+                notificationMessages.push({ type: 'text', text: `✨ 您有 ${notifications.newAnnouncements} 則新公告，請至「最新公告」查看！`});
+            }
         }
     }
 
