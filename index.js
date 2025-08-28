@@ -2389,8 +2389,10 @@ async function handleTeacherCommands(event, userId) {
             state.points_cost = points; 
             state.step = 'await_teacher';
             return buildTeacherSelectionCarousel();
-        case 'await_confirmation':
+         case 'await_confirmation':
             if (text === '✅ 確認新增') {
+                const teacherId = userId; // 在刪除 state 前先保存 userId
+                const courseState = { ...pendingCourseCreation[userId] }; // 複製一份 state 內容
                 delete pendingCourseCreation[userId]; // 先清除狀態
 
                 return executeDbQuery(async (client) => {
@@ -2398,27 +2400,38 @@ async function handleTeacherCommands(event, userId) {
                     try {
                         const prefix = await generateUniqueCoursePrefix(client);
                         let currentDate = new Date();
-                        for (let i = 0; i < state.sessions; i++) {
-                            const courseDate = getNextDate(state.weekday, state.time, currentDate);
+                        for (let i = 0; i < courseState.sessions; i++) {
+                            const courseDate = getNextDate(courseState.weekday, courseState.time, currentDate);
                             const course = {
                                 id: `${prefix}${String(i + 1).padStart(2, '0')}`,
-                                title: state.title,
+                                title: courseState.title,
                                 time: courseDate.toISOString(),
-                                capacity: state.capacity,
-                                points_cost: state.points_cost,
+                                capacity: courseState.capacity,
+                                points_cost: courseState.points_cost,
                                 students: [],
                                 waiting: [],
-                                teacher_id: state.teacher_id
+                                teacher_id: courseState.teacher_id
                             };
                             await saveCourse(course, client);
                             currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
                         }
                         await client.query('COMMIT');
                         
-                        // 直接回傳成功訊息與後續操作按鈕
+                        // 準備公告範本並暫存
+                        const mainTitle = getCourseMainTitle(courseState.title);
+                        const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
+                        pendingAnnouncementCreation[teacherId] = {
+                            step: 'await_final_confirmation',
+                            content: prefilledContent
+                        };
+                        setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                            enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+                        });
+
+                        // 直接回傳成功訊息與最終操作按鈕
                         const successFlex = {
                             type: 'flex',
-                            altText: '課程新增成功',
+                            altText: '課程新增成功！是否要發布公告？',
                             contents: {
                                 type: 'bubble',
                                 body: {
@@ -2428,19 +2441,29 @@ async function handleTeacherCommands(event, userId) {
                                     contents: [
                                         { type: 'text', text: '✅ 新增成功', weight: 'bold', size: 'lg', align: 'center', color: '#28a745' },
                                         { type: 'separator', margin: 'md' },
-                                        { type: 'text', text: `已成功新增「${state.title}」系列共 ${state.sessions} 堂課！`, wrap: true, margin: 'md' }
+                                        { type: 'text', text: `已成功新增「${mainTitle}」系列共 ${courseState.sessions} 堂課！`, wrap: true, margin: 'md' }
                                     ]
                                 }
                             },
                             quickReply: {
-                                items: [{
-                                    type: 'action',
-                                    action: {
-                                        type: 'postback',
-                                        label: '📢 建立新課程公告',
-                                        data: `action=create_announcement_for_course&prefix=${prefix}`
+                                items: [
+                                    {
+                                        type: 'action',
+                                        action: {
+                                            type: 'postback',
+                                            label: '✅ 直接發布公告',
+                                            data: 'action=publish_prefilled_announcement'
+                                        }
+                                    },
+                                    {
+                                        type: 'action',
+                                        action: {
+                                            type: 'message',
+                                            label: '❌ 暫不發布',
+                                            text: '好的，暫不發布。'
+                                        }
                                     }
-                                }]
+                                ]
                             }
                         };
                         return successFlex;
@@ -2455,7 +2478,6 @@ async function handleTeacherCommands(event, userId) {
             } else {
                 return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
             }
-        
     }
   } else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
