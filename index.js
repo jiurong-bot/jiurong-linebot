@@ -1,4 +1,4 @@
-// index.js - V38.2 (預約取消機制)
+// index.js - V38.2 (預約取消機制)(測試版)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
