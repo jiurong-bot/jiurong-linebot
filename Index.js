@@ -1,4 +1,4 @@
-// index.js - V38.1 (管理者控制面板)
+// index.js - V38.2 (預約取消機制)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -5415,7 +5415,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V38.1 (管理者控制面板)`);
+    console.log(`Bot 版本 V38.2 (預約取消機制)`);
 
 
     setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
