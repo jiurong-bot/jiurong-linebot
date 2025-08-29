@@ -2633,14 +2633,7 @@ async function handleTeacherCommands(event, userId) {
                                             data: 'action=publish_prefilled_announcement'
                                         }
                                     },
-                                    {
-                                        type: 'action',
-                                        action: {
-                                            type: 'message',
-                                            label: '❌ 暫不發佈',
-                                            text: '好的，暫不發佈。'
-                                        }
-                                    }
+                                   { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
                                 ]
                             }
                         };
@@ -6061,7 +6054,7 @@ async function handlePostback(event, user) {
                 quickReply: {
                     items: [
                         { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
-                        { type: 'action', action: { type: 'message', label: '❌ 暫不發佈', text: '好的，暫不發佈。' } }
+                        { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
                     ]
                 }
             };
@@ -6154,7 +6147,7 @@ async function handlePostback(event, user) {
                     quickReply: {
                         items: [
                             { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
-                            { type: 'action', action: { type: 'message', label: '❌ 暫不發佈', text: '好的，暫不發佈。' } }
+                            { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
                         ]
                     }
                 };
