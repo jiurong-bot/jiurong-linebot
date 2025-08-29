@@ -4529,7 +4529,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 
                 return {
                     type: 'box', layout: 'vertical', contents: [
-                        { type: 'button', action: { type: 'postback', label: formatDateTime(session.time), data: buttonActionData }, height: 'sm', style: buttonStyle, color: buttonColor },
+                        { type: 'button', action: { type: 'postback', label: formatDateOnly(session.time), data: buttonActionData }, height: 'sm', style: buttonStyle, color: buttonColor },
                         { type: 'text', text: subText, size: 'xs', color: subTextColor, align: 'end', margin: 'xs' }
                     ], spacing: 'xs'
                 };
