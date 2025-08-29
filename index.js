@@ -6457,14 +6457,20 @@ async function handlePostback(event, user) {
                 return '取消訂單時發生錯誤，操作已復原。'; }
             });
         }
+        // [修改] 將下一步改為 await_start_time，並更新提示文字
         case 'set_course_weekday': {
-            const state = pendingCourseCreation[userId];
-            if (!state || state.step !== 'await_weekday') return '新增課程流程已逾時或中斷。';
-            state.weekday = parseInt(data.get('day'), 10);
-            state.weekday_label = WEEKDAYS.find(d => d.value === state.weekday).label;
-            state.step = 'await_time';
-            return { type: 'text', text: `好的，課程固定在每${state.weekday_label}。\n\n請問上課時間是幾點？（請輸入四位數時間，例如：19:30）`, quickReply: { items: getCancelMenu() } };
-        }
+    const state = pendingCourseCreation[userId];
+    if (!state || state.step !== 'await_weekday') return '新增課程流程已逾時或中斷。';
+    state.weekday = parseInt(data.get('day'), 10);
+    state.weekday_label = WEEKDAYS.find(d => d.value === state.weekday).label;
+    state.step = 'await_start_time'; // <--- 修改點
+    return { 
+        type: 'text', 
+        text: `好的，課程固定在每${state.weekday_label}。\n\n請問『開始』時間是幾點？（請輸入四位數時間，例如：19:30）`, // <--- 修改點
+        quickReply: { items: getCancelMenu() } 
+    };
+}
+
         // [V37.0 新增] 處理一鍵建立課程公告的動作
         case 'create_announcement_for_course': {
             const prefix = data.get('prefix');
