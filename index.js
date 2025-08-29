@@ -4374,46 +4374,55 @@ async function showCourseSeries(page) {
         };
     });
 }
-
-
 async function showPendingOrders(page) {
-    const mapOrderToBubble = (order) => ({
-        type: 'bubble',
-        body: {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'md',
-            contents: [
-                { type: 'text', text: order.user_name, weight: 'bold', size: 'xl' },
-                { type: 'text', text: `${order.points} 點 / ${order.amount} 元`, size: 'md' },
-                { type: 'separator', margin: 'lg' },
-                {
-                    type: 'box',
-                    layout: 'vertical',
-                    margin: 'lg',
-                    spacing: 'sm',
-                    contents: [
-                        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '後五碼', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: order.last_5_digits, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
-                        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(order.timestamp), color: '#666666', size: 'sm', flex: 5, wrap: true } ] }
-                    ]
-                }
-            ]
-        },
-        footer: {
-            type: 'box',
-            layout: 'horizontal',
-            spacing: 'sm',
-            contents: [
+    const mapOrderToBubble = (order) => {
+        const bodyContents = [
+            { type: 'text', text: order.user_name, weight: 'bold', size: 'xl' },
+            { type: 'text', text: `${order.points} 點 / ${order.amount} 元`, size: 'md' },
+            { type: 'separator', margin: 'lg' }
+        ];
+        const footerContents = [];
+
+        // 根據付款方式決定顯示內容
+        if (order.payment_method === 'cash') {
+            bodyContents.push({
+                type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                contents: [
+                    { type: 'text', text: '付款方式：🤝 現金面交', weight: 'bold', color: '#1A759F'},
+                    { type: 'text', text: `建立時間: ${formatDateTime(order.timestamp)}`, size: 'sm', color: '#666666'}
+                ]
+            });
+            footerContents.push({
+                type: 'button', style: 'primary', color: '#28a745',
+                action: { type: 'postback', label: '✅ 確認收款並加點', data: `action=confirm_order&order_id=${order.order_id}` }
+            });
+        } else { // 預設為 transfer (轉帳)
+            bodyContents.push({
+                type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                contents: [
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '後五碼', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: order.last_5_digits, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '回報時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(order.timestamp), color: '#666666', size: 'sm', flex: 5, wrap: true } ] }
+                ]
+            });
+            footerContents.push(
                 { type: 'button', style: 'primary', color: '#dc3545', flex: 1, action: { type: 'postback', label: '退回', data: `action=reject_order&order_id=${order.order_id}` } },
                 { type: 'button', style: 'primary', color: '#28a745', flex: 1, action: { type: 'postback', label: '核准', data: `action=confirm_order&order_id=${order.order_id}` } }
-            ]
+            );
         }
-    });
+
+        return {
+            type: 'bubble',
+            body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents },
+            footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: footerContents }
+        };
+    };
+
     return createPaginatedCarousel({
         altText: '待確認點數訂單',
         baseAction: 'action=view_pending_orders',
         page: page,
-        dataQuery: "SELECT * FROM orders WHERE status = 'pending_confirmation' ORDER BY timestamp ASC LIMIT $1 OFFSET $2",
+        // 查詢條件要包含所有待處理的訂單
+        dataQuery: "SELECT * FROM orders WHERE status IN ('pending_confirmation', 'pending_payment') ORDER BY timestamp ASC LIMIT $1 OFFSET $2",
         queryParams: [],
         mapRowToBubble: mapOrderToBubble,
         noDataMessage: '目前沒有待您確認的點數訂單。'
