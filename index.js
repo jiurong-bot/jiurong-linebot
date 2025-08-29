@@ -5682,22 +5682,41 @@ async function handlePostback(event, user) {
             const successMessage = isCreating ? '✅ 恭喜！您的師資檔案已成功建立！' : '✅ 您的個人檔案已成功更新！';
             return successMessage;
         }
-
-
         case 'select_teacher_for_course': {
-            const state = pendingCourseCreation[userId];
-            const teacher_id = parseInt(data.get('teacher_id'), 10);
-            if (!state || state.step !== 'await_teacher' || !teacher_id) { return '操作已逾時或無效，請重新新增課程。'; }
-            state.teacher_id = teacher_id;
-            state.step = 'await_confirmation';
-            const teacher = await executeDbQuery(client => client.query('SELECT name FROM teachers WHERE id = $1', [teacher_id])).then(res => res.rows[0]);
-            state.teacher_name = teacher?.name || '未知老師';
+    const state = pendingCourseCreation[userId];
+    const teacher_id = parseInt(data.get('teacher_id'), 10);
+    if (!state || state.step !== 'await_teacher' || !teacher_id) { 
+        return '操作已逾時或無效，請重新新增課程。';
+    }
+    state.teacher_id = teacher_id;
+    state.step = 'await_confirmation';
+    const teacher = await executeDbQuery(client => 
+        client.query('SELECT name FROM teachers WHERE id = $1', [teacher_id])
+    ).then(res => res.rows[0]);
+    state.teacher_name = teacher?.name || '未知老師';
 
-
-            const firstDate = getNextDate(state.weekday, state.time);
-            const summary = `請確認課程資訊：\n\n` + `標題：${state.title}\n` + `老師：${state.teacher_name}\n` + `時間：每${state.weekday_label} ${state.time}\n` + `堂數：${state.sessions} 堂\n` + `名額：${state.capacity} 位\n` + `費用：${state.points_cost} 點/堂\n\n` + `首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
-            return { type: 'text', text: summary, quickReply: { items: [ { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
-        }   
+    const firstDate = getNextDate(state.weekday, state.start_time); // <-- 使用 start_time
+    const summary = `請確認課程資訊：\n\n` +
+                  `標題：${state.title}\n` +
+                  `老師：${state.teacher_name}\n` +
+                  `時間：每${state.weekday_label} ${state.start_time} - ${state.end_time}\n` + // <-- 修改點
+                  `堂數：${state.sessions} 堂\n` +
+                  `名額：${state.capacity} 位\n` +
+                  `費用：${state.points_cost} 點/堂\n\n` +
+                  `首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
+                  
+    return { 
+        type: 'text', 
+        text: summary, 
+        quickReply: { 
+            items: [ 
+                { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } }, 
+                { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } 
+            ]
+        }
+    };
+}
+  
             case 'confirm_join_waiting_list_start': {
             const course_id = data.get('course_id');
             const course = await getCourse(course_id);
