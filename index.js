@@ -6476,13 +6476,29 @@ async function handlePostback(event, user) {
             const course_id = data.get('course_id');
             const course = await getCourse(course_id);
             if (!course) return '找不到該課程，可能已被老師取消或已結束。';
+
             const isBooking = action === 'confirm_cancel_booking_start';
+
+            // <<<--- 新增的 12 小時檢查邏輯 ---START--->>>
+            if (isBooking) {
+                const twelveHoursInMs = 12 * CONSTANTS.TIME.ONE_HOUR_IN_MS;
+                const courseTime = new Date(course.time).getTime();
+                const now = Date.now();
+
+                if (courseTime - now < twelveHoursInMs) {
+                    return '抱歉，課程將於 12 小時內開始，已超過可取消預約的時限。';
+                }
+            }
+            // <<<--- 新增的 12 小時檢查邏輯 ---END--->>>
+            
             pendingBookingConfirmation[userId] = { type: isBooking ? 'cancel_book' : 'cancel_wait', course_id: course_id };
             setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => enqueuePushTask(u, { type: 'text', text: '取消操作已逾時，自動放棄。' }));
+            
             const actionText = isBooking ? '取消預約' : '取消候補';
             const confirmCommand = isBooking ? CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING : CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING;
             return { type: 'text', text: `您確定要「${actionText}」以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: `✅ 確認${actionText}`, text: confirmCommand } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
         }
+
         case 'mark_feedback_read': {
             const msgId = data.get('msgId');
             if (!msgId) return '操作失敗，缺少訊息 ID。';
