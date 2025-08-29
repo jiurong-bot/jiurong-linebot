@@ -3162,7 +3162,7 @@ event.message.text.trim().normalize() : '';
                                         ]},
                                         footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
                                             { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${currentCourse.id}` } },
-                                            { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認預約', data: `action=waitlist_confirm&course_id=${currentCourse.id}` } }
+                                            { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認', data: `action=waitlist_confirm&course_id=${currentCourse.id}` } }
                                         ]}
                                     }
                                 };
