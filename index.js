@@ -1292,37 +1292,6 @@ async function handlePurchaseFlow(event, userId) {
 
 
     switch (purchaseState.step) {
-        case 'confirm_purchase':
-            if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS) {
-                const order_id = `PO${Date.now()}`;
-                const order = {
-                    order_id: order_id,
-                    user_id: userId,
-                    user_name: user.name,
-                    points: purchaseState.data.points,
-                    amount: purchaseState.data.amount,
-                    last_5_digits: null,
-                    status: 'pending_payment',
-                    timestamp: new Date().toISOString()
-                };
-                await saveOrder(order);
-                delete pendingPurchase[userId];
-
-
-                // [V35.6 優化] 更新提示文字以符合新流程
-                const replyText = `感謝您的購買！訂單已成立 (ID: ${formatIdForDisplay(order_id)})。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${order.amount} 元\n\n匯款完成後，請至「點數查詢」➜「查詢購點紀錄」，找到此筆待付款訂單，並點擊按鈕來回報您的後五碼。\n\n⚠️提醒：為確保您的權益，請於24小時內完成匯款與回報，逾時訂單將會自動取消。`;
-
-
-                // 因為主頁面已簡化，這裡不再需要回傳 flexMenu
-                replyContent = replyText;
-
-
-            } else {
-                replyContent = '請點擊「✅ 確認購買」或「❌ 取消操作」。';
-            }
-            return { handled: true, reply: replyContent };
-
-
         case 'input_last5':
         case 'edit_last5':
             if (/^\d{5}$/.test(text)) {
