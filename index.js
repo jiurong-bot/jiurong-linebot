@@ -3007,8 +3007,7 @@ async function handleAdminCommands(event, userId) {
         });
         simpleCache.clear('notifications_enabled');
         const statusText = newStatus ? '【開啟】' : '【關閉】';
-        // 為了讓使用者看到回饋，我們回傳文字訊息，之後再請使用者重開面板
-        return `✅ 所有通知總開關已設定為 ${statusText}。`;
+      return buildAdminPanelFlex();
     } 
     else if (text === CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER) {
       pendingTeacherAddition[userId] = { step: 'await_student_info' };
