@@ -1,4 +1,4 @@
-// index.js - V39.0.1 (通知開關優化)(開課時間)
+// index.js - V39.0 (通知開關優化)(開課時間)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
