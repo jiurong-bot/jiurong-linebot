@@ -2994,20 +2994,6 @@ async function handleAdminCommands(event, userId) {
     }   
     else if (text === CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT) {
       return showFailedTasks(1);
-    }      
-    else if (text === CONSTANTS.COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
-        const currentStatus = await getNotificationStatus();
-        const newStatus = !currentStatus;
-        await executeDbQuery(async (db) => {
-            await db.query(
-                `INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ('notifications_enabled', $1, NOW())
-                 ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = NOW()`,
-                [newStatus.toString()]
-            );
-        });
-        simpleCache.clear('notifications_enabled');
-        const statusText = newStatus ? '【開啟】' : '【關閉】';
-        return `✅ 開發者推播通知功能已設定為 ${statusText}。\n此設定只會影響傳送給老師/管理員的通知。`;
     } else if (text === CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER) {
       pendingTeacherAddition[userId] = { step: 'await_student_info' };
       setupConversationTimeout(userId, pendingTeacherAddition, 'pendingTeacherAddition', (u) => {
