@@ -4504,7 +4504,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             type: 'image',
                             url: series.teacherImageUrl || placeholder_avatar,
                             aspectRatio: '1:1',
-                            aspectMode: 'fit',
+                            aspectMode: 'cover',
                             size: 'md',
                             flex: 2 // 控制照片寬度佔比
                         },
