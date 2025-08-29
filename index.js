@@ -4620,7 +4620,6 @@ async function showMyCourses(userId, page) {
             if (cardData.type === 'booked') {
                 statusComponents.push({ type: 'text', text: `✅ 您已預約 ${cardData.spots} 位`, color: '#28a745', size: 'sm', weight: 'bold', margin: 'md' });
 
-                // [V38.2 修改] 檢查是否可取消，並動態決定按鈕樣式
                 const eightHoursInMillis = CONSTANTS.TIME.EIGHT_HOURS_IN_MS;
                 const canCancel = new Date(c.time).getTime() - Date.now() > eightHoursInMillis;
 
@@ -4637,15 +4636,16 @@ async function showMyCourses(userId, page) {
                         } 
                     });
                 } else {
+                    // [V38.3 修正] 將按鈕 action 改為一個不會被處理的 postback，以避免觸發任何回應
                     footerButtons.push({
                         type: 'button',
-                        style: 'secondary', // 使用 secondary 樣式呈現灰色
-                        color: '#AAAAAA',   // 明確指定顏色為灰色
+                        style: 'secondary', 
+                        color: '#AAAAAA',
                         height: 'sm',
                         action: {
-                            type: 'message', // 類型改為 message，這樣點擊時只會送出文字
-                            label: '🚫 無法取消',
-                            text: '抱歉，此課程已在8小時內即將開始，無法取消預約。'
+                            type: 'postback',
+                            label: '🚫 無法取消 (8hr內)',
+                            data: 'action=do_nothing' // 這是一個後端不會處理的 action，點擊後等於沒作用
                         }
                     });
                 }
