@@ -1,4 +1,4 @@
-// index.js - V38.2 (候補機制)(測試版)
+// index.js - V38.3 (候補機制)(測試版)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -35,6 +35,7 @@ const CONSTANTS = {
   TIME: {
     ONE_DAY_IN_MS: 86400000,
     EIGHT_HOURS_IN_MS: 28800000,
+    TWO_HOURS_IN_MS: 7200000,
     ONE_HOUR_IN_MS: 3600000,
   },
   INTERVALS: {
