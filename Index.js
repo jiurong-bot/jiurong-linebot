@@ -4572,7 +4572,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         return flexMessage;
     });
 }
-      
+
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -4590,18 +4590,15 @@ async function showMyCourses(userId, page) {
             [userId]
         );
 
-
         const allCourseCardsData = res.rows.flatMap(c => {
             const cards = [];
             const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
             const isUserOnWaitingList = (c.waiting || []).includes(userId);
 
-
             if (spotsBookedByUser > 0) cards.push({ course: c, type: 'booked', spots: spotsBookedByUser });
             if (isUserOnWaitingList) cards.push({ course: c, type: 'waiting' });
             return cards;
         });
-
 
         if (allCourseCardsData.length === 0 && page === 1) {
             return '您目前沒有任何已預約或候補中的課程。';
@@ -4614,24 +4611,50 @@ async function showMyCourses(userId, page) {
             return '沒有更多課程了。';
         }
 
-
         const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
         const courseBubbles = pageCardsData.map(cardData => {
             const c = cardData.course;
             const statusComponents = [];
             const footerButtons = [];
 
-
             if (cardData.type === 'booked') {
                 statusComponents.push({ type: 'text', text: `✅ 您已預約 ${cardData.spots} 位`, color: '#28a745', size: 'sm', weight: 'bold', margin: 'md' });
-                footerButtons.push({ type: 'button', style: 'primary', color: '#DE5246', height: 'sm', action: { type: 'postback', label: `取消 ${cardData.spots > 1 ? '1位 ' : ''}預約`, data: `action=confirm_cancel_booking_start&course_id=${c.id}` } });
+
+                // [V38.2 修改] 檢查是否可取消，並動態決定按鈕樣式
+                const eightHoursInMillis = CONSTANTS.TIME.EIGHT_HOURS_IN_MS;
+                const canCancel = new Date(c.time).getTime() - Date.now() > eightHoursInMillis;
+
+                if (canCancel) {
+                    footerButtons.push({ 
+                        type: 'button', 
+                        style: 'primary', 
+                        color: '#DE5246', 
+                        height: 'sm', 
+                        action: { 
+                            type: 'postback', 
+                            label: `取消 ${cardData.spots > 1 ? '1位 ' : ''}預約`, 
+                            data: `action=confirm_cancel_booking_start&course_id=${c.id}` 
+                        } 
+                    });
+                } else {
+                    footerButtons.push({
+                        type: 'button',
+                        style: 'secondary', // 使用 secondary 樣式呈現灰色
+                        color: '#AAAAAA',   // 明確指定顏色為灰色
+                        height: 'sm',
+                        action: {
+                            type: 'message', // 類型改為 message，這樣點擊時只會送出文字
+                            label: '🚫 無法取消',
+                            text: '抱歉，此課程已在8小時內即將開始，無法取消預約。'
+                        }
+                    });
+                }
             }
             if (cardData.type === 'waiting') {
                 const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
-                statusComponents.push({ type: 'text', text: `🕒 您在候補名單中 (第${waitingPosition}位)`, color: '#FFA500', size: 'sm', weight: 'bold', margin: 'sm' });
+                 statusComponents.push({ type: 'text', text: `🕒 您在候補名單中 (第${waitingPosition}位)`, color: '#FFA500', size: 'sm', weight: 'bold', margin: 'sm' });
                 footerButtons.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` } });
             }
-
 
             return {
                 type: 'bubble', size: 'giga',
@@ -4650,12 +4673,10 @@ async function showMyCourses(userId, page) {
             };
         });
 
-
         const paginationBubble = createPaginationBubble('action=view_my_courses', page, hasNextPage);
         if (paginationBubble) {
             courseBubbles.push(paginationBubble);
         }
-
 
         return { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles } };
     });
@@ -4737,9 +4758,6 @@ async function showMyMessages(userId, page) {
         };
     });
 }
-
-
-
 
 async function showSingleCoursesForCancellation(prefix, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
