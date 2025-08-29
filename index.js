@@ -4555,7 +4555,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
 
             return {
                 type: 'bubble',
-                size: 'mega',
+                size: 'giga',
                 body: {
                     type: 'box',
                     layout: 'horizontal', // 主要改動：改為水平佈局
