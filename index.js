@@ -2523,7 +2523,8 @@ async function handleTeacherCommands(event, userId) {
         }
         break;
     }
-  } else if (pendingCourseCreation[userId]) {
+  // [修改] 拆分時間輸入流程
+} else if (pendingCourseCreation[userId]) {
     const state = pendingCourseCreation[userId];
     switch (state.step) {
         case 'await_title': 
@@ -2531,12 +2532,25 @@ async function handleTeacherCommands(event, userId) {
             state.step = 'await_weekday';
             const weekdayButtons = WEEKDAYS.map(day => ({ type: 'action', action: { type: 'postback', label: day.label, data: `action=set_course_weekday&day=${day.value}` } }));
             return { type: 'text', text: `課程標題：「${text}」\n\n請問課程固定在每週的哪一天？`, quickReply: { items: weekdayButtons } };
-        case 'await_time': 
-            if (!/^\d{2}:\d{2}$/.test(text)) { return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：19:30', quickReply: { items: getCancelMenu() } };
+
+        // [新增] 步驟 await_start_time
+        case 'await_start_time': 
+            if (!/^\d{2}:\d{2}$/.test(text)) { 
+                return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：19:30', quickReply: { items: getCancelMenu() } };
             } 
-            state.time = text; 
-            state.step = 'await_sessions';
+            state.start_time = text; // 存入 start_time
+            state.step = 'await_end_time'; // 下一步是結束時間
+            return { type: 'text', text: `好的，開始時間是 ${text}。\n\n那『結束』時間是幾點呢？（例如：20:30）`, quickReply: { items: getCancelMenu() } };
+
+        // [新增] 步驟 await_end_time
+        case 'await_end_time': 
+            if (!/^\d{2}:\d{2}$/.test(text)) { 
+                return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：20:30', quickReply: { items: getCancelMenu() } };
+            } 
+            state.end_time = text; // 存入 end_time
+            state.step = 'await_sessions'; // 流程繼續
             return { type: 'text', text: '請問這個系列總共要開設幾堂課？（請輸入數字）', quickReply: { items: getCancelMenu() } };
+
         case 'await_sessions': 
             const sessions = parseInt(text, 10);
             if (isNaN(sessions) || sessions <= 0) { return { type: 'text', text: '堂數必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } };
@@ -2544,6 +2558,7 @@ async function handleTeacherCommands(event, userId) {
             state.sessions = sessions; 
             state.step = 'await_capacity';
             return { type: 'text', text: '請問每堂課的名額限制？（請輸入數字）', quickReply: { items: getCancelMenu() } };
+
         case 'await_capacity': 
             const capacity = parseInt(text, 10);
             if (isNaN(capacity) || capacity <= 0) { return { type: 'text', text: '名額必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } };
@@ -2551,6 +2566,7 @@ async function handleTeacherCommands(event, userId) {
             state.capacity = capacity; 
             state.step = 'await_points';
             return { type: 'text', text: '請問每堂課需要消耗多少點數？（請輸入數字）', quickReply: { items: getCancelMenu() } };
+
         case 'await_points':
             const points = parseInt(text, 10);
             if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是正整數或 0，請重新輸入。', quickReply: { items: getCancelMenu() } };
@@ -2558,11 +2574,12 @@ async function handleTeacherCommands(event, userId) {
             state.points_cost = points; 
             state.step = 'await_teacher';
             return buildTeacherSelectionCarousel();
+
         case 'await_confirmation':
             if (text === '✅ 確認新增') {
-                const teacherId = userId; // 在刪除 state 前先保存 userId
-                const courseState = { ...pendingCourseCreation[userId] }; // 複製一份 state 內容
-                delete pendingCourseCreation[userId]; // 先清除狀態
+                const teacherId = userId;
+                const courseState = { ...pendingCourseCreation[userId] };
+                delete pendingCourseCreation[userId];
 
                 return executeDbQuery(async (client) => {
                     await client.query('BEGIN');
@@ -2570,10 +2587,12 @@ async function handleTeacherCommands(event, userId) {
                         const prefix = await generateUniqueCoursePrefix(client);
                         let currentDate = new Date();
                         for (let i = 0; i < courseState.sessions; i++) {
-                            const courseDate = getNextDate(courseState.weekday, courseState.time, currentDate);
+                            // 注意：這裡我們使用 start_time 來計算課程的實際日期時間
+                            const courseDate = getNextDate(courseState.weekday, courseState.start_time, currentDate);
                             const course = {
                                 id: `${prefix}${String(i + 1).padStart(2, '0')}`,
-                                title: courseState.title,
+                                // [修改] 標題可以加上時間方便辨識
+                                title: `${courseState.title} (${courseState.start_time}-${courseState.end_time})`,
                                 time: courseDate.toISOString(),
                                 capacity: courseState.capacity,
                                 points_cost: courseState.points_cost,
@@ -2585,8 +2604,7 @@ async function handleTeacherCommands(event, userId) {
                             currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
                         }
                         await client.query('COMMIT');
-                        
-                        // 準備公告範本並暫存
+
                         const mainTitle = getCourseMainTitle(courseState.title);
                         const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
                         pendingAnnouncementCreation[teacherId] = {
@@ -2597,7 +2615,6 @@ async function handleTeacherCommands(event, userId) {
                             enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
                         });
 
-                        // 直接回傳 "發佈公告的預覽畫面"
                         const finalFlexMessage = {
                             type: 'flex',
                             altText: '發佈系列課程公告？',
@@ -2629,7 +2646,7 @@ async function handleTeacherCommands(event, userId) {
                                             data: 'action=publish_prefilled_announcement'
                                         }
                                     },
-                                   { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                                    { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
                                 ]
                             }
                         };
@@ -2641,11 +2658,11 @@ async function handleTeacherCommands(event, userId) {
                         return '新增課程時發生錯誤，請稍後再試。';
                     }
                 });
-
             } else {
                 return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
             }
-// ...
+    }
+}
 
     }
   } else if (pendingManualAdjust[userId]) {
