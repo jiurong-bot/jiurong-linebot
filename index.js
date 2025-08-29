@@ -5520,6 +5520,13 @@ async function handlePostback(event, user) {
             // 重新顯示面板以展示最新狀態
             return buildAdminPanelFlex();
         }
+        case 'cancel_announcement': {
+            // 清除待處理的公告狀態，避免誤觸
+            if (pendingAnnouncementCreation[userId]) {
+                delete pendingAnnouncementCreation[userId];
+            }
+            return '好的，暫不發佈。';
+        }
 
         // ==================================
         // 頁面檢視 (Pagination & Views)
