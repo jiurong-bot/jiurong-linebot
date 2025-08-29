@@ -3103,31 +3103,23 @@ event.message.text.trim().normalize() : '';
         case 'cancel_book':
             if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING) {
                 
-                // [V38.2 新增] 在執行取消前，先進行時間檢查
                 const courseForCheck = await getCourse(state.course_id);
                 if (!courseForCheck) {
                     delete pendingBookingConfirmation[userId];
                     return '取消失敗，找不到此課程。';
                 }
 
-                // 檢查課程時間是否在 8 小時內
-                const eightHoursInMillis = CONSTANTS.TIME.EIGHT_HOURS_IN_MS;
-                if (new Date(courseForCheck.time).getTime() - Date.now() < eightHoursInMillis) {
+                if (new Date(courseForCheck.time).getTime() - Date.now() < CONSTANTS.TIME.EIGHT_HOURS_IN_MS) {
                     delete pendingBookingConfirmation[userId];
                     return `抱歉，課程即將在 8 小時內開始，現在已無法取消預約。`;
                 }
                 
-                // 如果檢查通過，才執行原有的取消邏輯
                 return executeDbQuery(async (client) => {
                     await client.query('BEGIN');
                     try {
-                         const userForUpdateRes = await client.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
-                        const courseForUpdateRes = await client.query('SELECT students, waiting, points_cost, title FROM courses WHERE id = $1 FOR UPDATE', [state.course_id]);
-                        if (courseForUpdateRes.rows.length === 0) {
-                            await client.query('ROLLBACK');
-                            delete pendingBookingConfirmation[userId];
-                            return '取消失敗，找不到此課程。';
-                        }
+                        const userForUpdateRes = await client.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
+                        const courseForUpdateRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [state.course_id]);
+                        
                         const currentCourse = courseForUpdateRes.rows[0];
                         const newStudents = [...currentCourse.students];
                         const indexToRemove = newStudents.indexOf(userId);
@@ -3144,23 +3136,50 @@ event.message.text.trim().normalize() : '';
                         const newHistory = [...userHistory, historyEntry];
                         await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
                         
-                        // 候補遞補邏輯 (下一階段我們會修改這裡)
+                        // [V38.5 修改] 智慧候補遞補邏輯
                         let newWaiting = currentCourse.waiting || [];
                         if (newWaiting.length > 0) {
-                            const promotedUserId = newWaiting.shift();
-                            newStudents.push(promotedUserId);
-                            const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(currentCourse.title)}」已有空位，已為您自動預約成功！`};
-                            await enqueuePushTask(promotedUserId, notifyMessage);
+                            const isWithinTwoHours = new Date(currentCourse.time).getTime() - Date.now() < CONSTANTS.TIME.TWO_HOURS_IN_MS;
+                            const promotedUserId = newWaiting.shift(); // 先取出第一位候補者
+
+                            if (isWithinTwoHours) {
+                                // **新邏輯：發送限時邀請**
+                                const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 分鐘後過期
+                                await client.query(
+                                    `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
+                                    [currentCourse.id, promotedUserId, expiresAt]
+                                );
+
+                                const invitationMessage = {
+                                    type: 'flex',
+                                    altText: '候補課程邀請',
+                                    contents: {
+                                        type: 'bubble',
+                                        header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },
+                                        body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+                                            { type: 'text', text: `您好！您候補的課程「${getCourseMainTitle(currentCourse.title)}」現在有名額了！`, wrap: true },
+                                            { type: 'text', text: '請在 15 分鐘內確認是否要預約，逾時將自動放棄資格喔。', size: 'sm', color: '#666666', wrap: true }
+                                        ]},
+                                        footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+                                            { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${currentCourse.id}` } },
+                                            { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認預約', data: `action=waitlist_confirm&course_id=${currentCourse.id}` } }
+                                        ]}
+                                    }
+                                };
+                                await enqueuePushTask(promotedUserId, invitationMessage);
+                            } else {
+                                // **舊邏輯：直接遞補**
+                                newStudents.push(promotedUserId);
+                                const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(currentCourse.title)}」已有空位，已為您自動預約成功！`};
+                                await enqueuePushTask(promotedUserId, notifyMessage);
+                            }
                         }
                         
                         await client.query('UPDATE courses SET students = $1, waiting = $2 WHERE id = $3', [newStudents, newWaiting, state.course_id]);
                         await client.query('COMMIT');
                         delete pendingBookingConfirmation[userId];
 
-                        const remainingBookings = newStudents.filter(id => id === userId).length;
                         let replyMsg = `✅ 已為您取消 1 位「${getCourseMainTitle(currentCourse.title)}」的預約，並歸還 ${currentCourse.points_cost} 點。`;
-                        if (remainingBookings > 0) { replyMsg += `\n您在此課程尚有 ${remainingBookings} 位預約。`;
-                        }
                         return replyMsg;
                     } catch (e) {
                         await client.query('ROLLBACK');
@@ -3174,6 +3193,8 @@ event.message.text.trim().normalize() : '';
                 return '已放棄取消操作。';
             }
             break;
+
+        
         case 'cancel_wait':
             if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING) {
                 const newWaitingList = course.waiting.filter(id => id !== userId);
