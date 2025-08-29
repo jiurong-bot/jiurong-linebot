@@ -4712,7 +4712,7 @@ async function showMyCourses(userId, page) {
                             flex: 4,
                             contents: [
                                 { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'lg', wrap: true },
-                                { type: 'text', text: formatDateTime(c.time), size: 'sm' },
+                                { type: 'text', text: formatDateOnly(c.time), size: 'sm' },
                                 { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'xs', color: '#888888' },
                                 { type: 'separator', margin: 'md' },
                                 ...statusComponents
@@ -4848,7 +4848,7 @@ async function showSingleCoursesForCancellation(prefix, page) {
                     flex: 4,
                     contents: [
                         { type: 'text', text: c.title, wrap: true, weight: 'bold', size: 'sm' },
-                        { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'md'}
+                        { type: 'text', text: formatDateOnly(c.time), size: 'sm', margin: 'md'}
                     ]
                 },
                 {
@@ -5240,7 +5240,7 @@ async function showCourseRosterSummary(page) {
                     flex: 4,
                     contents: [
                         { type: 'text', text: c.title, weight: 'bold', size: 'sm', wrap: true },
-                        { type: 'text', text: formatDateTime(c.time), size: 'xs', color: '#666666' },
+                        { type: 'text', text: formatDateOnly(c.time), size: 'xs', color: '#666666' },
                         { type: 'text', text: `預約: ${c.student_count} 人 / 候補: ${c.waiting_count} 人`, size: 'xs', margin: 'sm' }
                     ]
                 },
