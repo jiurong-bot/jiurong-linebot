@@ -70,8 +70,7 @@ const CONSTANTS = {
       SIMULATE_STUDENT: '@模擬學員身份',
       SIMULATE_TEACHER: '@模擬老師身份',
       CONFIRM_ADD_TEACHER: '✅ 確認授權',
-      CONFIRM_REMOVE_TEACHER: '✅ 確認移除',
-      TOGGLE_NOTIFICATIONS: '@切換推播通知'
+      CONFIRM_REMOVE_TEACHER: '✅ 確認移除'
     },
     TEACHER: {
       COURSE_MANAGEMENT: '@課程管理',
