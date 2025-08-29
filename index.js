@@ -1934,46 +1934,65 @@ async function getGlobalNotificationSettings() {
 }
 
 /**
- * [V39.0 修改] 建立管理者控制面板的 Flex Message
+ * [V39.1 修改] 建立管理者控制面板的 Flex Message，整合總開關與分類開關
  * @returns {Promise<object>} Flex Message 物件
  */
 async function buildAdminPanelFlex() {
-    const settings = await getGlobalNotificationSettings();
-
-    // 輔助函式，建立一個開關元件
-    const createSwitch = (label, settingKey, isEnabled) => ({
-        type: 'box',
-        layout: 'horizontal',
-        alignItems: 'center',
-        paddingAll: 'md',
-        contents: [
-            { type: 'text', text: label, wrap: true, flex: 4 }, // 增加文字顯示空間
-            {
-                type: 'button',
-                action: {
-                    type: 'postback',
-                    label: isEnabled ? '開啟' : '關閉',
-                    displayText: `正在切換「${label}」為「${isEnabled ? '關閉' : '開啟'}」`,
-                    data: `action=toggle_global_setting&key=${settingKey}&value=${isEnabled}`
-                },
-                style: isEnabled ? 'primary' : 'secondary',
-                color: isEnabled ? '#28a745' : '#dc3545',
-                height: 'sm',
-                flex: 1
-            }
-        ]
-    });
+    // 步驟 1: 檢查總開關目前是開啟還是關閉
+    const isMasterEnabled = await getNotificationStatus(); 
     
-    // 輔助函式，建立一個分類標題
-    const createSectionHeader = (title) => ({
-        type: 'text',
-        text: title,
-        weight: 'bold',
-        size: 'md',
-        margin: 'lg',
-        color: '#343A40'
-    });
+    const bodyContents = []; // 用一個陣列來動態存放 body 內容
 
+    // 步驟 2: 根據總開關狀態，建立第一個按鈕
+    const masterToggleButton = {
+        type: 'button',
+        action: {
+            type: 'postback',
+            label: isMasterEnabled ? '所有通知：開啟中' : '所有通知：已關閉',
+            displayText: `正在切換所有通知為「${isMasterEnabled ? '關閉' : '開啟'}」`,
+            data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS)}`
+        },
+        style: isMasterEnabled ? 'primary' : 'secondary',
+        color: isMasterEnabled ? '#28a745' : '#dc3545',
+        height: 'sm'
+    };
+    bodyContents.push(masterToggleButton);
+    bodyContents.push({ type: 'separator', margin: 'lg' });
+
+    // 步驟 3: 如果總開關是開啟的，才建立並顯示八個分類開關
+    if (isMasterEnabled) {
+        const settings = await getGlobalNotificationSettings();
+        const createSwitch = (label, settingKey, isEnabled) => ({
+            type: 'box', layout: 'horizontal', alignItems: 'center', paddingAll: 'md',
+            contents: [
+                { type: 'text', text: label, wrap: true, flex: 4 },
+                {
+                    type: 'button',
+                    action: { type: 'postback', label: isEnabled ? '開啟' : '關閉', displayText: `正在切換「${label}」`, data: `action=toggle_global_setting&key=${settingKey}&value=${isEnabled}` },
+                    style: isEnabled ? 'primary' : 'secondary', color: isEnabled ? '#28a745' : '#dc3545', height: 'sm', flex: 1
+                }
+            ]
+        });
+        const createSectionHeader = (title) => ({ type: 'text', text: title, weight: 'bold', size: 'md', margin: 'lg', color: '#343A40' });
+
+        bodyContents.push(createSectionHeader('課程通知 (Class Notifications)'));
+        bodyContents.push(createSwitch('(學員) 上課前一小時提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr));
+        bodyContents.push(createSwitch('(老師) 未來 24 小時課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr));
+        
+        bodyContents.push(createSectionHeader('訂單通知 (Order Notifications)'));
+        bodyContents.push(createSwitch('(學員) 訂單審核結果 (核准/退回)', 'student_order_result_enabled', settings.student_order_result));
+        bodyContents.push(createSwitch('(老師) 收到新訂單或付款資訊', 'teacher_new_order_enabled', settings.teacher_new_order));
+
+        bodyContents.push(createSectionHeader('互動通知 (Interaction Notifications)'));
+        bodyContents.push(createSwitch('(學員) 收到老師的留言回覆', 'student_message_reply_enabled', settings.student_message_reply));
+        bodyContents.push(createSwitch('(老師) 收到學員的新留言', 'teacher_new_message_enabled', settings.teacher_new_message));
+        
+        bodyContents.push(createSectionHeader('系統通知 (System Notifications)'));
+        bodyContents.push(createSwitch('(學員) 新好友歡迎訊息', 'student_welcome_message_enabled', settings.student_welcome_message));
+        bodyContents.push(createSwitch('(學員) 新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement));
+    }
+
+    // 步驟 4: 建立下方的常用管理功能
     const otherCommands = [
         { label: '系統狀態', command: CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS },
         { label: '失敗任務管理', command: CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT },
@@ -1982,7 +2001,17 @@ async function buildAdminPanelFlex() {
         { label: '模擬學員身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT },
         { label: '模擬老師身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER }
     ];
+    
+    bodyContents.push({ type: 'separator', margin: 'xl' });
+    bodyContents.push({ type: 'text', text: '常用管理功能', weight: 'bold', size: 'md', margin: 'md' });
+    otherCommands.forEach(cmd => {
+        bodyContents.push({
+            type: 'button', style: 'secondary', height: 'sm',
+            action: { type: 'postback', label: cmd.label, data: `action=run_command&text=${encodeURIComponent(cmd.command)}` }
+        });
+    });
 
+    // 步驟 5: 組裝成最後的 Flex Message
     return {
         type: 'flex',
         altText: '管理者控制面板',
@@ -1999,41 +2028,8 @@ async function buildAdminPanelFlex() {
             body: {
                 type: 'box',
                 layout: 'vertical',
-                spacing: 'sm', // 縮小間距讓版面更緊湊
-                contents: [
-                    // 課程通知
-                    createSectionHeader('課程通知 (Class Notifications)'),
-                    createSwitch('(學員) 上課前一小時提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr),
-                    createSwitch('(老師) 未來 24 小時課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr),
-                    
-                    // 訂單通知
-                    createSectionHeader('訂單通知 (Order Notifications)'),
-                    createSwitch('(學員) 訂單審核結果 (核准/退回)', 'student_order_result_enabled', settings.student_order_result),
-                    createSwitch('(老師) 收到新訂單或付款資訊', 'teacher_new_order_enabled', settings.teacher_new_order),
-
-                    // 互動通知
-                    createSectionHeader('互動通知 (Interaction Notifications)'),
-                    createSwitch('(學員) 收到老師的留言回覆', 'student_message_reply_enabled', settings.student_message_reply),
-                    createSwitch('(老師) 收到學員的新留言', 'teacher_new_message_enabled', settings.teacher_new_message),
-                    
-                    // 系統通知
-                    createSectionHeader('系統通知 (System Notifications)'),
-                    createSwitch('(學員) 新好友歡迎訊息', 'student_welcome_message_enabled', settings.student_welcome_message),
-                    createSwitch('(學員) 新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement),
-
-                    { type: 'separator', margin: 'xl' },
-                    { type: 'text', text: '常用管理功能', weight: 'bold', size: 'md', margin: 'md' },
-                    ...otherCommands.map(cmd => ({
-                        type: 'button',
-                        style: 'secondary',
-                        height: 'sm',
-                        action: {
-                            type: 'postback',
-                            label: cmd.label,
-                            data: `action=run_command&text=${encodeURIComponent(cmd.command)}`
-                        }
-                    }))
-                ]
+                spacing: 'sm',
+                contents: bodyContents // 將我們動態組合好的內容放到這裡
             }
         }
     };
