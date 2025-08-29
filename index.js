@@ -6003,7 +6003,8 @@ async function handlePostback(event, user) {
                     const orderRes = await client.query("SELECT * FROM orders WHERE order_id = $1 FOR UPDATE", [order_id]);
                     if (orderRes.rows.length === 0) { await client.query('ROLLBACK'); return '找不到此訂單，可能已被其他老師處理。'; }
                     const order = orderRes.rows[0];
-                    if (order.status !== 'pending_confirmation') { await client.query('ROLLBACK'); return `此訂單狀態為「${order.status}」，無法重複核准。`; }
+                    if (!['pending_confirmation', 'pending_payment'].includes(order.status)) { await client.query('ROLLBACK'); 
+                    return `此訂單狀態為「${order.status}」，無法執行此操作。`; }
                     await client.query("UPDATE orders SET status = 'completed' WHERE order_id = $1", [order_id]);
                     const userRes = await client.query("SELECT points FROM users WHERE id = $1 FOR UPDATE", [order.user_id]);
                     const newPoints = userRes.rows[0].points + order.points;
