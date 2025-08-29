@@ -5735,6 +5735,116 @@ async function handlePostback(event, user) {
             delete pendingBookingConfirmation[userId];
             return result;
         }
+
+        // [V38.5 新增] 處理候補邀請的回應
+        case 'waitlist_confirm': {
+            const course_id = data.get('course_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    // 找出有效、待處理的邀請
+                    const inviteRes = await client.query(
+                        `SELECT * FROM waitlist_notifications 
+                         WHERE course_id = $1 AND user_id = $2 AND status = 'pending' AND expires_at > NOW() 
+                         FOR UPDATE`,
+                        [course_id, userId]
+                    );
+
+                    if (inviteRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return '抱歉，您的候補邀請已失效或已被處理。';
+                    }
+
+                    const userRes = await client.query("SELECT * FROM users WHERE id = $1 FOR UPDATE", [userId]);
+                    const courseRes = await client.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [course_id]);
+                    const user = userRes.rows[0];
+                    const course = courseRes.rows[0];
+
+                    if (!course) { await client.query('ROLLBACK'); return '抱歉，找不到此課程。'; }
+                    if (user.points < course.points_cost) { await client.query('ROLLBACK'); return `點數不足！預約此課程需要 ${course.points_cost} 點，您目前有 ${user.points} 點。`; }
+                    if (course.students.length >= course.capacity) {
+                        await client.query('ROLLBACK');
+                        // 雖然理論上不該發生，但以防萬一
+                        return '抱歉，您慢了一步，課程名額剛好被補滿了。';
+                    }
+
+                    // 更新邀請狀態
+                    await client.query("UPDATE waitlist_notifications SET status = 'confirmed' WHERE id = $1", [inviteRes.rows[0].id]);
+                    
+                    // 執行預約
+                    const newStudents = [...course.students, userId];
+                    const newPoints = user.points - course.points_cost;
+                    await client.query("UPDATE users SET points = $1 WHERE id = $2", [newPoints, userId]);
+                    await client.query("UPDATE courses SET students = $1 WHERE id = $2", [newStudents, course_id]);
+                    
+                    await client.query('COMMIT');
+                    return `✅ 候補成功！已為您預約課程「${getCourseMainTitle(course.title)}」，並扣除 ${course.points_cost} 點。`;
+
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('[Waitlist Confirm] 候補確認失敗:', err);
+                    return '系統忙碌中，候補確認失敗，請稍後再試。';
+                }
+            });
+            return result;
+        }
+
+        case 'waitlist_forfeit': {
+            const course_id = data.get('course_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    // 將邀請設為已放棄
+                    const updateRes = await client.query(
+                        `UPDATE waitlist_notifications SET status = 'forfeited' 
+                         WHERE course_id = $1 AND user_id = $2 AND status = 'pending'
+                         RETURNING id`,
+                        [course_id, userId]
+                    );
+                    
+                    // 如果沒有任何邀請被更新 (可能已過期)，就不用往下做了
+                    if (updateRes.rowCount === 0) {
+                        await client.query('ROLLBACK');
+                        return '您的候補邀請已失效。';
+                    }
+
+                    // 立刻觸發下一位候補 (讓使用者體驗更好，不用等 worker)
+                    const courseRes = await client.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [course_id]);
+                    const course = courseRes.rows[0];
+                    if (course && course.waiting?.length > 0) {
+                        const nextUserId = course.waiting[0];
+                        const newWaitingList = course.waiting.slice(1);
+                        await client.query("UPDATE courses SET waiting = $1 WHERE id = $2", [newWaitingList, course_id]);
+                        
+                        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+                        await client.query(
+                            `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
+                            [course_id, nextUserId, expiresAt]
+                        );
+                        
+                        const mainTitle = getCourseMainTitle(course.title);
+                        const invitationMessage = { /* ... 此處省略 Flex Message 結構，直接複製上面 case 中的即可 ... */ };
+                        // 因為這個檔案沒有 client，所以我們用 enqueuePushTask
+                        await enqueuePushTask(nextUserId, invitationMessage); 
+                    }
+
+                    await client.query('COMMIT');
+                    return '好的，已為您放棄此次候補資格。';
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('[Waitlist Forfeit] 候補放棄失敗:', err);
+                    return '系統忙碌中，操作失敗，請稍後再試。';
+                }
+            });
+            // 為了簡化，放棄的通知訊息直接在這裡 enqueue
+             const forfeitMessage = {
+                type: 'text',
+                text: '好的，已為您放棄此次候補資格。'
+             };
+            await enqueuePushTask(userId, forfeitMessage);
+            return; // 因為我們用 pushMessage，所以這裡回覆空值
+        }
+
         case 'join_waiting_list': {
             const course_id = data.get('course_id');
             return executeDbQuery(async (client) => {
