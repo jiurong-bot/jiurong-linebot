@@ -1397,11 +1397,10 @@ async function showCourseInquiry(event, user) {
 }
 
 
-async function showPointManagementMenu(event, user) {
+    async function showPointManagementMenu(event, user) {
     const pendingCount = await executeDbQuery(client => 
-        client.query("SELECT COUNT(*) FROM orders WHERE status = ('pending_confirmation','pending_payment')")
+        client.query("SELECT COUNT(*) FROM orders WHERE status IN ('pending_confirmation', 'pending_payment')")
     ).then(res => parseInt(res.rows[0].count, 10));
-
 
     // 準備帶有計數的按鈕標籤文字
     let pendingPointOrdersLabel = '✅ 待確認點數訂單';
