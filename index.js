@@ -2318,93 +2318,129 @@ async function showPurchaseHistoryList(event, user) {
   };
 }
 
-
 async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
   const user = await getUser(userId);
+  
   // 優先處理有延續性的對話 (Pending States)
   if (pendingProductCreation[userId]) {
     const state = pendingProductCreation[userId];
     let proceed = true;
     let errorMessage = '';
     switch (state.step) {
-        case 'await_name': state.name = text;
-        state.step = 'await_description'; return { type: 'text', text: '請輸入商品描述 (可換行)，或輸入「無」：', quickReply: { items: getCancelMenu() } };
-        case 'await_description': state.description = text === '無' ? null : text; state.step = 'await_price';
+        case 'await_name': 
+            state.name = text;
+            state.step = 'await_description'; 
+            return { type: 'text', text: '請輸入商品描述 (可換行)，或輸入「無」：', quickReply: { items: getCancelMenu() } };
+        case 'await_description': 
+            state.description = text === '無' ? null : text; 
+            state.step = 'await_price';
             return { type: 'text', text: '請輸入商品售價 (元整，純數字)：', quickReply: { items: getCancelMenu() } };
         case 'await_price':
             const price = parseInt(text, 10);
-            if (isNaN(price) || price < 0) { proceed = false; errorMessage = '價格格式不正確，請輸入一個非負整數。';
-            } 
-            else { state.price = price;
-            state.step = 'await_inventory'; return { type: 'text', text: '請輸入商品初始庫存 (純數字)：', quickReply: { items: getCancelMenu() } };
+            if (isNaN(price) || price < 0) { 
+                proceed = false; 
+                errorMessage = '價格格式不正確，請輸入一個非負整數。';
+            } else { 
+                state.price = price;
+                state.step = 'await_inventory'; 
+                return { type: 'text', text: '請輸入商品初始庫存 (純數字)：', quickReply: { items: getCancelMenu() } };
             }
             break;
         case 'await_inventory':
             const inventory = parseInt(text, 10);
-            if (isNaN(inventory) || inventory < 0) { proceed = false; errorMessage = '庫存格式不正確，請輸入一個非負整數。';
-            } 
-            else { state.inventory = inventory;
-            state.step = 'await_image_url'; return { type: 'text', text: '請直接上傳一張商品圖片，或輸入「無」：', quickReply: { items: getCancelMenu() } };
+            if (isNaN(inventory) || inventory < 0) { 
+                proceed = false; 
+                errorMessage = '庫存格式不正確，請輸入一個非負整數。';
+            } else { 
+                state.inventory = inventory;
+                state.step = 'await_image_url'; 
+                return { type: 'text', text: '請直接上傳一張商品圖片，或輸入「無」：', quickReply: { items: getCancelMenu() } };
             }
             break;
         case 'await_image_url':
             let imageUrl = null;
-            let proceedToNextStep = true; let errorImageUrlMessage = '';
-            if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') { imageUrl = null;
-            } 
-            else if (event.message.type === 'image') {
+            let proceedToNextStep = true; 
+            let errorImageUrlMessage = '';
+            if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') { 
+                imageUrl = null;
+            } else if (event.message.type === 'image') {
                 try {
                     const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
                     const imageBuffer = Buffer.from(imageResponse.data, 'binary');
                     const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `product_${Date.now()}.jpg`, useUniqueFileName: true, folder: "yoga_products" });
                     imageUrl = uploadResponse.url;
-                } catch (err) { console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err); proceedToNextStep = false; errorImageUrlMessage = '圖片上傳失敗，請稍後再試。';
+                } catch (err) { 
+                    console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err); 
+                    proceedToNextStep = false; 
+                    errorImageUrlMessage = '圖片上傳失敗，請稍後再試。';
                 }
-            } else { proceedToNextStep = false;
-            errorImageUrlMessage = '格式錯誤，請直接上傳一張商品圖片，或輸入「無」。'; }
-            if (!proceedToNextStep) { return { type: 'text', text: errorImageUrlMessage, quickReply: { items: getCancelMenu() } };
+            } else { 
+                proceedToNextStep = false;
+                errorImageUrlMessage = '格式錯誤，請直接上傳一張商品圖片，或輸入「無」。'; 
             }
-            state.image_url = imageUrl; state.step = 'await_confirmation';
-            const summaryText = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 點\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
+            if (!proceedToNextStep) { 
+                return { type: 'text', text: errorImageUrlMessage, quickReply: { items: getCancelMenu() } };
+            }
+            state.image_url = imageUrl; 
+            state.step = 'await_confirmation';
+            const summaryText = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 元\n庫存：${state.inventory}\n圖片：${state.image_url ? '已上傳' : '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
             return {
                 type: 'text',
                 text: summaryText,
                 quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}
             };
     }
-    if (!proceed && state.step !== 'await_image_url') { return { type: 'text', text: errorMessage, quickReply: { items: getCancelMenu() } };
+    if (!proceed && state.step !== 'await_image_url') { 
+        return { type: 'text', text: errorMessage, quickReply: { items: getCancelMenu() } };
     }
   } else if (pendingProductEdit[userId]) {
     const state = pendingProductEdit[userId];
     const product = state.product;
     const field = state.field;
-    let newValue = text; let isValid = true; let errorMessage = '';
+    let newValue = text; 
+    let isValid = true; 
+    let errorMessage = '';
     if (field === 'price' || field === 'inventory') {
         const numValue = parseInt(text, 10);
-        if (isNaN(numValue) || numValue < 0) { isValid = false; errorMessage = '請輸入一個非負整數。'; } else { newValue = numValue;
+        if (isNaN(numValue) || numValue < 0) { 
+            isValid = false; 
+            errorMessage = '請輸入一個非負整數。'; 
+        } else { 
+            newValue = numValue;
         }
-    } else if (field === 'description' && text.toLowerCase() === '無') { newValue = null;
+    } else if (field === 'description' && text.toLowerCase() === '無') { 
+        newValue = null;
     } else if (field === 'image_url') {
-        if (text.toLowerCase() === '無') { newValue = null;
-        } 
-        else if (!text.startsWith('https://') || !text.match(/\.(jpeg|jpg|gif|png)$/i)) { isValid = false;
-        errorMessage = '圖片網址格式不正確，必須是 https 開頭的圖片連結。'; }
+        if (text.toLowerCase() === '無') { 
+            newValue = null;
+        } else if (!text.startsWith('https://') || !text.match(/\.(jpeg|jpg|gif|png)$/i)) { 
+            isValid = false;
+            errorMessage = '圖片網址格式不正確，必須是 https 開頭的圖片連結。'; 
+        }
     }
-    if (!isValid) { return { type: 'text', text: errorMessage, quickReply: { items: getCancelMenu() } };
+    if (!isValid) { 
+        return { type: 'text', text: errorMessage, quickReply: { items: getCancelMenu() } };
     }
-    product[field] = newValue; await saveProduct(product); delete pendingProductEdit[userId];
+    product[field] = newValue; 
+    await saveProduct(product); 
+    delete pendingProductEdit[userId];
     const fieldMap = { name: '名稱', description: '描述', price: '價格', image_url: '圖片網址', inventory: '庫存' };
     return `✅ 已成功將商品「${product.name}」的「${fieldMap[field]}」更新為「${newValue === null ? '無' : newValue}」。`;
   } else if (pendingInventoryAdjust[userId]) {
     const state = pendingInventoryAdjust[userId];
-    const product = state.product; const numValue = parseInt(text, 10);
-    if(isNaN(numValue)) { return { type: 'text', text: '格式錯誤，請輸入一個整數 (正數為增加，負數為減少)。', quickReply: { items: getCancelMenu() } };
+    const product = state.product; 
+    const numValue = parseInt(text, 10);
+    if(isNaN(numValue)) { 
+        return { type: 'text', text: '格式錯誤，請輸入一個整數 (正數為增加，負數為減少)。', quickReply: { items: getCancelMenu() } };
     }
     const newInventory = product.inventory + numValue;
-    if(newInventory < 0) { return { type: 'text', text: `庫存調整失敗，調整後庫存 (${newInventory}) 不可小於 0。`, quickReply: { items: getCancelMenu() } };
+    if(newInventory < 0) { 
+        return { type: 'text', text: `庫存調整失敗，調整後庫存 (${newInventory}) 不可小於 0。`, quickReply: { items: getCancelMenu() } };
     }
-    product.inventory = newInventory; await saveProduct(product); delete pendingInventoryAdjust[userId];
+    product.inventory = newInventory; 
+    await saveProduct(product); 
+    delete pendingInventoryAdjust[userId];
     return `✅ 已成功調整商品「${product.name}」的庫存。\n原庫存: ${state.originalInventory}\n調整量: ${numValue > 0 ? '+' : ''}${numValue}\n新庫存: ${newInventory}`;
   } else if (pendingAnnouncementCreation[userId]) {
     const state = pendingAnnouncementCreation[userId];
@@ -2421,7 +2457,8 @@ async function handleTeacherCommands(event, userId) {
           );
           delete pendingAnnouncementCreation[userId];
           return '✅ 公告已成功頒佈！學員可在「最新公告」中查看。';
-        } else { return '請點擊「確認頒佈」或「取消操作」。';
+        } else { 
+            return '請點擊「確認頒佈」或「取消操作」。';
         }
     }
   } else if (pendingAnnouncementDeletion[userId]) {
@@ -2430,7 +2467,8 @@ async function handleTeacherCommands(event, userId) {
         await executeDbQuery(client => client.query("DELETE FROM announcements WHERE id = $1", [state.ann_id]));
         delete pendingAnnouncementDeletion[userId];
         return '✅ 公告已成功刪除。';
-    } else { return '請點擊「確認刪除」或「取消操作」。';
+    } else { 
+        return '請點擊「確認刪除」或「取消操作」。';
     }
   } else if (pendingCourseCancellation[userId]) {
     const state = pendingCourseCancellation[userId];
@@ -2500,7 +2538,7 @@ async function handleTeacherCommands(event, userId) {
                   const course = courseToCancelRes.rows[0];
                   const studentIdsToNotify = [...course.students];
                   for (const studentId of studentIdsToNotify) { 
-                      await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [course.points_cost, studentId]); 
+                    await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [course.points_cost, studentId]); 
                   }
                   await client.query("DELETE FROM courses WHERE id = $1", [state.course_id]); 
                   delete pendingCourseCancellation[userId];
@@ -2520,11 +2558,10 @@ async function handleTeacherCommands(event, userId) {
                   return '取消課程時發生錯誤，請稍後再試。';
                 }
             });
-        }
+         }
         break;
     }
-  // [修改] 拆分時間輸入流程
-} else if (pendingCourseCreation[userId]) {
+  } else if (pendingCourseCreation[userId]) {
     const state = pendingCourseCreation[userId];
     switch (state.step) {
         case 'await_title': 
@@ -2532,25 +2569,20 @@ async function handleTeacherCommands(event, userId) {
             state.step = 'await_weekday';
             const weekdayButtons = WEEKDAYS.map(day => ({ type: 'action', action: { type: 'postback', label: day.label, data: `action=set_course_weekday&day=${day.value}` } }));
             return { type: 'text', text: `課程標題：「${text}」\n\n請問課程固定在每週的哪一天？`, quickReply: { items: weekdayButtons } };
-
-        // [新增] 步驟 await_start_time
         case 'await_start_time': 
             if (!/^\d{2}:\d{2}$/.test(text)) { 
                 return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：19:30', quickReply: { items: getCancelMenu() } };
             } 
-            state.start_time = text; // 存入 start_time
-            state.step = 'await_end_time'; // 下一步是結束時間
+            state.start_time = text;
+            state.step = 'await_end_time';
             return { type: 'text', text: `好的，開始時間是 ${text}。\n\n那『結束』時間是幾點呢？（例如：20:30）`, quickReply: { items: getCancelMenu() } };
-
-        // [新增] 步驟 await_end_time
         case 'await_end_time': 
             if (!/^\d{2}:\d{2}$/.test(text)) { 
                 return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：20:30', quickReply: { items: getCancelMenu() } };
             } 
-            state.end_time = text; // 存入 end_time
-            state.step = 'await_sessions'; // 流程繼續
+            state.end_time = text;
+            state.step = 'await_sessions';
             return { type: 'text', text: '請問這個系列總共要開設幾堂課？（請輸入數字）', quickReply: { items: getCancelMenu() } };
-
         case 'await_sessions': 
             const sessions = parseInt(text, 10);
             if (isNaN(sessions) || sessions <= 0) { return { type: 'text', text: '堂數必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } };
@@ -2558,7 +2590,6 @@ async function handleTeacherCommands(event, userId) {
             state.sessions = sessions; 
             state.step = 'await_capacity';
             return { type: 'text', text: '請問每堂課的名額限制？（請輸入數字）', quickReply: { items: getCancelMenu() } };
-
         case 'await_capacity': 
             const capacity = parseInt(text, 10);
             if (isNaN(capacity) || capacity <= 0) { return { type: 'text', text: '名額必須是正整數，請重新輸入。', quickReply: { items: getCancelMenu() } };
@@ -2566,7 +2597,6 @@ async function handleTeacherCommands(event, userId) {
             state.capacity = capacity; 
             state.step = 'await_points';
             return { type: 'text', text: '請問每堂課需要消耗多少點數？（請輸入數字）', quickReply: { items: getCancelMenu() } };
-
         case 'await_points':
             const points = parseInt(text, 10);
             if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是正整數或 0，請重新輸入。', quickReply: { items: getCancelMenu() } };
@@ -2574,24 +2604,20 @@ async function handleTeacherCommands(event, userId) {
             state.points_cost = points; 
             state.step = 'await_teacher';
             return buildTeacherSelectionCarousel();
-
         case 'await_confirmation':
             if (text === '✅ 確認新增') {
                 const teacherId = userId;
                 const courseState = { ...pendingCourseCreation[userId] };
                 delete pendingCourseCreation[userId];
-
                 return executeDbQuery(async (client) => {
                     await client.query('BEGIN');
                     try {
                         const prefix = await generateUniqueCoursePrefix(client);
                         let currentDate = new Date();
                         for (let i = 0; i < courseState.sessions; i++) {
-                            // 注意：這裡我們使用 start_time 來計算課程的實際日期時間
                             const courseDate = getNextDate(courseState.weekday, courseState.start_time, currentDate);
                             const course = {
                                 id: `${prefix}${String(i + 1).padStart(2, '0')}`,
-                                // [修改] 標題可以加上時間方便辨識
                                 title: `${courseState.title} (${courseState.start_time}-${courseState.end_time})`,
                                 time: courseDate.toISOString(),
                                 capacity: courseState.capacity,
@@ -2604,7 +2630,6 @@ async function handleTeacherCommands(event, userId) {
                             currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
                         }
                         await client.query('COMMIT');
-
                         const mainTitle = getCourseMainTitle(courseState.title);
                         const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
                         pendingAnnouncementCreation[teacherId] = {
@@ -2614,7 +2639,6 @@ async function handleTeacherCommands(event, userId) {
                         setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
                             enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
                         });
-
                         const finalFlexMessage = {
                             type: 'flex',
                             altText: '發佈系列課程公告？',
@@ -2651,7 +2675,6 @@ async function handleTeacherCommands(event, userId) {
                             }
                         };
                         return finalFlexMessage;
-
                     } catch (e) {
                         await client.query('ROLLBACK');
                         console.error("新增課程系列失敗", e);
@@ -2662,9 +2685,215 @@ async function handleTeacherCommands(event, userId) {
                 return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
             }
     }
-}
-
+  } else if (pendingManualAdjust[userId]) {
+    const state = pendingManualAdjust[userId];
+    switch (state.step) {
+      case 'await_student_search':
+        const res = await executeDbQuery(client => 
+            client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${text.toLowerCase()}%`, text])
+        );
+        if (res.rows.length === 0) { 
+            return { type: 'text', text: `找不到學員「${text}」。請重新輸入或取消操作。`, quickReply: { items: getCancelMenu() } };
+        }
+        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+        const userBubbles = res.rows.map(u => ({ type: 'bubble', body: { type: 'box', layout: 'horizontal', spacing: 'md', contents: [ { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' }, { type: 'box', layout: 'vertical', flex: 3, justifyContent: 'center', contents: [ { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true }, { type: 'text', text: `ID: ${u.id}`, size: 'xxs', color: '#AAAAAA', margin: 'sm' } ] } ] }, footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'primary', color: '#1A759F', height: 'sm', action: { type: 'postback', label: '選擇此學員', data: `action=select_student_for_adjust&studentId=${u.id}` } }] } }));
+        return { type: 'flex', altText: '請選擇要調整點數的學員', contents: { type: 'carousel', contents: userBubbles } };
+      case 'await_operation':
+        if (text === CONSTANTS.COMMANDS.TEACHER.ADD_POINTS || text === CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS) { 
+            state.operation = text === CONSTANTS.COMMANDS.TEACHER.ADD_POINTS ? 'add' : 'deduct'; 
+            state.step = 'await_amount'; 
+            return { type: 'text', text: `請輸入要 ${text === CONSTANTS.COMMANDS.TEACHER.ADD_POINTS ? '增加' : '扣除'} 的點數數量 (純數字)：`, quickReply: { items: getCancelMenu() } };
+        } else { 
+            return '請點擊 `+ 加點` 或 `- 扣點` 按鈕。';
+        }
+      case 'await_amount': 
+        const amount = parseInt(text, 10);
+        if (isNaN(amount) || amount <= 0) { 
+            return { type: 'text', text: '點數格式不正確，請輸入一個大於 0 的正整數。', quickReply: { items: getCancelMenu() } };
+        } 
+        state.amount = amount; 
+        state.step = 'await_reason'; 
+        return { type: 'text', text: '請輸入調整原因（例如：活動獎勵、課程補償等）：', quickReply: { items: getCancelMenu() } };
+      case 'await_reason': 
+        state.reason = text; 
+        state.step = 'await_confirmation'; 
+        const opText = state.operation === 'add' ? `增加 ${state.amount} 點` : `扣除 ${state.amount} 點`; 
+        const summary = `請確認調整內容：\n\n對象：${state.targetStudent.name}\n操作：${opText}\n原因：${state.reason}`;
+        return { type: 'text', text: summary, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_MANUAL_ADJUST, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_MANUAL_ADJUST } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] }};
+      case 'await_confirmation':
+        if (text === CONSTANTS.COMMANDS.TEACHER.CONFIRM_MANUAL_ADJUST) {
+          return executeDbQuery(async (clientDB) => {
+            await clientDB.query('BEGIN');
+            try {
+                const studentRes = await clientDB.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [state.targetStudent.id]);
+                const student = studentRes.rows[0];
+                const newPoints = state.operation === 'add' ? student.points + state.amount : student.points - state.amount;
+                if (newPoints < 0) {
+                    await clientDB.query('ROLLBACK');
+                    delete pendingManualAdjust[userId];
+                    return `操作失敗：學員 ${student.name} 的點數不足以扣除 ${state.amount} 點。`;
+                }
+                const historyEntry = { action: `手動調整：${state.operation === 'add' ? '+' : '-'}${state.amount}點`, reason: state.reason, time: new Date().toISOString(), operator: user.name };
+                const newHistory = student.history ? [...student.history, historyEntry] : [historyEntry];
+                await clientDB.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), student.id]);
+                const orderId = `MA-${Date.now()}`;
+                const pointsChange = state.operation === 'add' ? state.amount : -state.amount;
+                const reasonForOrder = `手動`;
+                await clientDB.query(
+                    `INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                    [orderId, student.id, student.name, pointsChange, 0, reasonForOrder, 'completed', new Date().toISOString()]
+                );
+                const opTextForStudent = state.operation === 'add' ? `增加了 ${state.amount}` : `扣除了 ${state.amount}`;
+                const notifyMessage = { type: 'text', text: `🔔 點數異動通知\n老師 ${user.name} 為您 ${opTextForStudent} 點。\n原因：${state.reason}\n您目前的點數為：${newPoints} 點。` };
+                await enqueuePushTask(student.id, notifyMessage);
+                await clientDB.query('COMMIT');
+                delete pendingManualAdjust[userId];
+                return `✅ 已成功為學員 ${student.name} ${state.operation === 'add' ? '增加' : '扣除'} ${state.amount} 點。`;
+            } catch (e) {
+                await clientDB.query('ROLLBACK');
+                console.error('手動調整點數失敗:', e);
+                delete pendingManualAdjust[userId];
+                return '❌ 操作失敗，資料庫發生錯誤，請稍後再試。';
+            }
+          });
+        }
+        break;
     }
+  } else if (pendingManualAdjustSearch[userId]) {
+    const searchQuery = text;
+    delete pendingManualAdjustSearch[userId];
+    const res = await executeDbQuery(client => 
+        client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
+    );
+    if (res.rows.length === 0) {
+        return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
+    }
+    return showStudentSelectionForAdjustHistory(res.rows, searchQuery);
+  } else if (pendingPurchaseHistorySearch[userId]) {
+    const searchQuery = text;
+    delete pendingPurchaseHistorySearch[userId];
+    const res = await executeDbQuery(client => 
+        client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
+    );
+    if (res.rows.length === 0) {
+        return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
+    }
+    return showStudentSelectionForPurchaseHistory(res.rows);
+  } else if (pendingExchangeHistorySearch[userId]) {
+      const searchQuery = text;
+      delete pendingExchangeHistorySearch[userId];
+      const res = await executeDbQuery(client => 
+          client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
+      );
+      if (res.rows.length === 0) {
+          return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
+      }
+      return showStudentSelectionForExchangeHistory(res.rows);
+  } else if (pendingMessageHistorySearch[userId]) {
+      const searchQuery = text;
+      delete pendingMessageHistorySearch[userId];
+      const res = await executeDbQuery(client => 
+          client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
+      );
+      if (res.rows.length === 0) {
+          return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
+      }
+      return showStudentSelectionForMessageHistory(res.rows);
+  } else if (pendingStudentSearchQuery[userId]) {
+    const searchQuery = text;
+    delete pendingStudentSearchQuery[userId];
+    return showStudentSearchResults(searchQuery, 1);
+  } else if (pendingReply[userId]) {
+    const state = pendingReply[userId];
+    try {
+      await executeDbQuery(client => 
+        client.query("UPDATE feedback_messages SET status = 'replied', teacher_reply = $1, is_student_read = false WHERE id = $2", [text, state.msgId])
+      );
+      const studentId = state.studentId;
+      const originalMessage = state.originalMessage;
+      delete pendingReply[userId];
+      const notifyMessage = { type: 'text', text: `老師回覆了您的留言：\n\n【您的留言】\n${originalMessage}\n\n【老師的回覆】\n${text}`};
+      await enqueuePushTask(studentId, notifyMessage);
+      return '✅ 已成功回覆學員的留言。';
+    } catch (err) {
+      delete pendingReply[userId];
+      throw err;
+    }
+  }else if (pendingMessageSearchQuery[userId]) {
+    const searchQuery = text;
+    delete pendingMessageSearchQuery[userId];
+    return showHistoricalMessages(searchQuery, 1);
+  } else if (pendingTeacherProfileEdit[userId]) {
+    const state = pendingTeacherProfileEdit[userId];
+    const step = state.step;
+    if (state.type === 'create') {
+        switch (step) {
+            case 'await_name':
+                state.profileData.name = text;
+                state.step = 'await_bio';
+                setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => { enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' }); });
+                return { type: 'text', text: '姓名已收到！\n接下來，請輸入您的個人簡介（例如您的教學風格、專業認證等），或輸入「無」表示留空：', quickReply: { items: getCancelMenu() } };
+            case 'await_bio':
+                state.profileData.bio = text.trim().toLowerCase() === '無' ? null : text;
+                state.step = 'await_image';
+                setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => { enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' }); });
+                return { type: 'text', text: '簡介已收到！\n最後，請直接上傳一張您想顯示的個人照片，或輸入「無」使用預設頭像：', quickReply: { items: getCancelMenu() } };
+            case 'await_image':
+                let imageUrl = null;
+                if (event.message.type === 'image') {
+                    try {
+                        const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
+                        const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+                        const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: true, folder: "yoga_teachers" });
+                        imageUrl = uploadResponse.url;
+                    } catch (err) {
+                        console.error('上傳老師照片至 ImageKit 失敗', err);
+                        delete pendingTeacherProfileEdit[userId];
+                        return '❌ 圖片上傳失敗，請重新開始建立檔案流程。';
+                    }
+                } else if (event.message.type === 'text' && text.trim().toLowerCase() !== '無') {
+                    return { type: 'text', text: '格式錯誤，請直接上傳一張照片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
+                }
+                state.profileData.image_url = imageUrl;
+                state.step = 'await_confirmation';
+                state.newData = state.profileData;
+                return buildProfileConfirmationMessage(userId, state.newData);
+        }
+    } else if (state.type === 'edit') {
+        const field = step.replace('await_', '');
+        let value;
+        if (field === 'image_url') {
+            if (event.message.type !== 'image') {
+                return { type: 'text', text: '格式錯誤，請直接上傳一張照片。', quickReply: { items: getCancelMenu() } };
+            }
+            try {
+                const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
+                const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+                const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: true, folder: "yoga_teachers" });
+                value = uploadResponse.url;
+            } catch (err) {
+                console.error('更新老師照片至 ImageKit 失敗', err);
+                return '❌ 圖片上傳失敗，請稍後再試。';
+            }
+        } else {
+            value = text;
+        }
+        state.newData = { [field]: value };
+        state.step = 'await_confirmation';
+        return buildProfileConfirmationMessage(userId, state.newData);
+    }
+  }
+
+  // === Refactored Command Handling ===
+  const commandFunction = teacherCommandMap[text];
+  if (commandFunction) {
+    return commandFunction(event, user);
+  } else {
+    return handleUnknownTeacherCommand(text);
+  }
+}
+                                                  const course = {
   } else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
     switch (state.step) {
