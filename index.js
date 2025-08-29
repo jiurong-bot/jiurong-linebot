@@ -1,4 +1,4 @@
-// index.js - V39.2 ()
+// index.js - V39.3 (點數現金付)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
