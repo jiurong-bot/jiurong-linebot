@@ -907,6 +907,27 @@ function formatDateTime(isoString) {
     return `${month}-${day}（${weekday}）${hour}:${minute}`;
 }
 /**
+ * [新增] 僅格式化日期，不包含時間
+ * @param {string} isoString - ISO 格式的時間字串
+ * @returns {string} - 回傳格式為 MM-DD (週X)
+ */
+function formatDateOnly(isoString) {
+    if (!isoString) return '無效日期';
+    const date = new Date(isoString);
+    const formatter = new Intl.DateTimeFormat('zh-TW', { 
+        month: '2-digit', 
+        day: '2-digit', 
+        weekday: 'short', 
+        timeZone: 'Asia/Taipei' 
+    });
+    const parts = formatter.formatToParts(date);
+    const month = parts.find(p => p.type === 'month').value;
+    const day = parts.find(p => p.type === 'day').value;
+    let weekday = parts.find(p => p.type === 'weekday').value;
+    if (weekday.startsWith('週')) weekday = weekday.slice(-1);
+    return `${month}-${day}（${weekday}）`;
+}
+/**
  * [V23.2 新增] 取得課程主標題，移除 "- 第 x 堂"
  * @param {string} fullTitle - 完整的課程標題
  * @returns {string} - 主標題
