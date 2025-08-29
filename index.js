@@ -1,4 +1,4 @@
-// index.js - V38.3 (候補機制)(測試版)
+// index.js - V39.0 (通知開關優化)(測試版)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
