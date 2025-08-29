@@ -4504,7 +4504,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             type: 'image',
                             url: series.teacherImageUrl || placeholder_avatar,
                             aspectRatio: '1:1',
-                            aspectMode: 'cover',
+                            aspectMode: 'fit',
                             size: 'md',
                             flex: 2 // 控制照片寬度佔比
                         },
@@ -4519,10 +4519,16 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
                                 { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
                                 { type: 'separator', margin: 'md'},
-                                { type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm', contents: [
-                                    { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
-                                    { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666' }
-                                ]}
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal', // 改為 horizontal
+                                    margin: 'md',
+                                    contents: [
+                                        { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
+                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' } // 新增 align: 'end'
+                                    ]
+                                }
+
                             ]
                         }
                     ]
