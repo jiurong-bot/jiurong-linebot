@@ -5919,16 +5919,60 @@ async function handlePostback(event, user) {
             });
         }
         case 'select_purchase_plan': {
-            const points = parseInt(data.get('plan'), 10);
-            const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
-            if (!plan) return '找不到您選擇的購買方案。';
-            pendingPurchase[userId] = { step: 'confirm_purchase', data: { points: plan.points, amount: plan.amount } };
-            setupConversationTimeout(userId, pendingPurchase, 'pendingPurchase', (u) => {
-                const timeoutMessage = { type: 'text', text: '您的購買確認操作已逾時，請重新點擊「購買點數」開始。' };
-                enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
-            });
-            return { type: 'text', text: `您選擇了購買「${plan.label}」。\n金額為 ${plan.amount} 元。\n\n請確認是否繼續購買？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS, text: CONSTANTS.COMMANDS.STUDENT.CONFIRM_BUY_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
+    const points = parseInt(data.get('plan'), 10);
+    const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+    if (!plan) return '找不到您選擇的購買方案。';
+
+    return {
+        type: 'flex',
+        altText: '請選擇付款方式',
+        contents: {
+            type: 'bubble',
+            header: {
+                type: 'box', layout: 'vertical',
+                contents: [{ type: 'text', text: '確認訂單並選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }],
+                backgroundColor: '#52B69A'
+            },
+            body: {
+                type: 'box', layout: 'vertical', spacing: 'md',
+                contents: [
+                    { type: 'text', text: `方案：${plan.label}`, weight: 'bold', size: 'md' },
+                    { type: 'text', text: `金額：${plan.amount} 元`, size: 'lg', weight: 'bold', margin: 'sm' }
+                ]
+            },
+            footer: {
+                type: 'box', layout: 'vertical', spacing: 'sm',
+                contents: [
+                    {
+                        type: 'button', style: 'primary', color: '#34A0A4',
+                        action: {
+                            type: 'postback',
+                            label: '🏦 轉帳付款',
+                            data: `action=execute_point_purchase&plan=${plan.points}&method=transfer`
+                        }
+                    },
+                    {
+                        type: 'button', style: 'primary', color: '#1A759F',
+                        action: {
+                            type: 'postback',
+                            label: '🤝 現金面交',
+                            data: `action=execute_point_purchase&plan=${plan.points}&method=cash`
+                        }
+                    },
+                    {
+                        type: 'button', style: 'secondary', height: 'sm', margin: 'md',
+                        action: {
+                            type: 'message',
+                            label: '取消',
+                            text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                        }
+                    }
+                ]
+            }
         }
+    };
+}
+
         case 'confirm_order': {
             const order_id = data.get('order_id');
             return executeDbQuery(async (client) => {
