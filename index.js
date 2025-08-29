@@ -5972,6 +5972,50 @@ async function handlePostback(event, user) {
         }
     };
 }
+        case 'execute_point_purchase': {
+    const points = parseInt(data.get('plan'), 10);
+    const paymentMethod = data.get('method');
+    const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+
+    if (!plan) return '方案選擇無效，請重新操作。';
+
+    // 建立訂單
+    const order_id = `PO${Date.now()}`;
+    const order = {
+        order_id: order_id,
+        user_id: userId,
+        user_name: user.name,
+        points: plan.points,
+        amount: plan.amount,
+        last_5_digits: null,
+        status: 'pending_payment',
+        timestamp: new Date().toISOString(),
+        payment_method: paymentMethod // 新增付款方式
+    };
+
+    // 存入資料庫，確保 saveOrder 函式能處理新欄位
+    await executeDbQuery(async (client) => {
+        await client.query(
+            `INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp, payment_method) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ON CONFLICT (order_id) DO UPDATE SET 
+             user_id = $2, user_name = $3, points = $4, amount = $5, last_5_digits = $6, status = $7, timestamp = $8, payment_method = $9`,
+            [order.order_id, order.user_id, order.user_name, order.points, order.amount, order.last_5_digits, order.status, order.timestamp, order.payment_method]
+        );
+    });
+
+
+    // 根據付款方式回傳不同訊息
+    if (paymentMethod === 'transfer') {
+        const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${plan.amount} 元\n\n匯款完成後，請至「點數查詢」->「查詢購點紀錄」回報後五碼。`;
+        return replyText;
+    } else { // cash
+        const replyText = `✅ 訂單已成立！\n您選擇了現金支付「${plan.label}」，總金額 ${plan.amount} 元。\n請直接與老師聯繫並完成支付，支付完成後老師會為您手動加點。`;
+        const notifyMessage = { type: 'text', text: `🔔 點數訂單通知\n學員 ${user.name} 建立了一筆「現金」購點訂單。\n方案：${plan.label}\n金額：${plan.amount} 元\n請至「待確認訂單」查看並準備收款。`};
+        await notifyAllTeachers(notifyMessage);
+        return replyText;
+    }
+}
 
         case 'confirm_order': {
             const order_id = data.get('order_id');
