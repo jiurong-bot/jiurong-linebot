@@ -4618,58 +4618,71 @@ async function showMyCourses(userId, page) {
             const footerButtons = [];
 
             if (cardData.type === 'booked') {
-                statusComponents.push({ type: 'text', text: `✅ 您已預約 ${cardData.spots} 位`, color: '#28a745', size: 'sm', weight: 'bold', margin: 'md' });
+                statusComponents.push({ type: 'text', text: `✅ 您已預約 ${cardData.spots} 位`, color: '#28a745', size: 'sm', weight: 'bold' });
 
                 const eightHoursInMillis = CONSTANTS.TIME.EIGHT_HOURS_IN_MS;
                 const canCancel = new Date(c.time).getTime() - Date.now() > eightHoursInMillis;
 
                 if (canCancel) {
                     footerButtons.push({ 
-                        type: 'button', 
-                        style: 'primary', 
-                        color: '#DE5246', 
-                        height: 'sm', 
-                        action: { 
-                            type: 'postback', 
-                            label: `取消 ${cardData.spots > 1 ? '1位 ' : ''}預約`, 
-                            data: `action=confirm_cancel_booking_start&course_id=${c.id}` 
-                        } 
+                        type: 'button', style: 'primary', color: '#DE5246', height: 'sm', 
+                        action: { type: 'postback', label: `取消 ${cardData.spots > 1 ? '1位 ' : ''}預約`, data: `action=confirm_cancel_booking_start&course_id=${c.id}` } 
                     });
                 } else {
-                    // [V38.3 修正] 將按鈕 action 改為一個不會被處理的 postback，以避免觸發任何回應
                     footerButtons.push({
-                        type: 'button',
-                        style: 'secondary', 
-                        color: '#AAAAAA',
-                        height: 'sm',
-                        action: {
-                            type: 'postback',
-                            label: '🚫 無法取消 (8hr內)',
-                            data: 'action=do_nothing' // 這是一個後端不會處理的 action，點擊後等於沒作用
-                        }
+                        type: 'button', style: 'secondary', color: '#AAAAAA', height: 'sm',
+                        action: { type: 'postback', label: '🚫 無法取消 (8hr內)', data: 'action=do_nothing' }
                     });
                 }
             }
             if (cardData.type === 'waiting') {
                 const waitingPosition = (c.waiting || []).indexOf(userId) + 1;
-                 statusComponents.push({ type: 'text', text: `🕒 您在候補名單中 (第${waitingPosition}位)`, color: '#FFA500', size: 'sm', weight: 'bold', margin: 'sm' });
+                statusComponents.push({ type: 'text', text: `🕒 候補第 ${waitingPosition} 位`, color: '#FFA500', size: 'sm', weight: 'bold' });
                 footerButtons.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` } });
             }
 
+            // [V38.4 修改] 調整 Flex Message 結構
             return {
-                type: 'bubble', size: 'giga',
-                hero: { type: 'image', url: c.teacher_image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                type: 'bubble',
+                size: 'giga',
                 body: {
-                    type: 'box', layout: 'vertical', paddingAll: 'xl', spacing: 'md',
+                    type: 'box',
+                    layout: 'horizontal',
+                    paddingAll: 'lg',
+                    spacing: 'lg',
                     contents: [
-                        { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'xl', wrap: true },
-                        ...statusComponents,
-                        { type: 'separator', margin: 'lg' },
-                        { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'sm', margin: 'md' },
-                        { type: 'text', text: formatDateTime(c.time), size: 'sm', margin: 'sm' }
+                        {
+                            type: 'image',
+                            url: c.teacher_image_url || placeholder_avatar,
+                            aspectRatio: '1:1',
+                            aspectMode: 'cover',
+                            size: 'md',
+                            flex: 2
+                        },
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            spacing: 'sm',
+                            flex: 4,
+                            contents: [
+                                { type: 'text', text: getCourseMainTitle(c.title), weight: 'bold', size: 'lg', wrap: true },
+                                { type: 'text', text: formatDateTime(c.time), size: 'sm' },
+                                { type: 'text', text: `授課老師：${c.teacher_name || '待定'}`, size: 'xs', color: '#888888' },
+                                { type: 'separator', margin: 'md' },
+                                ...statusComponents
+                            ]
+                        }
                     ]
                 },
-                footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: footerButtons }
+                ...(footerButtons.length > 0 && {
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        paddingAll: 'md',
+                        contents: footerButtons
+                    }
+                })
             };
         });
 
