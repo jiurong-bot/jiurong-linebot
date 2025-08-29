@@ -2893,7 +2893,7 @@ async function handleTeacherCommands(event, userId) {
     return handleUnknownTeacherCommand(text);
   }
 }
-                                                  const course = {
+                                             const course = {
   } else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
     switch (state.step) {
