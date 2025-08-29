@@ -4387,15 +4387,15 @@ async function showPendingOrders(page) {
         noDataMessage: '目前沒有待您確認的點數訂單。'
     });
 }
-/**
- * [V36.7 最終版] 顯示可預約課程，使用 hero 區塊穩定顯示照片
+
+ /**
+ * [V36.7 修改] 顯示可預約課程，改為左圖右文的排版
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
  */
 async function showAvailableCourses(userId, postbackData = new URLSearchParams()) {
     return executeDbQuery(async (client) => {
-        // ... (資料查詢與分組的邏輯不變)
         const coursesRes = await client.query(
             `SELECT
                 c.*,
@@ -4435,6 +4435,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         
         const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
         const allSeries = Object.values(courseSeries);
+        
         const seriesBubbles = allSeries.map(series => {
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
             const SESSIONS_PER_PAGE = 3;
@@ -4452,38 +4453,25 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     buttonActionData = `action=select_booking_spots&course_id=${session.id}`;
                     subText = `剩餘 ${remainingSpots} 位`;
                     subTextColor = '#666666';
-                    buttonStyle = 'secondary'; // [UI調整] 恢復為與其他選單一致的灰色
-                    buttonColor = undefined;     // 使用 secondary 預設顏色
+                    buttonStyle = 'secondary';
+                    buttonColor = undefined;
                 } else {
                     buttonActionData = `action=confirm_join_waiting_list_start&course_id=${session.id}`;
                     const nextPosition = waitingCount + 1;
                     subText = `候補第 ${nextPosition} 位`;
                     subTextColor = '#DE5246';
-                    buttonStyle = 'secondary'; // [UI調整] 額滿時也用 secondary 風格
-                    buttonColor = '#808080';   // 但指定一個更深的灰色
+                    buttonStyle = 'secondary';
+                    buttonColor = '#808080';
                 }
                 
                 return {
                     type: 'box', layout: 'vertical', contents: [
                         { type: 'button', action: { type: 'postback', label: formatDateTime(session.time), data: buttonActionData }, height: 'sm', style: buttonStyle, color: buttonColor },
                         { type: 'text', text: subText, size: 'xs', color: subTextColor, align: 'end', margin: 'xs' }
-                    ], spacing: 'xs', margin: 'md'
+                    ], spacing: 'xs'
                 };
             });
 
-            const bodyContents = [
-                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true, margin: 'md' },
-                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
-                ...(series.teacherBio ? [{ type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' }] : []),
-                { type: 'box', layout: 'horizontal', margin: 'md', contents: [
-                    { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
-                    { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
-                ]},
-                { type: 'separator', margin: 'lg' },
-                ...dateButtons
-            ];
-            
-            let footerContents = [];
             const hasPreviousSessions = currentPage > 1;
             const pageButtons = [];
             if (hasPreviousSessions) {
@@ -4495,23 +4483,60 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
             }
             
+            // 將所有 session 按鈕和分頁按鈕組合到 footer
+            const footerContents = [...dateButtons];
             if (pageButtons.length > 0) {
-                footerContents.push({ type: 'box', layout: 'horizontal', contents: pageButtons });
+                 footerContents.push({ type: 'separator', margin: 'md' });
+                 footerContents.push({ type: 'box', layout: 'horizontal', contents: pageButtons, margin: 'md' });
             }
 
             return {
                 type: 'bubble',
                 size: 'giga',
-                // [API 修正] 將照片加回最穩定的 hero 區塊
-                hero: {
-                    type: 'image',
-                    url: series.teacherImageUrl || placeholder_avatar,
-                    size: 'full',
-                    aspectRatio: '1:1',
-                    aspectMode: 'cover'
+                body: {
+                    type: 'box',
+                    layout: 'horizontal', // 主要改動：改為水平佈局
+                    paddingAll: 'lg',
+                    spacing: 'lg',
+                    contents: [
+                        // 左側照片區塊
+                        {
+                            type: 'image',
+                            url: series.teacherImageUrl || placeholder_avatar,
+                            aspectRatio: '1:1',
+                            aspectMode: 'cover',
+                            size: 'md',
+                            flex: 2 // 控制照片寬度佔比
+                        },
+                        // 右側文字資訊區塊
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            spacing: 'sm',
+                            flex: 4, // 控制文字區塊寬度佔比
+                            contents: [
+                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
+                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
+                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
+                                { type: 'separator', margin: 'md'},
+                                { type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm', contents: [
+                                    { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
+                                    { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666' }
+                                ]}
+                            ]
+                        }
+                    ]
                 },
-                body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md', contents: bodyContents },
-                ...(footerContents.length > 0 && { footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'md', contents: footerContents } })
+                // 將所有按鈕移至 footer
+                ...(footerContents.length > 0 && {
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        paddingAll: 'md',
+                        contents: footerContents
+                    }
+                })
             };
         });
         
@@ -4524,8 +4549,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         return flexMessage;
     });
 }
-
-           
+      
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
