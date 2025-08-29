@@ -4631,7 +4631,7 @@ async function showMyCourses(userId, page) {
                 } else {
                     footerButtons.push({
                         type: 'button', style: 'secondary', color: '#AAAAAA', height: 'sm',
-                        action: { type: 'postback', label: '🚫 無法取消 (8hr內)', data: 'action=do_nothing' }
+                        action: { type: 'postback', label: '🚫 無法取消 (8小時內)', data: 'action=do_nothing' }
                     });
                 }
             }
