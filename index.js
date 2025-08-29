@@ -1399,7 +1399,7 @@ async function showCourseInquiry(event, user) {
 
 async function showPointManagementMenu(event, user) {
     const pendingCount = await executeDbQuery(client => 
-        client.query("SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'")
+        client.query("SELECT COUNT(*) FROM orders WHERE status = ('pending_confirmation','pending_payment')")
     ).then(res => parseInt(res.rows[0].count, 10));
 
 
