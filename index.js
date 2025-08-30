@@ -71,7 +71,8 @@ const CONSTANTS = {
       SIMULATE_TEACHER: '@模擬老師身份',
       CONFIRM_ADD_TEACHER: '✅ 確認授權',
       CONFIRM_REMOVE_TEACHER: '✅ 確認移除',
-      TOGGLE_NOTIFICATIONS: '@切換推播'
+      TOGGLE_NOTIFICATIONS: '@切換推播',
+      VIEW_ERROR_LOGS:'@查看錯誤日誌'
       },
     TEACHER: {
       COURSE_MANAGEMENT: '@課程管理',
@@ -81,12 +82,10 @@ const CONSTANTS = {
       POINT_MANAGEMENT: '@點數管理',
         PENDING_POINT_ORDERS: '@待確認點數訂單',
         MANUAL_ADJUST_POINTS: '@手動調整點數',
-        // [新增]
         VIEW_PURCHASE_HISTORY: '@查詢購點紀錄',
       STUDENT_MANAGEMENT: '@學員管理',
         SEARCH_STUDENT: '@查詢學員',
         VIEW_MESSAGES: '@查看未回覆留言',
-        // [修改]
         MESSAGE_SEARCH: '@查詢歷史留言',
       ANNOUNCEMENT_MANAGEMENT: '@公告管理',
         ADD_ANNOUNCEMENT: '@頒佈新公告',
