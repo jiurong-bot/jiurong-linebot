@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
  /**
- * [V36.7 修改 & 版面修正] 顯示可預約課程，確保所有卡片高度一致
+ * [V36.7 修改 & 錯誤修復] 顯示可預約課程，用提示文字取代空白容器來修正 400 錯誤
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4549,18 +4549,41 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
             }
             
-            // ====================== [修改點] ======================
-            // 移除原本的 if 判斷，無論如何都產生 footer 的所有元件
             const footerContents = [...sessionButtonRows];
             footerContents.push({ type: 'separator', margin: 'md' });
-            // 新增一個固定的 box 容器，如果沒有分頁按鈕，它就會變成一個透明的墊片
-            footerContents.push({ 
-                type: 'box', 
-                layout: 'horizontal', 
-                contents: pageButtons, 
-                margin: 'md',
-                height: 'sm' // [新增] 關鍵！讓這個容器固定佔據跟按鈕一樣的高度
-            });
+
+            // ====================== [修改] ======================
+            // 判斷要顯示真實的分頁按鈕，還是顯示提示文字
+            let paginationComponent;
+            if (pageButtons.length > 0) {
+                // 如果有分頁按鈕，就正常顯示
+                paginationComponent = {
+                    type: 'box',
+                    layout: 'horizontal',
+                    contents: pageButtons,
+                    margin: 'md',
+                    height: 'sm'
+                };
+            } else {
+                // 如果沒有分頁按鈕，就顯示提示文字來佔位
+                paginationComponent = {
+                    type: 'box',
+                    layout: 'vertical',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    margin: 'md',
+                    height: 'sm', // 關鍵！維持相同的高度
+                    contents: [
+                        {
+                            type: 'text',
+                            text: '— 無其他分頁 —',
+                            size: 'sm',
+                            color: '#AAAAAA'
+                        }
+                    ]
+                };
+            }
+            footerContents.push(paginationComponent);
             // =======================================================
 
             return {
@@ -4603,7 +4626,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                         }
                     ]
                 },
-                // Footer 現在總是會被產生
                 footer: {
                     type: 'box',
                     layout: 'vertical',
