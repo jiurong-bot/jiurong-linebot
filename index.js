@@ -1920,14 +1920,10 @@ async function getGlobalNotificationSettings() {
     return settings;
 }
 
-/**
- * [V39.1 修改] 建立管理者控制面板的 Flex Message，整合總開關與分類開關
- * @returns {Promise<object>} Flex Message 物件
- */
+[span_1](start_span)// index.js[span_1](end_span)
 async function buildAdminPanelFlex() {
     // 步驟 1: 檢查總開關目前是開啟還是關閉
-    const isMasterEnabled = await getNotificationStatus(); 
-    
+    const isMasterEnabled = await getNotificationStatus();
     const bodyContents = []; // 用一個陣列來動態存放 body 內容
 
     // 步驟 2: 根據總開關狀態，建立第一個按鈕
@@ -1961,7 +1957,6 @@ async function buildAdminPanelFlex() {
             ]
         });
         const createSectionHeader = (title) => ({ type: 'text', text: title, weight: 'bold', size: 'md', margin: 'lg', color: '#343A40' });
-
         bodyContents.push(createSectionHeader('課程通知 (Class Notifications)'));
         bodyContents.push(createSwitch('(學員) 上課前一小時提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr));
         bodyContents.push(createSwitch('(老師) 未來 24 小時課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr));
@@ -1973,7 +1968,6 @@ async function buildAdminPanelFlex() {
         bodyContents.push(createSectionHeader('互動通知 (Interaction Notifications)'));
         bodyContents.push(createSwitch('(學員) 收到老師的留言回覆', 'student_message_reply_enabled', settings.student_message_reply));
         bodyContents.push(createSwitch('(老師) 收到學員的新留言', 'teacher_new_message_enabled', settings.teacher_new_message));
-        
         bodyContents.push(createSectionHeader('系統通知 (System Notifications)'));
         bodyContents.push(createSwitch('(學員) 新好友歡迎訊息', 'student_welcome_message_enabled', settings.student_welcome_message));
         bodyContents.push(createSwitch('(學員) 新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement));
@@ -1983,12 +1977,12 @@ async function buildAdminPanelFlex() {
     const otherCommands = [
         { label: '系統狀態', command: CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS },
         { label: '失敗任務管理', command: CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT },
+        { label: '🚨 查看錯誤日誌', command: CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS },
         { label: '授權老師', command: CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER },
         { label: '移除老師', command: CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER },
         { label: '模擬學員身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT },
         { label: '模擬老師身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER }
     ];
-    
     bodyContents.push({ type: 'separator', margin: 'xl' });
     bodyContents.push({ type: 'text', text: '常用管理功能', weight: 'bold', size: 'md', margin: 'md' });
     otherCommands.forEach(cmd => {
@@ -1997,7 +1991,7 @@ async function buildAdminPanelFlex() {
             action: { type: 'postback', label: cmd.label, data: `action=run_command&text=${encodeURIComponent(cmd.command)}` }
         });
     });
-
+    
     // 步驟 5: 組裝成最後的 Flex Message
     return {
         type: 'flex',
@@ -2022,6 +2016,7 @@ async function buildAdminPanelFlex() {
     };
 }
 
+    
 async function showSystemStatus() {
   return executeDbQuery(async (db) => {
     const [pendingRes, processingRes, failedRes] = await Promise.all([
