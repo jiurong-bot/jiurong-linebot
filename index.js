@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
  /**
- * [V36.7 修改 & 錯誤修復] 顯示可預約課程，用提示文字取代空白容器來修正 400 錯誤
+ * [V36.7 FINAL FIX] 顯示可預約課程，使用 spacer 修正奇數按鈕造成的 400 錯誤
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4487,9 +4487,14 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
             const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
             
             const createSessionButton = (session) => {
+                // ====================== [修改] ======================
+                // 這是最關鍵的修正！當沒有 session (奇數情況) 時，
+                // 回傳一個合法的 spacer 元件，而不是會導致錯誤的空 box。
                 if (!session) {
-                    return { type: 'box', layout: 'vertical', contents: [], flex: 1 };
+                    return { type: 'box', layout: 'vertical', contents: [{ type: 'spacer' }], flex: 1 };
                 }
+                // ====================================================
+
                 const remainingSpots = session.capacity - (session.students || []).length;
                 const isFull = remainingSpots <= 0;
                 const waitingCount = (session.waiting || []).length;
@@ -4552,11 +4557,8 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
             const footerContents = [...sessionButtonRows];
             footerContents.push({ type: 'separator', margin: 'md' });
 
-            // ====================== [修改] ======================
-            // 判斷要顯示真實的分頁按鈕，還是顯示提示文字
             let paginationComponent;
             if (pageButtons.length > 0) {
-                // 如果有分頁按鈕，就正常顯示
                 paginationComponent = {
                     type: 'box',
                     layout: 'horizontal',
@@ -4565,18 +4567,17 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     height: 'sm'
                 };
             } else {
-                // 如果沒有分頁按鈕，就顯示提示文字來佔位
                 paginationComponent = {
                     type: 'box',
                     layout: 'vertical',
                     justifyContent: 'center',
                     alignItems: 'center',
                     margin: 'md',
-                    height: 'sm', // 關鍵！維持相同的高度
+                    height: 'sm',
                     contents: [
                         {
                             type: 'text',
-                            text: '— 無其他分頁 —',
+                            text: '— 無其他頁 —',
                             size: 'sm',
                             color: '#AAAAAA'
                         }
@@ -4584,7 +4585,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 };
             }
             footerContents.push(paginationComponent);
-            // =======================================================
 
             return {
                 type: 'bubble',
