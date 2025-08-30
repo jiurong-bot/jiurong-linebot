@@ -1,4 +1,4 @@
-// index.js - V39.4 (移除背景維護任務)
+// index.js - V39.5 (錯誤碼處理機制)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
