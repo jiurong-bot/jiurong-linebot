@@ -5424,7 +5424,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V39.4 (移除背景維護任務)`);
+    console.log(`Bot 版本 V39.5 (錯誤碼處理機制)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
