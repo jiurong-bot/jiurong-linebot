@@ -7025,7 +7025,7 @@ async function handleEvent(event) {
             mainReplyContent = await handlePostback(event, user);
         }
     } catch(err) {
-        await handleError(err, event.replyToken, contextForError);
+        await handleError(err, event.replyToken, contextForError, userId);
         return;
     }
     
