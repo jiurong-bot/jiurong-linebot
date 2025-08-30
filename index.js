@@ -729,6 +729,33 @@ async function deleteOrder(orderId, dbClient) {
       await client.query('DELETE FROM orders WHERE order_id = $1', [orderId]);
     }, dbClient);
 }
+/**
+ * [V39.5 新增] 將詳細的錯誤資訊記錄到資料庫中。
+ * @param {Error} error - 捕獲到的錯誤物件。
+ * @param {string} [userId=null] - 發生錯誤時操作的使用者 ID。
+ * @param {string} [context=''] - 錯誤發生的情境。
+ * @returns {Promise<string|null>} - 回傳產生的唯一錯誤代碼，如果記錄失敗則回傳 null。
+ */
+async function logErrorToDb(error, userId = null, context = '') {
+    // 產生一個基於時間戳的唯一錯誤代碼，例如：E-1724987654321
+    const errorCode = `E-${Date.now()}`;
+    try {
+        await executeDbQuery(async (db) => {
+            await db.query(
+                `INSERT INTO error_logs (error_code, user_id, context, error_message, error_stack)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [errorCode, userId, context, error.message, error.stack]
+            );
+        });
+        console.log(`[Error Logging] 已成功將錯誤 ${errorCode} 記錄至資料庫。`);
+        return errorCode;
+    } catch (dbError) {
+        console.error(`❌ FATAL: 連錯誤日誌都寫入失敗!`, dbError);
+        console.error('原始錯誤:', error);
+        return null; // 回傳 null 表示寫入日誌失敗
+    }
+}
+
 
 /**
  * [V27.6 新增] 共用的錯誤處理函式
