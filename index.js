@@ -1,4 +1,4 @@
-// index.js - V39.3 (點數現金付)
+// index.js - V39.4 (移除背景維護任務)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
