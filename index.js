@@ -1,4 +1,4 @@
-// index.js - V39.6 (搜尋功能整合)
+// index.js - V39.7
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -7142,7 +7142,6 @@ async function handleEvent(event) {
             .map(m => (typeof m === 'string' ? { type: 'text', text: m } : m));
         if (formattedMessages.length > 0) {
             try {
-                 console.log('[DEBUG-JSON] Preparing to reply with:', JSON.stringify(formattedMessages, null, 2));
                  await reply(event.replyToken, formattedMessages);
             } catch (e) {
                 console.error(`[FATAL] 在 handleEvent 中捕捉到 reply 函式的嚴重錯誤 for ${userId}:`, e);
