@@ -2874,7 +2874,7 @@ async function handleTeacherCommands(event, userId) {
     return handleUnknownTeacherCommand(text);
   }
 }
-
+[span_2](start_span)// index.js[span_2](end_span)
 async function handleAdminCommands(event, userId) {
   // [V38.6 修正] 增加對全形 @ 符號的處理，提升指令辨識的彈性
   const rawText = event.message.text ? event.message.text.trim() : '';
@@ -2989,7 +2989,10 @@ async function handleAdminCommands(event, userId) {
     }   
     else if (text === CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT) {
       return showFailedTasks(1);
-    }      
+    }
+    else if (text === CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS) {
+      return showErrorLogs(1);
+    }
     else if (text === CONSTANTS.COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
         const currentStatus = await getNotificationStatus();
         const newStatus = !currentStatus;
@@ -3002,7 +3005,7 @@ async function handleAdminCommands(event, userId) {
         });
         simpleCache.clear('notifications_enabled');
         const statusText = newStatus ? '【開啟】' : '【關閉】';
-      return buildAdminPanelFlex();
+        return buildAdminPanelFlex();
     } 
     else if (text === CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER) {
       pendingTeacherAddition[userId] = { step: 'await_student_info' };
@@ -3026,7 +3029,6 @@ async function handleAdminCommands(event, userId) {
     }
   }
 }
-
 
 async function handleStudentCommands(event, userId) {
   const text = event.message.text ?
