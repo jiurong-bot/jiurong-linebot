@@ -4423,11 +4423,10 @@ async function showPendingOrders(page) {
         noDataMessage: '目前沒有待您確認的點數訂單。'
     });
 }
-
  /**
- * [V36.7 修改] 顯示可預約課程，改為左圖右文的排版
+ * [V39.11 修改] 根據使用者回饋再次調整版面，並增加空白區塊維持卡片等高
  * @param {string} userId - 使用者 ID
- * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
+ * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
  */
 async function showAvailableCourses(userId, postbackData = new URLSearchParams()) {
@@ -4445,27 +4444,31 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         );
 
         if (coursesRes.rows.length === 0) {
-            return '太棒了！目前沒有任何未來的課程。';
+            return '目前沒有任何可預約的課程。';
         }
-        
+
         const courseSeries = {};
         coursesRes.rows.forEach(course => {
             const prefix = course.id.substring(0, 2);
             if (!courseSeries[prefix]) {
+                // [V39.11 修改] 從課程標題中分離出時間
+                const titleMatch = getCourseMainTitle(course.title).match(/(.*)\s*\((.*)\)/);
+                const mainTitle = titleMatch ? titleMatch[1].trim() : getCourseMainTitle(course.title);
+                const timeRange = titleMatch ? titleMatch[2].trim() : '';
+
                 courseSeries[prefix] = {
                     prefix: prefix,
-                    mainTitle: getCourseMainTitle(course.title),
+                    mainTitle: mainTitle,
+                    timeRange: timeRange, // 獨立儲存時間區間
                     teacherName: course.teacher_name || '待定',
                     teacherBio: course.teacher_bio,
                     teacherImageUrl: course.teacher_image_url,
                     pointsCost: course.points_cost,
                     capacity: course.capacity,
                     sessions: [],
-                    // [V39.8 新增] 記錄系列的第一堂課日期
                     startDate: course.time 
                 };
             }
-            // [V39.8 新增] 持續更新系列的最後一堂課日期
             courseSeries[prefix].endDate = course.time; 
             courseSeries[prefix].sessions.push(course);
         });
@@ -4474,18 +4477,17 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         const seriesPage = parseInt(postbackData.get('series_page') || '1', 10);
         
         const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
-        const allSeries = Object.values(courseSeries); 
-        // [V39.7 優化] 如果使用者正在對某個系列分頁，則將該系列移到最前面
-        if (showMorePrefix) {
-            const activeSeriesIndex = allSeries.findIndex(s => s.prefix === showMorePrefix);
-            if (activeSeriesIndex > 0) {
-                // 從陣列中取出該系列
-                const [activeSeries] = allSeries.splice(activeSeriesIndex, 1);
-                // 將它加到陣列的最開頭
-                allSeries.unshift(activeSeries);
-            }
+        let allSeries = Object.values(courseSeries);
+
+        if (showMorePrefix) {
+            const activeSeriesIndex = allSeries.findIndex(s => s.prefix === showMorePrefix);
+            if (activeSeriesIndex > 0) {
+                const [activeSeries] = allSeries.splice(activeSeriesIndex, 1);
+                allSeries.unshift(activeSeries);
+            }
         }
-            const seriesBubbles = allSeries.map(series => {
+
+        const seriesBubbles = allSeries.map(series => {
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
             const SESSIONS_PER_PAGE = 3;
             const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
@@ -4538,9 +4540,11 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
             if (pageButtons.length > 0) {
                  footerContents.push({ type: 'separator', margin: 'md' });
                  footerContents.push({ type: 'box', layout: 'horizontal', contents: pageButtons, margin: 'md' });
+            } else {
+                 // [V39.11 新增] 新增一個空白的 box 作為佔位符，維持高度一致
+                 footerContents.push({ type: 'box', height: '28px' });
             }
 
-            // [V39.10] 根據使用者回饋再次調整版面
             return {
                 type: 'bubble',
                 size: 'giga',
@@ -4550,7 +4554,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     paddingAll: 'lg',
                     spacing: 'md',
                     contents: [
-                        // 上半部：照片與 (課程名稱 + 老師資訊)
                         {
                             type: 'box',
                             layout: 'horizontal',
@@ -4567,16 +4570,13 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                                 {
                                     type: 'box',
                                     layout: 'vertical',
-                                    justifyContent: 'center',
+                                    justifyContent: 'space-between', // 讓內容上下分佈
                                     flex: 4,
                                     contents: [
-                                        // 課程名稱放大
                                         { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true, color: '#1A759F' },
-                                        // 老師資訊
                                         {
                                             type: 'box',
                                             layout: 'vertical',
-                                            margin: 'lg',
                                             contents: [
                                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm', weight: 'bold' },
                                                 { type: 'text', text: series.teacherBio || '這位老師尚未留下簡介。', size: 'xs', color: '#888888', wrap: true, margin: 'sm' }
@@ -4587,7 +4587,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             ]
                         },
                         { type: 'separator', margin: 'lg' },
-                        // 下半部：課程詳細資訊
                         {
                             type: 'box',
                             layout: 'vertical',
@@ -4596,10 +4595,10 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             contents: [
                                 {
                                     type: 'box',
-                                    layout: 'vertical',
+                                    layout: 'horizontal',
                                     contents: [
-                                        { type: 'text', text: '開課期間', size: 'sm', color: '#666666' },
-                                        { type: 'text', text: `${formatDateOnly(series.startDate)} - ${formatDateOnly(series.endDate)}`, size: 'sm', color: '#666666' }
+                                        { type: 'text', text: `開課期間：${formatDateOnly(series.startDate)} - ${formatDateOnly(series.endDate)}`, size: 'sm', color: '#666666', flex: 3 },
+                                        { type: 'text', text: `時間：${series.timeRange}`, size: 'sm', color: '#666666', flex: 2, align: 'end' }
                                     ]
                                 },
                                 {
@@ -4625,17 +4624,20 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 })
             };
         });
-            
+
+        // 檢查 postbackData 是否來自於分頁操作，如果是，則只回傳 flex message 本身
+        if (postbackData.has('show_more')) {
+            return { type: 'flex', altText: '課程列表', contents: { type: 'carousel', contents: seriesBubbles } };
+        }
+        
+        // 第一次點擊時，回傳引導文字 + flex message
         const headerText = '🗓️ 預約課程總覽';
         const flexMessage = { type: 'flex', altText: headerText, contents: { type: 'carousel', contents: seriesBubbles } };
-        
-        if (!postbackData.has('show_more')) {
-            return [{ type: 'text', text: `你好！${headerText}如下，請左右滑動查看：` }, flexMessage];
-        }
-        return flexMessage;
+        return [{ type: 'text', text: `你好！${headerText}如下，請左右滑動查看：` }, flexMessage];
     });
 }
 
+      
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
