@@ -5478,8 +5478,11 @@ app.listen(PORT, async () => {
     checkEnvironmentVariables();
     console.log('✅ 資料庫結構已由 Build Command 處理。');
 
-    console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V39.5 (錯誤碼處理機制)`);
+    // 修正點：將樣板字面值改為 '+' 號串接，避免環境問題
+    console.log('✅ 伺服器已啟動，監聽埠號 ' + PORT); 
+    
+    // 修正點：更新版本號，並移除所有舊的 setInterval 任務
+    console.log('Bot 版本 V40.2 (全面修正樣板字面值問題)');
 
     // 只保留這個 ping 任務，確保 web 服務不會休眠
     setInterval(() => { 
@@ -5493,7 +5496,6 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
-
 
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
