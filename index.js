@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
  /**
- * [V36.7 FINAL-FIX-2] 顯示可預約課程，移除 box 上的無效 height 屬性以解決 400 錯誤
+ * [V36.7 FINAL-FIX-3] 顯示可預約課程，在 footer 底部增加 spacer 來實現置頂對齊
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4560,7 +4560,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     layout: 'horizontal',
                     contents: pageButtons,
                     margin: 'md'
-                    // [移除] 移除無效的 height 屬性
                 };
             } else {
                 paginationComponent = {
@@ -4569,7 +4568,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     justifyContent: 'center',
                     alignItems: 'center',
                     margin: 'md',
-                     // [移除] 移除無效的 height 屬性
                     contents: [
                         {
                             type: 'text',
@@ -4581,6 +4579,12 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 };
             }
             footerContents.push(paginationComponent);
+            
+            // ====================== [新增] ======================
+            // 在所有內容的底部加上一個 spacer，它會自動把上面的所有元件往上推
+            footerContents.push({ type: 'spacer' });
+            // =======================================================
+
 
             return {
                 type: 'bubble',
