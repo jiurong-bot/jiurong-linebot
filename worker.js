@@ -192,9 +192,8 @@ async function cleanCoursesDB() {
     }
 }
 
-
 // =======================================================
-// 每日學員點數合併報表 (詳單改為CSV附件)
+// 每日學員點數合併報表 (詳單改為CSV附件) - V38.2 修正版
 // =======================================================
 async function performDailyPointsCombinedReport() {
     console.log('📊 開始執行每日學員點數合併報表任務...');
@@ -228,20 +227,20 @@ async function performDailyPointsCombinedReport() {
         const reportDate = new Date();
         const reportDateStr = reportDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' });
         
-        // 3. 組合 Email 內文
-        let reportText = `您好，\n\n這是截至 ${reportDateStr} 的學員點數每日彙總報表。\n\n`;
-        reportText += `--- 統計摘要 ---\n`;
-        reportText += `- 總學員數：${students.length} 人\n`;
-        reportText += `- 點數總流通量：${totalPoints} 點\n`;
-        reportText += `- 平均持有：${averagePoints} 點/人\n`;
-        reportText += `- 零點數學員：${zeroPointStudents} 人\n\n`;
-        reportText += `--- 點數持有 Top 5 ---\n${top5}\n\n`;
-        reportText += `詳細的全體學員點數清單，請見附件 CSV 檔案。\n\n`;
-        reportText += `此為系統自動發送，請勿直接回覆。`;
-
+        // 3. [修改] 組合 Email 內文，改用傳統的 '+' 號串接字串
+        let reportText = '您好，\n\n這是截至 ' + reportDateStr + ' 的學員點數每日彙總報表。\n\n';
+        reportText += '--- 統計摘要 ---\n';
+        reportText += '- 總學員數：' + students.length + ' 人\n';
+        reportText += '- 點數總流通量：' + totalPoints + ' 點\n';
+        reportText += '- 平均持有：' + averagePoints + ' 點/人\n';
+        reportText += '- 零點數學員：' + zeroPointStudents + ' 人\n\n';
+        reportText += '--- 點數持有 Top 5 ---\n' + top5 + '\n\n';
+        reportText += '詳細的全體學員點數清單，請見附件 CSV 檔案。\n\n';
+        reportText += '此為系統自動發送，請勿直接回覆。';
+        
         // 4. 產生 CSV 內容
         students.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
-        let csvContent = "\uFEFF" + "姓名,剩餘點數,UserID\n"; [span_0](start_span)//[span_0](end_span)
+        let csvContent = "\uFEFF" + "姓名,剩餘點數,UserID\n"; // CSV 標頭
         students.forEach(student => {
             const studentName = `"${student.name.replace(/"/g, '""')}"`; 
             csvContent += `${studentName},${student.points},${student.id}\n`;
