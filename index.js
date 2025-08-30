@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
  /**
- * [V36.7 修改 & 雙欄佈局優化] 顯示可預約課程，改為左圖右文、雙欄按鈕的排版
+ * [V36.7 修改 & 版面修正] 顯示可預約課程，確保所有卡片高度一致
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4481,24 +4481,15 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
 
         const seriesBubbles = allSeries.map(series => {
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
-            
-            // ====================== [修改點 1] ======================
-            // 將每頁顯示的場次從 3 個增加到 6 個 (左3 + 右3)
             const SESSIONS_PER_PAGE = 6;
-            // =======================================================
-
             const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
             const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
             const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
             
-            // ====================== [修改點 2] ======================
-            // 建立一個函式來產生單一按鈕的結構，方便重複使用
             const createSessionButton = (session) => {
                 if (!session) {
-                    // 如果沒有 session (處理奇數情況)，回傳一個空的 box 作為佔位符
                     return { type: 'box', layout: 'vertical', contents: [], flex: 1 };
                 }
-
                 const remainingSpots = session.capacity - (session.students || []).length;
                 const isFull = remainingSpots <= 0;
                 const waitingCount = (session.waiting || []).length;
@@ -4527,27 +4518,25 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                         { type: 'text', text: subText, size: 'xs', color: subTextColor, align: 'end', margin: 'xs' }
                     ], 
                     spacing: 'xs',
-                    flex: 1 // 讓左右按鈕等寬
+                    flex: 1
                 };
             };
 
-            // 使用 for 迴圈兩兩一組建立水平排列的按鈕列
             const sessionButtonRows = [];
             for (let i = 0; i < sessionsToShow.length; i += 2) {
                 const leftSession = sessionsToShow[i];
-                const rightSession = sessionsToShow[i + 1]; // 如果是奇數，這裡會是 undefined
+                const rightSession = sessionsToShow[i + 1];
 
                 sessionButtonRows.push({
                     type: 'box',
                     layout: 'horizontal',
-                    spacing: 'md', // 按鈕間的水平間距
+                    spacing: 'md',
                     contents: [
                         createSessionButton(leftSession),
                         createSessionButton(rightSession)
                     ]
                 });
             }
-            // ========================================================
 
             const hasPreviousSessions = currentPage > 1;
             const pageButtons = [];
@@ -4560,12 +4549,19 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
             }
             
-            // 將所有 session 按鈕列和分頁按鈕組合到 footer
+            // ====================== [修改點] ======================
+            // 移除原本的 if 判斷，無論如何都產生 footer 的所有元件
             const footerContents = [...sessionButtonRows];
-            if (pageButtons.length > 0) {
-                 footerContents.push({ type: 'separator', margin: 'md' });
-                 footerContents.push({ type: 'box', layout: 'horizontal', contents: pageButtons, margin: 'md' });
-            }
+            footerContents.push({ type: 'separator', margin: 'md' });
+            // 新增一個固定的 box 容器，如果沒有分頁按鈕，它就會變成一個透明的墊片
+            footerContents.push({ 
+                type: 'box', 
+                layout: 'horizontal', 
+                contents: pageButtons, 
+                margin: 'md',
+                height: 'sm' // [新增] 關鍵！讓這個容器固定佔據跟按鈕一樣的高度
+            });
+            // =======================================================
 
             return {
                 type: 'bubble',
@@ -4607,15 +4603,14 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                         }
                     ]
                 },
-                ...(footerContents.length > 0 && {
-                    footer: {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'sm',
-                        paddingAll: 'md',
-                        contents: footerContents
-                    }
-                })
+                // Footer 現在總是會被產生
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'sm',
+                    paddingAll: 'md',
+                    contents: footerContents
+                }
             };
         });
         
