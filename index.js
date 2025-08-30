@@ -4423,12 +4423,9 @@ async function showPendingOrders(page) {
         noDataMessage: '目前沒有待您確認的點數訂單。'
     });
 }
-// index.js
-
-// ... (檔案前面的程式碼保持不變) ...
 
 /**
-* [V36.7 FINAL-FIX-5] 顯示可預約課程，使用固定數量的按鈕欄位來確保對齊
+* [V36.7 FINAL-FIX-6] 顯示可預約課程，將時間資訊移至費用上方
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4455,9 +4452,24 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        coursesRes.rows.forEach(course => {
            const prefix = course.id.substring(0, 2);
            if (!courseSeries[prefix]) {
+                // ====================== [修改點 1] ======================
+                // 使用正規表示式從課程標題中拆分出時間
+                const timeRegex = /\s\((\d{2}:\d{2}-\d{2}:\d{2})\)$/;
+                const match = course.title.match(timeRegex);
+                let timeRange = '';
+                // 如果沒匹配到，就用 getCourseMainTitle 作為備用方案
+                let mainTitle = getCourseMainTitle(course.title); 
+
+                if (match) {
+                    timeRange = match[1]; // e.g., "11:00-12:00"
+                    mainTitle = course.title.replace(timeRegex, '').trim();
+                }
+                // =======================================================
+
                 courseSeries[prefix] = {
                    prefix: prefix,
-                   mainTitle: getCourseMainTitle(course.title),
+                   mainTitle: mainTitle, // 儲存乾淨的主標題
+                   timeRange: timeRange, // 儲存獨立的時間範圍
                    teacherName: course.teacher_name || '待定',
                    teacherBio: course.teacher_bio,
                    teacherImageUrl: course.teacher_image_url,
@@ -4489,31 +4501,26 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
            const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
            
-           // ====================== [修改點 1] ======================
-           // 修改 createSessionButton 函式，當沒有課程時，回傳一個無作用的灰色按鈕
            const createSessionButton = (session) => {
                if (!session) {
-                   // 產生一個看起來像 disabled 的按鈕
                    return {
                        type: 'box',
                        layout: 'vertical',
                        flex: 1,
-                       margin: 'xs', // 為了對齊，給予一個假的 margin
+                       margin: 'xs',
                        contents: [{
                            type: 'button',
                            action: { type: 'postback', label: ' ', data: 'action=do_nothing' },
                            height: 'sm',
                            style: 'secondary',
-                           color: '#F0F0F0' // 淺灰色
+                           color: '#F0F0F0'
                        }]
                    };
                }
-
                const remainingSpots = session.capacity - (session.students || []).length;
                const isFull = remainingSpots <= 0;
                const waitingCount = (session.waiting || []).length;
                let buttonActionData, subText, subTextColor, buttonColor, buttonStyle;
-
                if (!isFull) {
                    buttonActionData = `action=select_booking_spots&course_id=${session.id}`;
                    subText = `剩餘 ${remainingSpots} 位`;
@@ -4528,7 +4535,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    buttonStyle = 'secondary';
                    buttonColor = '#808080';
                }
-               
                return { 
                    type: 'box', 
                    layout: 'vertical', 
@@ -4541,13 +4547,10 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                };
            };
 
-           // ====================== [修改點 2] ======================
-           // 強制迴圈執行三次，永遠產生三列（六個）按鈕的空間
            const sessionButtonRows = [];
            for (let i = 0; i < SESSIONS_PER_PAGE; i += 2) {
                const leftSession = sessionsToShow[i];
                const rightSession = sessionsToShow[i + 1];
-
                sessionButtonRows.push({
                    type: 'box',
                    layout: 'horizontal',
@@ -4559,7 +4562,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    ]
                });
            }
-           // =======================================================
 
            const hasPreviousSessions = currentPage > 1;
            const pageButtons = [];
@@ -4574,7 +4576,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            
            const footerContents = [...sessionButtonRows];
            footerContents.push({ type: 'separator', margin: 'md' });
-
            let paginationComponent;
            if (pageButtons.length > 0) {
                paginationComponent = {
@@ -4624,21 +4625,39 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             layout: 'vertical',
                             spacing: 'sm',
                             flex: 4, 
+                            // ====================== [修改點 2] ======================
+                            // 調整 body.contents 的結構
                             contents: [
-                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
+                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true }, // 乾淨的主標題
                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
                                 { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
                                 { type: 'separator', margin: 'md'},
+                                // 新增一個 box 來包裹時間、費用、名額，讓它們在視覺上成為一個群組
                                 {
                                     type: 'box',
-                                    layout: 'horizontal', 
+                                    layout: 'vertical',
                                     margin: 'md',
+                                    spacing: 'sm',
                                     contents: [
-                                        { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
-                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
+                                        // 如果有時間，才顯示時間這列
+                                        ...(series.timeRange ? [{
+                                            type: 'text',
+                                            text: `時間：${series.timeRange}`,
+                                            size: 'sm',
+                                            color: '#666666'
+                                        }] : []),
+                                        {
+                                            type: 'box',
+                                            layout: 'horizontal',
+                                            contents: [
+                                                { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
+                                                { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
+                                            ]
+                                        }
                                     ]
                                 }
                             ]
+                            // =======================================================
                         }
                     ]
                 },
