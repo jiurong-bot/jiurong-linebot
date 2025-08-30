@@ -755,24 +755,36 @@ async function logErrorToDb(error, userId = null, context = '') {
         return null; // 回傳 null 表示寫入日誌失敗
     }
 }
-
-
 /**
- * [V27.6 新增] 共用的錯誤處理函式
- * @param {Error} error - 捕獲到的錯誤物件
- * @param {string} replyToken - 用於回覆的 token
- * @param {string} context - 錯誤發生的情境，例如 "查詢我的課程"
+ * [V39.5 重構] 統一的錯誤處理函式，整合資料庫記錄與使用者回覆。
+ * @param {Error} error - 捕獲到的錯誤物件。
+ * @param {string} replyToken - 用於回覆的 token。
+ * @param {string} context - 錯誤發生的情境。
+ * @param {string} [userId=null] - 發生錯誤時操作的使用者 ID。
  */
-async function handleError(error, replyToken, context = '未知操作') {
-    console.error(`❌ 在執行 [${context}] 時發生錯誤:`, error.stack);
+async function handleError(error, replyToken, context = '未知操作', userId = null) {
+    console.error(`❌ 在執行 [${context}] 時為使用者 ${userId || 'N/A'} 發生錯誤:`, error.stack);
+
+    // 步驟 1: 將錯誤記錄到資料庫並取得錯誤代碼
+    const errorCode = await logErrorToDb(error, userId, context);
+
+    // 步驟 2: 準備回覆給使用者的訊息
+    let userMessage = `抱歉，系統發生了一點問題，請稍後再試。`;
+    if (errorCode) {
+        // 如果成功記錄錯誤，附上錯誤代碼
+        userMessage = `抱歉，系統發生了一點問題，我們已記錄下來並會盡快修復！\n(錯誤代碼: ${errorCode})`;
+    }
+
+    // 步驟 3: 嘗試回覆給使用者
     try {
         if (replyToken) {
-            await reply(replyToken, `抱歉，在執行 ${context} 時發生了預期外的錯誤，請稍後再試。`);
+            await reply(replyToken, userMessage);
         }
     } catch (replyError) {
-        console.error(`❌ 連錯誤回覆都失敗了:`, replyError.message);
+        console.error(`❌ 連錯誤回覆都失敗了 (ErrorCode: ${errorCode || 'N/A'}):`, replyError.message);
     }
 }
+
 /**
  * [V31.2 新增] 將不同格式的內容轉換為 LINE 訊息物件陣列。
  * @param {string|object|Array<string|object>} content - 要發送的內容。
