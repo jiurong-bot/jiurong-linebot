@@ -2032,6 +2032,90 @@ async function showSystemStatus() {
   });
 }
 
+/**
+ * [V39.5 新增] 顯示系統錯誤日誌列表。
+ * @param {number} page - 當前頁碼。
+ * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息。
+ */
+async function showErrorLogs(page) {
+    // 內部函式：定義如何將一筆資料庫的 row 轉換成一個 Flex Bubble
+    const mapRowToBubble = (log) => {
+        const errorMessage = log.error_message || '沒有錯誤訊息。';
+        const user = log.user_id ? `${log.user_id.substring(0, 15)}...` : 'N/A';
+        
+        return {
+            type: 'bubble',
+            size: 'giga',
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{ type: 'text', text: `🚨 錯誤代碼`, weight: 'bold', color: '#FFFFFF' },
+                           { type: 'text', text: `${log.error_code}`, color: '#FFFFFF', size: 'sm' }],
+                backgroundColor: '#d9534f',
+                paddingAll: 'lg'
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+                            { type: 'text', text: '發生時間', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: formatDateTime(log.created_at), color: '#666666', size: 'sm', flex: 5, wrap: true }
+                        ]
+                    },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+                            { type: 'text', text: '使用者ID', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: user, color: '#666666', size: 'sm', flex: 5, wrap: true }
+                        ]
+                    },
+                    {
+                        type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+                            { type: 'text', text: '發生情境', color: '#aaaaaa', size: 'sm', flex: 2 },
+                            { type: 'text', text: log.context, color: '#666666', size: 'sm', flex: 5, wrap: true }
+                        ]
+                    },
+                    {
+                        type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+                            { type: 'text', text: '錯誤訊息', color: '#aaaaaa', size: 'sm' },
+                            { type: 'text', text: errorMessage.substring(0, 100), color: '#666666', size: 'sm', wrap: true, margin: 'md' }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: [
+                    {
+                        type: 'button',
+                        style: 'secondary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '🗑️ 刪除此紀錄',
+                            data: `action=delete_error_log&id=${log.id}`
+                        }
+                    }
+                ]
+            }
+        };
+    };
+
+    // 使用我們通用的分頁輪播產生器來建立訊息
+    return createPaginatedCarousel({
+        altText: '系統錯誤日誌',
+        baseAction: 'action=view_error_logs',
+        page: page,
+        dataQuery: "SELECT * FROM error_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+        queryParams: [],
+        mapRowToBubble: mapRowToBubble,
+        noDataMessage: '✅ 太好了！目前沒有任何錯誤日誌。'
+    });
+}
 
 async function showTeacherListForRemoval(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
