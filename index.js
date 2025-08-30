@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
  /**
- * [V36.7 FINAL FIX] 顯示可預約課程，使用 spacer 修正奇數按鈕造成的 400 錯誤
+ * [V36.7 FINAL-FIX-2] 顯示可預約課程，移除 box 上的無效 height 屬性以解決 400 錯誤
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4487,13 +4487,9 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
             const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
             
             const createSessionButton = (session) => {
-                // ====================== [修改] ======================
-                // 這是最關鍵的修正！當沒有 session (奇數情況) 時，
-                // 回傳一個合法的 spacer 元件，而不是會導致錯誤的空 box。
                 if (!session) {
                     return { type: 'box', layout: 'vertical', contents: [{ type: 'spacer' }], flex: 1 };
                 }
-                // ====================================================
 
                 const remainingSpots = session.capacity - (session.students || []).length;
                 const isFull = remainingSpots <= 0;
@@ -4563,8 +4559,8 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     type: 'box',
                     layout: 'horizontal',
                     contents: pageButtons,
-                    margin: 'md',
-                    height: 'sm'
+                    margin: 'md'
+                    // [移除] 移除無效的 height 屬性
                 };
             } else {
                 paginationComponent = {
@@ -4573,11 +4569,11 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     justifyContent: 'center',
                     alignItems: 'center',
                     margin: 'md',
-                    height: 'sm',
+                     // [移除] 移除無效的 height 屬性
                     contents: [
                         {
                             type: 'text',
-                            text: '— 無其他分頁 —',
+                            text: '— 無其他頁 —',
                             size: 'sm',
                             color: '#AAAAAA'
                         }
