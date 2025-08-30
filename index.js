@@ -4484,10 +4484,9 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         }
 
         const seriesBubbles = allSeries.map(series => {
-//...
 
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
-            const SESSIONS_PER_PAGE = 3;
+            const SESSIONS_PER_PAGE = 6;
             const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
             const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
             const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
