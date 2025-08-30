@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-7] 顯示可預約課程，使用 spacer 完美對齊費用與名額
+* [V36.7 FINAL-FIX-8 REVERT] 顯示可預約課程，回復到費用與名額並排的版面
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4641,14 +4641,11 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                                         {
                                             type: 'box',
                                             layout: 'horizontal',
-                                            // ====================== [修改] ======================
-                                            // 在費用和名額之間插入 spacer
+                                            // [還原] 移除 spacer，讓費用和總名額並排顯示
                                             contents: [
-                                                { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666', align: 'start' },
-                                                { type: 'spacer' },
+                                                { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
                                                 { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
                                             ]
-                                            // =======================================================
                                         }
                                     ]
                                 }
