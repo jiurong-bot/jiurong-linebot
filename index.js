@@ -5473,21 +5473,27 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 });
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
-
 app.listen(PORT, async () => {
   try {
     checkEnvironmentVariables();
     console.log('✅ 資料庫結構已由 Build Command 處理。');
 
-
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
     console.log(`Bot 版本 V39.5 (錯誤碼處理機制)`);
-    setInterval(() => { if (SELF_URL.startsWith('https')) {axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));}}, CONSTANTS. INTERVALS .PING_INTERVAL_MS);
-   } catch (error) {
+
+    // 只保留這個 ping 任務，確保 web 服務不會休眠
+    setInterval(() => { 
+        if (SELF_URL.startsWith('https')) {
+            axios.get(SELF_URL).catch(err => console.error("Ping self failed:", err.message));
+        }
+    }, CONSTANTS.INTERVALS.PING_INTERVAL_MS);
+
+  } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
     process.exit(1);
   }
 });
+
 
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
