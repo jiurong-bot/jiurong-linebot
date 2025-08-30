@@ -4485,7 +4485,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 allSeries.unshift(activeSeries);
             }
         }
-        const seriesBubbles = allSeries.map(series => {
+            const seriesBubbles = allSeries.map(series => {
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
             const SESSIONS_PER_PAGE = 3;
             const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
@@ -4520,102 +4520,100 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     ], spacing: 'xs'
                 };
             });
-            
+
             const hasPreviousSessions = currentPage > 1;
             const pageButtons = [];
-
-            // [V39.7 新增] 計算總頁數
             const totalPages = Math.ceil(series.sessions.length / SESSIONS_PER_PAGE);
 
             if (hasPreviousSessions) {
                 const prevSeriesPage = currentPage - 1;
-                pageButtons.push({ 
-                    type: 'button', 
-                    style: 'link', 
-                    height: 'sm', 
-                    action: { 
-                        type: 'postback', 
-                        // 修改 label
-                        label: `⬅️ 上一頁 (${prevSeriesPage}/${totalPages})`, 
-                        data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}` 
-                    }
-                });
+                pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: `⬅️ 上一頁 (${prevSeriesPage}/${totalPages})`, data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}` }});
             }
             if (hasMoreSessions) {
                 const nextSeriesPage = currentPage + 1;
-                pageButtons.push({ 
-                    type: 'button', 
-                    style: 'link', 
-                    height: 'sm', 
-                    action: { 
-                        type: 'postback', 
-                        // 修改 label
-                        label: `下一頁 ➡️ (${nextSeriesPage}/${totalPages})`, 
-                        data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` 
-                    }
-                });
+                pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: `下一頁 ➡️ (${nextSeriesPage}/${totalPages})`, data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
             }
             
-            // 將所有 session 按鈕和分頁按鈕組合到 footer
             const footerContents = [...dateButtons];
             if (pageButtons.length > 0) {
                  footerContents.push({ type: 'separator', margin: 'md' });
                  footerContents.push({ type: 'box', layout: 'horizontal', contents: pageButtons, margin: 'md' });
             }
 
+            // [V39.10] 根據使用者回饋再次調整版面
             return {
                 type: 'bubble',
                 size: 'giga',
                 body: {
                     type: 'box',
-                    layout: 'horizontal', // 主要改動：改為水平佈局
+                    layout: 'vertical',
                     paddingAll: 'lg',
-                    spacing: 'lg',
+                    spacing: 'md',
                     contents: [
-                        // 左側照片區塊
+                        // 上半部：照片與 (課程名稱 + 老師資訊)
                         {
-                            type: 'image',
-                            url: series.teacherImageUrl || placeholder_avatar,
-                            aspectRatio: '1:1',
-                            aspectMode: 'cover',
-                            size: 'md',
-                            flex: 2 // 控制照片寬度佔比
+                            type: 'box',
+                            layout: 'horizontal',
+                            spacing: 'lg',
+                            contents: [
+                                {
+                                    type: 'image',
+                                    url: series.teacherImageUrl || placeholder_avatar,
+                                    aspectRatio: '1:1',
+                                    aspectMode: 'cover',
+                                    size: 'md',
+                                    flex: 2
+                                },
+                                {
+                                    type: 'box',
+                                    layout: 'vertical',
+                                    justifyContent: 'center',
+                                    flex: 4,
+                                    contents: [
+                                        // 課程名稱放大
+                                        { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true, color: '#1A759F' },
+                                        // 老師資訊
+                                        {
+                                            type: 'box',
+                                            layout: 'vertical',
+                                            margin: 'lg',
+                                            contents: [
+                                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm', weight: 'bold' },
+                                                { type: 'text', text: series.teacherBio || '這位老師尚未留下簡介。', size: 'xs', color: '#888888', wrap: true, margin: 'sm' }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
                         },
-                        // 右側文字資訊區塊
+                        { type: 'separator', margin: 'lg' },
+                        // 下半部：課程詳細資訊
                         {
                             type: 'box',
                             layout: 'vertical',
-                            spacing: 'sm',
-                            flex: 4, // 控制文字區塊寬度佔比
-                
+                            spacing: 'md',
+                            margin: 'md',
                             contents: [
-                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
-                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
-                                // [V39.8 新增] 顯示課程期間
-                                { 
-                                    type: 'text', 
-                                    text: `開課期間：${formatDateOnly(series.startDate)} - ${formatDateOnly(series.endDate)}`, 
-                                    size: 'xs', 
-                                    color: '#888888',
-                                    margin: 'sm'
-                                },
-                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
-                                { type: 'separator', margin: 'md'},
                                 {
                                     type: 'box',
-                                    layout: 'horizontal', // 改為 horizontal
-                                    margin: 'md',
+                                    layout: 'vertical',
+                                    contents: [
+                                        { type: 'text', text: '開課期間', size: 'sm', color: '#666666' },
+                                        { type: 'text', text: `${formatDateOnly(series.startDate)} - ${formatDateOnly(series.endDate)}`, size: 'sm', color: '#666666' }
+                                    ]
+                                },
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal',
                                     contents: [
                                         { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
-                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' } // 新增 align: 'end'
+                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
                                     ]
                                 }
-
                             ]
                         }
                     ]
                 },
-                // 將所有按鈕移至 footer
                 ...(footerContents.length > 0 && {
                     footer: {
                         type: 'box',
@@ -4627,7 +4625,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 })
             };
         });
-        
+            
         const headerText = '🗓️ 預約課程總覽';
         const flexMessage = { type: 'flex', altText: headerText, contents: { type: 'carousel', contents: seriesBubbles } };
         
