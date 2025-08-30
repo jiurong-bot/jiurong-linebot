@@ -1,4 +1,4 @@
-// index.js - V39.6 (搜尋功能整合)
+// index.js - V39.6.1 (搜尋功能整合)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -4470,8 +4470,17 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         const seriesPage = parseInt(postbackData.get('series_page') || '1', 10);
         
         const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
-        const allSeries = Object.values(courseSeries);
-        
+        const allSeries = Object.values(courseSeries); 
+        // [V39.7 優化] 如果使用者正在對某個系列分頁，則將該系列移到最前面
+        if (showMorePrefix) {
+            const activeSeriesIndex = allSeries.findIndex(s => s.prefix === showMorePrefix);
+            if (activeSeriesIndex > 0) {
+                // 從陣列中取出該系列
+                const [activeSeries] = allSeries.splice(activeSeriesIndex, 1);
+                // 將它加到陣列的最開頭
+                allSeries.unshift(activeSeries);
+            }
+        }
         const seriesBubbles = allSeries.map(series => {
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
             const SESSIONS_PER_PAGE = 3;
