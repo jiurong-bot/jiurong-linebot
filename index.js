@@ -4587,9 +4587,18 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             layout: 'vertical',
                             spacing: 'sm',
                             flex: 4, // 控制文字區塊寬度佔比
+                
                             contents: [
                                 { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
+                                // [V39.8 新增] 顯示課程期間
+                                { 
+                                    type: 'text', 
+                                    text: `開課期間：${formatDateOnly(series.startDate)} - ${formatDateOnly(series.endDate)}`, 
+                                    size: 'xs', 
+                                    color: '#888888',
+                                    margin: 'sm'
+                                },
                                 { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
                                 { type: 'separator', margin: 'md'},
                                 {
