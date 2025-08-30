@@ -3511,6 +3511,70 @@ async function showStudentSearchResults(query, page) {
         return { type: 'flex', altText: `學員搜尋結果：${query}`, contents: { type: 'carousel', contents: userBubbles } };
     });
 }
+/**
+ * [V39.6 新增] 建立一個通用的學員選擇輪播訊息。
+ * @param {Array<object>} users - 從資料庫查詢到的使用者物件陣列。
+ * @param {string} altText - Flex Message 的替代文字。
+ * @param {string} postbackActionTemplate - Postback data 的模板，例如 'action=view_history&user_id=${userId}'。
+ * @param {string} buttonLabel - 按鈕上顯示的文字，例如 '查看此學員紀錄'。
+ * @returns {object} - 可直接回覆的 Flex Message 物件。
+ */
+function buildUserSelectionCarousel(users, altText, postbackActionTemplate, buttonLabel) {
+    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+    const userBubbles = users.map(u => {
+        // 將模板中的 ${userId} 替換為實際的 user id
+        const postbackData = postbackActionTemplate.replace('${userId}', u.id);
+        
+        return {
+            type: 'bubble',
+            body: {
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'md',
+                contents: [
+                    { 
+                        type: 'image', 
+                        url: u.picture_url || placeholder_avatar, 
+                        size: 'md', 
+                        aspectRatio: '1:1', 
+                        aspectMode: 'cover' 
+                    },
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        flex: 3,
+                        justifyContent: 'center',
+                        contents: [
+                            { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true },
+                            { type: 'text', text: `ID: ${formatIdForDisplay(u.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm' }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'primary',
+                    color: '#1A759F',
+                    height: 'sm',
+                    action: { 
+                        type: 'postback', 
+                        label: buttonLabel, 
+                        data: postbackData 
+                    }
+                }]
+            }
+        };
+    });
+
+    return {
+        type: 'flex',
+        altText: altText,
+        contents: { type: 'carousel', contents: userBubbles }
+    };
+}
 
 
 async function showStudentSelectionForAdjustHistory(users, originalQuery) {
