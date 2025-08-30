@@ -7127,7 +7127,8 @@ async function handleEvent(event) {
             .map(m => (typeof m === 'string' ? { type: 'text', text: m } : m));
         if (formattedMessages.length > 0) {
             try {
-                await reply(event.replyToken, formattedMessages);
+                 console.log('[DEBUG-JSON] Preparing to reply with:', JSON.stringify(formattedMessages, null, 2));
+                 await reply(event.replyToken, formattedMessages);
             } catch (e) {
                 console.error(`[FATAL] 在 handleEvent 中捕捉到 reply 函式的嚴重錯誤 for ${userId}:`, e);
             }
