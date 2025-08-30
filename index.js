@@ -4423,9 +4423,12 @@ async function showPendingOrders(page) {
         noDataMessage: '目前沒有待您確認的點數訂單。'
     });
 }
+// index.js
+
+// ... (檔案前面的程式碼保持不變) ...
 
 /**
-* [V36.7 FINAL-FIX-4] 顯示可預約課程，使用固定數量的容器來確保置頂對齊
+* [V36.7 FINAL-FIX-5] 顯示可預約課程，使用固定數量的按鈕欄位來確保對齊
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4482,15 +4485,28 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        const seriesBubbles = allSeries.map(series => {
            let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
            const SESSIONS_PER_PAGE = 6;
-           const MAX_ROWS = 3; // 一頁最多顯示 3 列按鈕
            const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
            const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
            const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
            
+           // ====================== [修改點 1] ======================
+           // 修改 createSessionButton 函式，當沒有課程時，回傳一個無作用的灰色按鈕
            const createSessionButton = (session) => {
                if (!session) {
-                   // 佔位符
-                   return { type: 'box', layout: 'vertical', contents: [{ type: 'spacer' }], flex: 1 };
+                   // 產生一個看起來像 disabled 的按鈕
+                   return {
+                       type: 'box',
+                       layout: 'vertical',
+                       flex: 1,
+                       margin: 'xs', // 為了對齊，給予一個假的 margin
+                       contents: [{
+                           type: 'button',
+                           action: { type: 'postback', label: ' ', data: 'action=do_nothing' },
+                           height: 'sm',
+                           style: 'secondary',
+                           color: '#F0F0F0' // 淺灰色
+                       }]
+                   };
                }
 
                const remainingSpots = session.capacity - (session.students || []).length;
@@ -4525,34 +4541,23 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                };
            };
 
-           // ====================== [修改] ======================
-           // 強制產生固定數量的按鈕列容器
+           // ====================== [修改點 2] ======================
+           // 強制迴圈執行三次，永遠產生三列（六個）按鈕的空間
            const sessionButtonRows = [];
-           for (let i = 0; i < MAX_ROWS; i++) {
-               const sessionIndex = i * 2;
-               // 檢查這一列是否有課程可以顯示
-               if (sessionIndex < sessionsToShow.length) {
-                   const leftSession = sessionsToShow[sessionIndex];
-                   const rightSession = sessionsToShow[sessionIndex + 1]; // 可能是 undefined
-                   sessionButtonRows.push({
-                       type: 'box',
-                       layout: 'horizontal',
-                       spacing: 'md',
-                       margin: i > 0 ? 'sm' : 'none', // 為第一列以外的按鈕加上間距
-                       contents: [
-                           createSessionButton(leftSession),
-                           createSessionButton(rightSession)
-                       ]
-                   });
-               } else {
-                   // 如果沒有課程了，就產生一個空的佔位容器
-                   sessionButtonRows.push({
-                       type: 'box',
-                       layout: 'horizontal',
-                       margin: i > 0 ? 'sm' : 'none',
-                       contents: [ { type: 'spacer' } ]
-                   });
-               }
+           for (let i = 0; i < SESSIONS_PER_PAGE; i += 2) {
+               const leftSession = sessionsToShow[i];
+               const rightSession = sessionsToShow[i + 1];
+
+               sessionButtonRows.push({
+                   type: 'box',
+                   layout: 'horizontal',
+                   spacing: 'md',
+                   margin: sessionButtonRows.length > 0 ? 'sm' : 'none',
+                   contents: [
+                       createSessionButton(leftSession),
+                       createSessionButton(rightSession)
+                   ]
+               });
            }
            // =======================================================
 
@@ -4596,15 +4601,51 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                };
            }
            footerContents.push(paginationComponent);
-           
+
            return {
                type: 'bubble',
                size: 'giga',
-               body: { /* ... body 內容不變 ... */ },
+               body: {
+                    type: 'box',
+                    layout: 'horizontal', 
+                    paddingAll: 'lg',
+                    spacing: 'lg',
+                    contents: [
+                        {
+                            type: 'image',
+                            url: series.teacherImageUrl || placeholder_avatar,
+                            aspectRatio: '1:1',
+                            aspectMode: 'cover',
+                            size: 'md',
+                            flex: 2 
+                        },
+                        {
+                            type: 'box',
+                            layout: 'vertical',
+                            spacing: 'sm',
+                            flex: 4, 
+                            contents: [
+                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
+                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
+                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
+                                { type: 'separator', margin: 'md'},
+                                {
+                                    type: 'box',
+                                    layout: 'horizontal', 
+                                    margin: 'md',
+                                    contents: [
+                                        { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
+                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
                footer: {
                    type: 'box',
                    layout: 'vertical',
-                   spacing: 'none', // 將容器間的預設間距移除
+                   spacing: 'none',
                    paddingAll: 'md',
                    contents: footerContents
                }
@@ -4741,7 +4782,6 @@ async function showMyCourses(userId, page) {
         return { type: 'flex', altText: '我的課程列表', contents: { type: 'carousel', contents: courseBubbles } };
     });
 }
-
 
 async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
