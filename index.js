@@ -3057,7 +3057,10 @@ async function handleAdminCommands(event, userId) {
     }   
     else if (text === CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT) {
       return showFailedTasks(1);
-    }      
+    } 
+    else if (text === CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS) {
+      return showErrorLogs(1);
+    }
     else if (text === CONSTANTS.COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
         const currentStatus = await getNotificationStatus();
         const newStatus = !currentStatus;
