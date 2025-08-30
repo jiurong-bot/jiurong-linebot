@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-8 REVERT] 顯示可預約課程，回復到費用與名額並排的版面
+* [V36.7 FINAL-FIX-9] 顯示可預約課程，在 footer 底部增加 spacer 來實現置頂對齊
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4499,19 +4499,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            
            const createSessionButton = (session) => {
                if (!session) {
-                   return {
-                       type: 'box',
-                       layout: 'vertical',
-                       flex: 1,
-                       margin: 'xs',
-                       contents: [{
-                           type: 'button',
-                           action: { type: 'postback', label: ' ', data: 'action=do_nothing' },
-                           height: 'sm',
-                           style: 'secondary',
-                           color: '#F0F0F0'
-                       }]
-                   };
+                   return { type: 'box', layout: 'vertical', contents: [{ type: 'spacer' }], flex: 1 };
                }
                const remainingSpots = session.capacity - (session.students || []).length;
                const isFull = remainingSpots <= 0;
@@ -4544,7 +4532,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            };
 
            const sessionButtonRows = [];
-           for (let i = 0; i < SESSIONS_PER_PAGE; i += 2) {
+           for (let i = 0; i < sessionsToShow.length; i += 2) {
                const leftSession = sessionsToShow[i];
                const rightSession = sessionsToShow[i + 1];
                sessionButtonRows.push({
@@ -4599,6 +4587,12 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            }
            footerContents.push(paginationComponent);
 
+           // ====================== [關鍵修正] ======================
+           // 在所有 footer 內容的最底部加上一個 spacer
+           // 這個 spacer 會填滿所有多餘的垂直空間，將上面的內容全部推到頂部
+           footerContents.push({ type: 'spacer' });
+           // =======================================================
+
            return {
                type: 'bubble',
                size: 'giga',
@@ -4641,7 +4635,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                                         {
                                             type: 'box',
                                             layout: 'horizontal',
-                                            // [還原] 移除 spacer，讓費用和總名額並排顯示
                                             contents: [
                                                 { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
                                                 { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
@@ -4656,7 +4649,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                footer: {
                    type: 'box',
                    layout: 'vertical',
-                   spacing: 'none',
+                   spacing: 'sm', //改回 sm 讓按鈕間有預設間距
                    paddingAll: 'md',
                    contents: footerContents
                }
