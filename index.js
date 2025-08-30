@@ -5590,7 +5590,20 @@ async function handlePostback(event, user) {
             }
             return '好的，暫不發佈。';
         }
-
+          // [V39.5 新增] 處理錯誤日誌的瀏覽與刪除
+        case 'view_error_logs': {
+            return showErrorLogs(page);
+        }
+        case 'delete_error_log': {
+            const logId = data.get('id');
+            if (!logId) return '操作失敗，缺少日誌 ID。';
+            const result = await executeDbQuery(client =>
+                client.query('DELETE FROM error_logs WHERE id = $1', [logId])
+            );
+            return result.rowCount > 0
+                ? `✅ 已成功刪除錯誤日誌 #${logId}。`
+                : '找不到該筆錯誤日誌，可能已被刪除。';
+        }
         // ==================================
         // 頁面檢視 (Pagination & Views)
         // ==================================
