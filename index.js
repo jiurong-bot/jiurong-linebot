@@ -4516,16 +4516,40 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     ], spacing: 'xs'
                 };
             });
-
+            
             const hasPreviousSessions = currentPage > 1;
             const pageButtons = [];
+
+            // [V39.7 新增] 計算總頁數
+            const totalPages = Math.ceil(series.sessions.length / SESSIONS_PER_PAGE);
+
             if (hasPreviousSessions) {
                 const prevSeriesPage = currentPage - 1;
-                pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '⬅️ 上一頁', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}` }});
+                pageButtons.push({ 
+                    type: 'button', 
+                    style: 'link', 
+                    height: 'sm', 
+                    action: { 
+                        type: 'postback', 
+                        // 修改 label
+                        label: `⬅️ 上一頁 (${prevSeriesPage}/${totalPages})`, 
+                        data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}` 
+                    }
+                });
             }
             if (hasMoreSessions) {
                 const nextSeriesPage = currentPage + 1;
-                pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
+                pageButtons.push({ 
+                    type: 'button', 
+                    style: 'link', 
+                    height: 'sm', 
+                    action: { 
+                        type: 'postback', 
+                        // 修改 label
+                        label: `下一頁 ➡️ (${nextSeriesPage}/${totalPages})`, 
+                        data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` 
+                    }
+                });
             }
             
             // 將所有 session 按鈕和分頁按鈕組合到 footer
