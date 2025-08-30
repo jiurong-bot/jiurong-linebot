@@ -4577,7 +4577,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     contents: [
                         {
                             type: 'text',
-                            text: '— 無其他頁 —',
+                            text: '— 無其他分頁 —',
                             size: 'sm',
                             color: '#AAAAAA'
                         }
