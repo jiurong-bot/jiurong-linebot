@@ -4447,7 +4447,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         if (coursesRes.rows.length === 0) {
             return '太棒了！目前沒有任何未來的課程。';
         }
-
+        
         const courseSeries = {};
         coursesRes.rows.forEach(course => {
             const prefix = course.id.substring(0, 2);
@@ -4460,9 +4460,13 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     teacherImageUrl: course.teacher_image_url,
                     pointsCost: course.points_cost,
                     capacity: course.capacity,
-                    sessions: []
+                    sessions: [],
+                    // [V39.8 新增] 記錄系列的第一堂課日期
+                    startDate: course.time 
                 };
             }
+            // [V39.8 新增] 持續更新系列的最後一堂課日期
+            courseSeries[prefix].endDate = course.time; 
             courseSeries[prefix].sessions.push(course);
         });
 
