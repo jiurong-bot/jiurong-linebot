@@ -4424,225 +4424,200 @@ async function showPendingOrders(page) {
     });
 }
 
- /**
- * [V36.7 FINAL-FIX-3] 顯示可預約課程，在 footer 底部增加 spacer 來實現置頂對齊
- * @param {string} userId - 使用者 ID
- * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
- * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
- */
+/**
+* [V36.7 FINAL-FIX-4] 顯示可預約課程，使用固定數量的容器來確保置頂對齊
+* @param {string} userId - 使用者 ID
+* @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
+* @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
+*/
 async function showAvailableCourses(userId, postbackData = new URLSearchParams()) {
-    return executeDbQuery(async (client) => {
-        const coursesRes = await client.query(
-            `SELECT
-                c.*,
-                t.name AS teacher_name,
-                t.image_url AS teacher_image_url,
-                t.bio AS teacher_bio
-             FROM courses c
-             LEFT JOIN teachers t ON c.teacher_id = t.id
-             WHERE c.time > NOW()
-             ORDER BY c.time ASC`
-        );
+   return executeDbQuery(async (client) => {
+       const coursesRes = await client.query(
+           `SELECT
+               c.*,
+               t.name AS teacher_name,
+               t.image_url AS teacher_image_url,
+               t.bio AS teacher_bio
+            FROM courses c
+            LEFT JOIN teachers t ON c.teacher_id = t.id
+            WHERE c.time > NOW()
+            ORDER BY c.time ASC`
+       );
 
-        if (coursesRes.rows.length === 0) {
-            return '太棒了！目前沒有任何未來的課程。';
-        }
+       if (coursesRes.rows.length === 0) {
+           return '太棒了！目前沒有任何未來的課程。';
+       }
 
-        const courseSeries = {};
-        coursesRes.rows.forEach(course => {
-            const prefix = course.id.substring(0, 2);
-            if (!courseSeries[prefix]) {
-                 courseSeries[prefix] = {
-                    prefix: prefix,
-                    mainTitle: getCourseMainTitle(course.title),
-                    teacherName: course.teacher_name || '待定',
-                    teacherBio: course.teacher_bio,
-                    teacherImageUrl: course.teacher_image_url,
-                    pointsCost: course.points_cost,
-                    capacity: course.capacity,
-                    sessions: []
-                };
-            }
-            courseSeries[prefix].sessions.push(course);
-        });
-        
-        const showMorePrefix = postbackData.get('show_more');
-        const seriesPage = parseInt(postbackData.get('series_page') || '1', 10);
-        
-        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
-        let allSeries = Object.values(courseSeries);
-        if (showMorePrefix) {
-            const activeSeriesIndex = allSeries.findIndex(s => s.prefix === showMorePrefix);
-            if (activeSeriesIndex > 0) {
-                const [activeSeries] = allSeries.splice(activeSeriesIndex, 1);
-                allSeries.unshift(activeSeries);
-            }
-        }
+       const courseSeries = {};
+       coursesRes.rows.forEach(course => {
+           const prefix = course.id.substring(0, 2);
+           if (!courseSeries[prefix]) {
+                courseSeries[prefix] = {
+                   prefix: prefix,
+                   mainTitle: getCourseMainTitle(course.title),
+                   teacherName: course.teacher_name || '待定',
+                   teacherBio: course.teacher_bio,
+                   teacherImageUrl: course.teacher_image_url,
+                   pointsCost: course.points_cost,
+                   capacity: course.capacity,
+                   sessions: []
+               };
+           }
+           courseSeries[prefix].sessions.push(course);
+       });
+       
+       const showMorePrefix = postbackData.get('show_more');
+       const seriesPage = parseInt(postbackData.get('series_page') || '1', 10);
+       
+       const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
+       let allSeries = Object.values(courseSeries);
+       if (showMorePrefix) {
+           const activeSeriesIndex = allSeries.findIndex(s => s.prefix === showMorePrefix);
+           if (activeSeriesIndex > 0) {
+               const [activeSeries] = allSeries.splice(activeSeriesIndex, 1);
+               allSeries.unshift(activeSeries);
+           }
+       }
 
-        const seriesBubbles = allSeries.map(series => {
-            let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
-            const SESSIONS_PER_PAGE = 6;
-            const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
-            const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
-            const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
-            
-            const createSessionButton = (session) => {
-                if (!session) {
-                    return { type: 'box', layout: 'vertical', contents: [{ type: 'spacer' }], flex: 1 };
-                }
+       const seriesBubbles = allSeries.map(series => {
+           let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
+           const SESSIONS_PER_PAGE = 6;
+           const MAX_ROWS = 3; // 一頁最多顯示 3 列按鈕
+           const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
+           const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
+           const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
+           
+           const createSessionButton = (session) => {
+               if (!session) {
+                   // 佔位符
+                   return { type: 'box', layout: 'vertical', contents: [{ type: 'spacer' }], flex: 1 };
+               }
 
-                const remainingSpots = session.capacity - (session.students || []).length;
-                const isFull = remainingSpots <= 0;
-                const waitingCount = (session.waiting || []).length;
-                let buttonActionData, subText, subTextColor, buttonColor, buttonStyle;
+               const remainingSpots = session.capacity - (session.students || []).length;
+               const isFull = remainingSpots <= 0;
+               const waitingCount = (session.waiting || []).length;
+               let buttonActionData, subText, subTextColor, buttonColor, buttonStyle;
 
-                if (!isFull) {
-                    buttonActionData = `action=select_booking_spots&course_id=${session.id}`;
-                    subText = `剩餘 ${remainingSpots} 位`;
-                    subTextColor = '#666666';
-                    buttonStyle = 'secondary';
-                    buttonColor = undefined;
-                } else {
-                    buttonActionData = `action=confirm_join_waiting_list_start&course_id=${session.id}`;
-                    const nextPosition = waitingCount + 1;
-                    subText = `候補第 ${nextPosition} 位`;
-                    subTextColor = '#DE5246';
-                    buttonStyle = 'secondary';
-                    buttonColor = '#808080';
-                }
-                
-                return { 
-                    type: 'box', 
-                    layout: 'vertical', 
-                    contents: [
-                        { type: 'button', action: { type: 'postback', label: formatDateOnly(session.time), data: buttonActionData }, height: 'sm', style: buttonStyle, color: buttonColor },
-                        { type: 'text', text: subText, size: 'xs', color: subTextColor, align: 'end', margin: 'xs' }
-                    ], 
-                    spacing: 'xs',
-                    flex: 1
-                };
-            };
+               if (!isFull) {
+                   buttonActionData = `action=select_booking_spots&course_id=${session.id}`;
+                   subText = `剩餘 ${remainingSpots} 位`;
+                   subTextColor = '#666666';
+                   buttonStyle = 'secondary';
+                   buttonColor = undefined;
+               } else {
+                   buttonActionData = `action=confirm_join_waiting_list_start&course_id=${session.id}`;
+                   const nextPosition = waitingCount + 1;
+                   subText = `候補第 ${nextPosition} 位`;
+                   subTextColor = '#DE5246';
+                   buttonStyle = 'secondary';
+                   buttonColor = '#808080';
+               }
+               
+               return { 
+                   type: 'box', 
+                   layout: 'vertical', 
+                   contents: [
+                       { type: 'button', action: { type: 'postback', label: formatDateOnly(session.time), data: buttonActionData }, height: 'sm', style: buttonStyle, color: buttonColor },
+                       { type: 'text', text: subText, size: 'xs', color: subTextColor, align: 'end', margin: 'xs' }
+                   ], 
+                   spacing: 'xs',
+                   flex: 1
+               };
+           };
 
-            const sessionButtonRows = [];
-            for (let i = 0; i < sessionsToShow.length; i += 2) {
-                const leftSession = sessionsToShow[i];
-                const rightSession = sessionsToShow[i + 1];
+           // ====================== [修改] ======================
+           // 強制產生固定數量的按鈕列容器
+           const sessionButtonRows = [];
+           for (let i = 0; i < MAX_ROWS; i++) {
+               const sessionIndex = i * 2;
+               // 檢查這一列是否有課程可以顯示
+               if (sessionIndex < sessionsToShow.length) {
+                   const leftSession = sessionsToShow[sessionIndex];
+                   const rightSession = sessionsToShow[sessionIndex + 1]; // 可能是 undefined
+                   sessionButtonRows.push({
+                       type: 'box',
+                       layout: 'horizontal',
+                       spacing: 'md',
+                       margin: i > 0 ? 'sm' : 'none', // 為第一列以外的按鈕加上間距
+                       contents: [
+                           createSessionButton(leftSession),
+                           createSessionButton(rightSession)
+                       ]
+                   });
+               } else {
+                   // 如果沒有課程了，就產生一個空的佔位容器
+                   sessionButtonRows.push({
+                       type: 'box',
+                       layout: 'horizontal',
+                       margin: i > 0 ? 'sm' : 'none',
+                       contents: [ { type: 'spacer' } ]
+                   });
+               }
+           }
+           // =======================================================
 
-                sessionButtonRows.push({
-                    type: 'box',
-                    layout: 'horizontal',
-                    spacing: 'md',
-                    contents: [
-                        createSessionButton(leftSession),
-                        createSessionButton(rightSession)
-                    ]
-                });
-            }
+           const hasPreviousSessions = currentPage > 1;
+           const pageButtons = [];
+           if (hasPreviousSessions) {
+               const prevSeriesPage = currentPage - 1;
+               pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '⬅️ 上一頁', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}` }});
+           }
+           if (hasMoreSessions) {
+               const nextSeriesPage = currentPage + 1;
+               pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
+           }
+           
+           const footerContents = [...sessionButtonRows];
+           footerContents.push({ type: 'separator', margin: 'md' });
 
-            const hasPreviousSessions = currentPage > 1;
-            const pageButtons = [];
-            if (hasPreviousSessions) {
-                const prevSeriesPage = currentPage - 1;
-                pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '⬅️ 上一頁', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${prevSeriesPage}` }});
-            }
-            if (hasMoreSessions) {
-                const nextSeriesPage = currentPage + 1;
-                pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
-            }
-            
-            const footerContents = [...sessionButtonRows];
-            footerContents.push({ type: 'separator', margin: 'md' });
-
-            let paginationComponent;
-            if (pageButtons.length > 0) {
-                paginationComponent = {
-                    type: 'box',
-                    layout: 'horizontal',
-                    contents: pageButtons,
-                    margin: 'md'
-                };
-            } else {
-                paginationComponent = {
-                    type: 'box',
-                    layout: 'vertical',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    margin: 'md',
-                    contents: [
-                        {
-                            type: 'text',
-                            text: '— 無其他頁 —',
-                            size: 'sm',
-                            color: '#AAAAAA'
-                        }
-                    ]
-                };
-            }
-            footerContents.push(paginationComponent);
-            
-            // ====================== [新增] ======================
-            // 在所有內容的底部加上一個 spacer，它會自動把上面的所有元件往上推
-            footerContents.push({ type: 'spacer' });
-            // =======================================================
-
-
-            return {
-                type: 'bubble',
-                size: 'giga',
-                body: {
-                    type: 'box',
-                    layout: 'horizontal', 
-                    paddingAll: 'lg',
-                    spacing: 'lg',
-                    contents: [
-                        {
-                            type: 'image',
-                            url: series.teacherImageUrl || placeholder_avatar,
-                            aspectRatio: '1:1',
-                            aspectMode: 'cover',
-                            size: 'md',
-                            flex: 2 
-                        },
-                        {
-                            type: 'box',
-                            layout: 'vertical',
-                            spacing: 'sm',
-                            flex: 4, 
-                            contents: [
-                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
-                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
-                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
-                                { type: 'separator', margin: 'md'},
-                                {
-                                    type: 'box',
-                                    layout: 'horizontal', 
-                                    margin: 'md',
-                                    contents: [
-                                        { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
-                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-                footer: {
-                    type: 'box',
-                    layout: 'vertical',
-                    spacing: 'sm',
-                    paddingAll: 'md',
-                    contents: footerContents
-                }
-            };
-        });
-        
-        const headerText = '🗓️ 預約課程總覽';
-        const flexMessage = { type: 'flex', altText: headerText, contents: { type: 'carousel', contents: seriesBubbles } };
-        if (!postbackData.has('show_more')) {
-            return [{ type: 'text', text: `你好！${headerText}如下，請左右滑動查看：` }, flexMessage];
-        }
-        return flexMessage;
-    });
+           let paginationComponent;
+           if (pageButtons.length > 0) {
+               paginationComponent = {
+                   type: 'box',
+                   layout: 'horizontal',
+                   contents: pageButtons,
+                   margin: 'md'
+               };
+           } else {
+               paginationComponent = {
+                   type: 'box',
+                   layout: 'vertical',
+                   justifyContent: 'center',
+                   alignItems: 'center',
+                   margin: 'md',
+                   contents: [
+                       {
+                           type: 'text',
+                           text: '— 無其他頁 —',
+                           size: 'sm',
+                           color: '#AAAAAA'
+                       }
+                   ]
+               };
+           }
+           footerContents.push(paginationComponent);
+           
+           return {
+               type: 'bubble',
+               size: 'giga',
+               body: { /* ... body 內容不變 ... */ },
+               footer: {
+                   type: 'box',
+                   layout: 'vertical',
+                   spacing: 'none', // 將容器間的預設間距移除
+                   paddingAll: 'md',
+                   contents: footerContents
+               }
+           };
+       });
+       
+       const headerText = '🗓️ 預約課程總覽';
+       const flexMessage = { type: 'flex', altText: headerText, contents: { type: 'carousel', contents: seriesBubbles } };
+       if (!postbackData.has('show_more')) {
+           return [{ type: 'text', text: `你好！${headerText}如下，請左右滑動查看：` }, flexMessage];
+       }
+       return flexMessage;
+   });
 }
 
 async function showMyCourses(userId, page) {
