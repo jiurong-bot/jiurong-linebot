@@ -730,26 +730,6 @@ async function deleteOrder(orderId, dbClient) {
     }, dbClient);
 }
 
-
-async function cleanCoursesDB() {
-    try {
-        await executeDbQuery(async (client) => {
-            const now = new Date();
-            // 刪除一天前的課程
-            const pastDate = new Date(now.getTime() - CONSTANTS.TIME.ONE_DAY_IN_MS);
-            
-            const result = await client.query(`DELETE FROM courses WHERE time < $1`, [pastDate]);
-            
-            if (result.rowCount > 0) {
-              console.log(`🧹 定期清理：已成功移除 ${result.rowCount} 筆過期的課程。`);
-            }
-        });
-    } catch (err) {
-        console.error('❌ 定期清理過期課程時發生錯誤:', err);
-    }
-}
-
-
 /**
  * [V27.6 新增] 共用的錯誤處理函式
  * @param {Error} error - 捕獲到的錯誤物件
