@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-6] 顯示可預約課程，將時間資訊移至費用上方
+* [V36.7 FINAL-FIX-7] 顯示可預約課程，使用 spacer 完美對齊費用與名額
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4452,24 +4452,20 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        coursesRes.rows.forEach(course => {
            const prefix = course.id.substring(0, 2);
            if (!courseSeries[prefix]) {
-                // ====================== [修改點 1] ======================
-                // 使用正規表示式從課程標題中拆分出時間
                 const timeRegex = /\s\((\d{2}:\d{2}-\d{2}:\d{2})\)$/;
                 const match = course.title.match(timeRegex);
                 let timeRange = '';
-                // 如果沒匹配到，就用 getCourseMainTitle 作為備用方案
                 let mainTitle = getCourseMainTitle(course.title); 
 
                 if (match) {
-                    timeRange = match[1]; // e.g., "11:00-12:00"
+                    timeRange = match[1];
                     mainTitle = course.title.replace(timeRegex, '').trim();
                 }
-                // =======================================================
 
                 courseSeries[prefix] = {
                    prefix: prefix,
-                   mainTitle: mainTitle, // 儲存乾淨的主標題
-                   timeRange: timeRange, // 儲存獨立的時間範圍
+                   mainTitle: mainTitle,
+                   timeRange: timeRange,
                    teacherName: course.teacher_name || '待定',
                    teacherBio: course.teacher_bio,
                    teacherImageUrl: course.teacher_image_url,
@@ -4625,21 +4621,17 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             layout: 'vertical',
                             spacing: 'sm',
                             flex: 4, 
-                            // ====================== [修改點 2] ======================
-                            // 調整 body.contents 的結構
                             contents: [
-                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true }, // 乾淨的主標題
+                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
                                 { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
                                 { type: 'separator', margin: 'md'},
-                                // 新增一個 box 來包裹時間、費用、名額，讓它們在視覺上成為一個群組
                                 {
                                     type: 'box',
                                     layout: 'vertical',
                                     margin: 'md',
                                     spacing: 'sm',
                                     contents: [
-                                        // 如果有時間，才顯示時間這列
                                         ...(series.timeRange ? [{
                                             type: 'text',
                                             text: `時間：${series.timeRange}`,
@@ -4649,15 +4641,18 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                                         {
                                             type: 'box',
                                             layout: 'horizontal',
+                                            // ====================== [修改] ======================
+                                            // 在費用和名額之間插入 spacer
                                             contents: [
-                                                { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
+                                                { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666', align: 'start' },
+                                                { type: 'spacer' },
                                                 { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
                                             ]
+                                            // =======================================================
                                         }
                                     ]
                                 }
                             ]
-                            // =======================================================
                         }
                     ]
                 },
