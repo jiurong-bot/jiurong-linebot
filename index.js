@@ -1814,6 +1814,65 @@ async function showFailedTasks(page) {
 }
 
 /**
+ * [V40.1 新增] 顯示錯誤日誌列表
+ * @param {number} page - 當前頁碼
+ * @returns {Promise<object|string>} Flex Message 物件或無資料時的文字訊息
+ */
+async function showErrorLogs(page) {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return executeDbQuery(async (client) => {
+        const res = await client.query(
+            "SELECT * FROM error_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            [CONSTANTS.PAGINATION_SIZE + 1, offset]
+        );
+        
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageLogs = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageLogs.length === 0 && page === 1) {
+            return '✅ 太好了！目前沒有任何錯誤日誌。';
+        }
+        if (pageLogs.length === 0) {
+            return '沒有更多錯誤日誌了。';
+        }
+
+        const logBubbles = pageLogs.map(log => {
+            return {
+                type: 'bubble',
+                size: 'giga',
+                header: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    contents: [{ type: 'text', text: `🚨 ${log.error_code}`, weight: 'bold', color: '#FFFFFF' }], 
+                    backgroundColor: '#d9534f', 
+                    paddingAll: 'lg' 
+                },
+                body: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    spacing: 'md', 
+                    paddingAll: 'lg',
+                    contents: [
+                        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(log.created_at), color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '情境', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: log.context, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '用戶', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: log.user_id ? formatIdForDisplay(log.user_id) : 'N/A', color: '#666666', size: 'xxs', flex: 5, wrap: true } ] },
+                        { type: 'separator', margin: 'md' },
+                        { type: 'box', layout: 'vertical', spacing: 'sm', margin: 'md', contents: [ { type: 'text', text: '錯誤訊息', color: '#aaaaaa', size: 'sm' }, { type: 'text', text: log.error_message.substring(0, 150), color: '#666666', size: 'sm', wrap: true } ] }
+                    ]
+                }
+            };
+        });
+
+        const paginationBubble = createPaginationBubble('action=view_error_logs', page, hasNextPage);
+        if (paginationBubble) {
+            logBubbles.push(paginationBubble);
+        }
+
+        return { type: 'flex', altText: '錯誤日誌列表', contents: { type: 'carousel', contents: logBubbles } };
+    });
+}
+
+/**
  * [V39.0 修改] 取得所有全局通知設定
  * @returns {Promise<object>} 一個包含所有通知設定狀態的物件
  */
