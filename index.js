@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
  /**
- * [V36.7 修改] 顯示可預約課程，改為左圖右文的排版
+ * [V36.7 修改 & 雙欄佈局優化] 顯示可預約課程，改為左圖右文、雙欄按鈕的排版
  * @param {string} userId - 使用者 ID
  * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
  * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4452,7 +4452,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         coursesRes.rows.forEach(course => {
             const prefix = course.id.substring(0, 2);
             if (!courseSeries[prefix]) {
-                courseSeries[prefix] = {
+                 courseSeries[prefix] = {
                     prefix: prefix,
                     mainTitle: getCourseMainTitle(course.title),
                     teacherName: course.teacher_name || '待定',
@@ -4471,27 +4471,34 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         
         const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
         let allSeries = Object.values(courseSeries);
-
-        // [V39.7 優化] 如果使用者正在對某個系列分頁，則將該系列移到最前面
         if (showMorePrefix) {
             const activeSeriesIndex = allSeries.findIndex(s => s.prefix === showMorePrefix);
             if (activeSeriesIndex > 0) {
-                // 從陣列中取出該系列
                 const [activeSeries] = allSeries.splice(activeSeriesIndex, 1);
-                // 將它加到陣列的最開頭
                 allSeries.unshift(activeSeries);
             }
         }
 
         const seriesBubbles = allSeries.map(series => {
-
             let currentPage = (series.prefix === showMorePrefix) ? seriesPage : 1;
+            
+            // ====================== [修改點 1] ======================
+            // 將每頁顯示的場次從 3 個增加到 6 個 (左3 + 右3)
             const SESSIONS_PER_PAGE = 6;
+            // =======================================================
+
             const offset = (currentPage - 1) * SESSIONS_PER_PAGE;
             const sessionsToShow = series.sessions.slice(offset, offset + SESSIONS_PER_PAGE);
             const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
             
-            const dateButtons = sessionsToShow.map(session => {
+            // ====================== [修改點 2] ======================
+            // 建立一個函式來產生單一按鈕的結構，方便重複使用
+            const createSessionButton = (session) => {
+                if (!session) {
+                    // 如果沒有 session (處理奇數情況)，回傳一個空的 box 作為佔位符
+                    return { type: 'box', layout: 'vertical', contents: [], flex: 1 };
+                }
+
                 const remainingSpots = session.capacity - (session.students || []).length;
                 const isFull = remainingSpots <= 0;
                 const waitingCount = (session.waiting || []).length;
@@ -4512,13 +4519,35 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     buttonColor = '#808080';
                 }
                 
-                return {
-                    type: 'box', layout: 'vertical', contents: [
+                return { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    contents: [
                         { type: 'button', action: { type: 'postback', label: formatDateOnly(session.time), data: buttonActionData }, height: 'sm', style: buttonStyle, color: buttonColor },
                         { type: 'text', text: subText, size: 'xs', color: subTextColor, align: 'end', margin: 'xs' }
-                    ], spacing: 'xs'
+                    ], 
+                    spacing: 'xs',
+                    flex: 1 // 讓左右按鈕等寬
                 };
-            });
+            };
+
+            // 使用 for 迴圈兩兩一組建立水平排列的按鈕列
+            const sessionButtonRows = [];
+            for (let i = 0; i < sessionsToShow.length; i += 2) {
+                const leftSession = sessionsToShow[i];
+                const rightSession = sessionsToShow[i + 1]; // 如果是奇數，這裡會是 undefined
+
+                sessionButtonRows.push({
+                    type: 'box',
+                    layout: 'horizontal',
+                    spacing: 'md', // 按鈕間的水平間距
+                    contents: [
+                        createSessionButton(leftSession),
+                        createSessionButton(rightSession)
+                    ]
+                });
+            }
+            // ========================================================
 
             const hasPreviousSessions = currentPage > 1;
             const pageButtons = [];
@@ -4531,8 +4560,8 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 pageButtons.push({ type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '下一頁 ➡️', data: `action=view_available_courses&show_more=${series.prefix}&series_page=${nextSeriesPage}` }});
             }
             
-            // 將所有 session 按鈕和分頁按鈕組合到 footer
-            const footerContents = [...dateButtons];
+            // 將所有 session 按鈕列和分頁按鈕組合到 footer
+            const footerContents = [...sessionButtonRows];
             if (pageButtons.length > 0) {
                  footerContents.push({ type: 'separator', margin: 'md' });
                  footerContents.push({ type: 'box', layout: 'horizontal', contents: pageButtons, margin: 'md' });
@@ -4543,25 +4572,23 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                 size: 'giga',
                 body: {
                     type: 'box',
-                    layout: 'horizontal', // 主要改動：改為水平佈局
+                    layout: 'horizontal', 
                     paddingAll: 'lg',
                     spacing: 'lg',
                     contents: [
-                        // 左側照片區塊
                         {
                             type: 'image',
                             url: series.teacherImageUrl || placeholder_avatar,
                             aspectRatio: '1:1',
                             aspectMode: 'cover',
                             size: 'md',
-                            flex: 2 // 控制照片寬度佔比
+                            flex: 2 
                         },
-                        // 右側文字資訊區塊
                         {
                             type: 'box',
                             layout: 'vertical',
                             spacing: 'sm',
-                            flex: 4, // 控制文字區塊寬度佔比
+                            flex: 4, 
                             contents: [
                                 { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
@@ -4569,19 +4596,17 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                                 { type: 'separator', margin: 'md'},
                                 {
                                     type: 'box',
-                                    layout: 'horizontal', // 改為 horizontal
+                                    layout: 'horizontal', 
                                     margin: 'md',
                                     contents: [
                                         { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
-                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' } // 新增 align: 'end'
+                                        { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
                                     ]
                                 }
-
                             ]
                         }
                     ]
                 },
-                // 將所有按鈕移至 footer
                 ...(footerContents.length > 0 && {
                     footer: {
                         type: 'box',
@@ -4596,7 +4621,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
         
         const headerText = '🗓️ 預約課程總覽';
         const flexMessage = { type: 'flex', altText: headerText, contents: { type: 'carousel', contents: seriesBubbles } };
-        
         if (!postbackData.has('show_more')) {
             return [{ type: 'text', text: `你好！${headerText}如下，請左右滑動查看：` }, flexMessage];
         }
