@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-10] 顯示可預約課程，調整「無其他頁」樣式以對齊版面
+* [V36.7 FINAL-FIX-10] 顯示可預約課程，使用三行文字的技巧來完成最終對齊
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4591,26 +4591,39 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    margin: 'md'
                };
            } else {
+                // ====================== [修改] ======================
+                // 採用三行文字的結構來撐高
                paginationComponent = {
                    type: 'box',
                    layout: 'vertical',
                    justifyContent: 'center',
                    alignItems: 'center',
                    margin: 'md',
+                   spacing: 'none', // 緊密排列
                    contents: [
                        {
-                           // ====================== [修改] ======================
                            type: 'text',
-                           text: '|\n— 無其他頁 —\n|', // 加上 | 符號與換行
-                           color: '#FFFFFF',          // 顏色改為白色
-                           lineSpacing: '4px',        // 增加行距
-                           size: 'md',
-                           align: 'center',
-                           wrap: true
-                           // =======================================================
+                           text: '-',
+                           color: '#FFFFFF', // 白色
+                           size: 'sm',
+                           align: 'center'
+                       },
+                       {
+                           type: 'text',
+                           text: '無其他頁', // 移除前後的 —
+                           size: 'xs', // 縮小字體以微調
+                           color: '#AAAAAA'
+                       },
+                       {
+                           type: 'text',
+                           text: '-',
+                           color: '#FFFFFF', // 白色
+                           size: 'sm',
+                           align: 'center'
                        }
                    ]
                };
+               // =======================================================
            }
            footerContents.push(paginationComponent);
 
