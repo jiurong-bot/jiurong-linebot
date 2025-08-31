@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-12] 顯示可預約課程，縮小符號間距達成最終對齊
+* [V36.7 FINAL-FIX-15] 顯示可預約課程，放大課程名稱字體
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4649,9 +4649,11 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             flex: 4, 
                             justifyContent: 'flex-start',
                             contents: [
-                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
-                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'xs' },
-                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 's', color: '#888888', wrap: true, margin: 'xs' },
+                                // ====================== [修改] ======================
+                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true },
+                                // =======================================================
+                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
+                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
                                 { type: 'separator', margin: 'md'},
                                 {
                                     type: 'box',
@@ -4697,8 +4699,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        return flexMessage;
    });
 }
-
-// ... (檔案後面的程式碼保持不變) ...
 
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
