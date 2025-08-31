@@ -131,8 +131,8 @@ const CONSTANTS = {
       ADD_NEW_MESSAGE: '@新增一則留言',
       CANCEL_BOOKING: '@取消預約',
       CANCEL_WAITING: '@取消候補',
-      CONFIRM_ADD_COURSE: '✅確認新增',
-      CANCEL_ADD_COURSE: '❌取消新增',
+      CONFIRM_ADD_COURSE: '✅ 確認新增',
+      CANCEL_ADD_COURSE: '❌ 取消新增',
       RETURN_POINTS_MENU: '返回點數管理',
       CONFIRM_BUY_POINTS: '✅ 確認購買',
       INPUT_LAST5_CARD_TRIGGER: '@輸入匯款後五碼',
@@ -5589,7 +5589,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V39.7 (課程排版優化)`);
+    console.log(`Bot 版本 V39.8 (按鍵標準化)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
