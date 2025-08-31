@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-11] 顯示可預約課程，將分頁提示修改為兩行符號
+* [V36.7 FINAL-FIX-12] 顯示可預約課程，縮小符號間距達成最終對齊
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4592,14 +4592,14 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    margin: 'md'
                };
            } else {
-               // ====================== [修改] ======================
-               // 最終版：只留兩行白色「-」符號
                paginationComponent = {
                    type: 'box',
                    layout: 'vertical',
                    justifyContent: 'center',
                    margin: 'md',
-                   spacing: 'md', // 稍微增加一點符號間的距離
+                   // ====================== [修改] ======================
+                   spacing: 'none', // 將間距縮到最小
+                   // =======================================================
                    contents: [
                        {
                            type: 'text',
@@ -4617,7 +4617,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                        }
                    ]
                };
-               // =======================================================
            }
            footerContents.push(paginationComponent);
 
@@ -4692,7 +4691,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        return flexMessage;
    });
 }
-        
+
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
