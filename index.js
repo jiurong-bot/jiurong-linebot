@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-10] 顯示可預約課程，使用三行文字的技巧來完成最終對齊
+* [V36.7 FINAL-FIX-10] 顯示可預約課程，使用三行文字模擬按鈕高度
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4582,6 +4582,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            
            const footerContents = [...sessionButtonRows];
            footerContents.push({ type: 'separator', margin: 'md' });
+           
            let paginationComponent;
            if (pageButtons.length > 0) {
                paginationComponent = {
@@ -4591,34 +4592,35 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    margin: 'md'
                };
            } else {
-                // ====================== [修改] ======================
-                // 採用三行文字的結構來撐高
+               // ====================== [修改] ======================
+               // 實作您設計的三行文字元件
                paginationComponent = {
                    type: 'box',
                    layout: 'vertical',
                    justifyContent: 'center',
-                   alignItems: 'center',
                    margin: 'md',
-                   spacing: 'none', // 緊密排列
+                   spacing: 'none', // 縮小間距
                    contents: [
                        {
                            type: 'text',
                            text: '-',
                            color: '#FFFFFF', // 白色
-                           size: 'sm',
+                           size: 'xs',
                            align: 'center'
                        },
                        {
                            type: 'text',
-                           text: '無其他頁', // 移除前後的 —
-                           size: 'xs', // 縮小字體以微調
-                           color: '#AAAAAA'
+                           text: '— 無其他頁 —',
+                           size: 'sm', // 與按鈕文字視覺大小一致
+                           color: '#AAAAAA',
+                           align: 'center',
+                           margin: 'xs'
                        },
                        {
                            type: 'text',
                            text: '-',
                            color: '#FFFFFF', // 白色
-                           size: 'sm',
+                           size: 'xs',
                            align: 'center'
                        }
                    ]
