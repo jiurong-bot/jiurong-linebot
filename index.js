@@ -138,8 +138,8 @@ const CONSTANTS = {
       INPUT_LAST5_CARD_TRIGGER: '@輸入匯款後五碼',
       EDIT_LAST5_CARD_TRIGGER: '@修改匯款後五碼',
       CONFIRM_BOOKING: '✅ 確認預約',
-      CONFIRM_CANCEL_BOOKING: '✅ 確認取消預約',
-      CONFIRM_CANCEL_WAITING: '✅ 確認取消候補',
+      CONFIRM_CANCEL_BOOKING: '✅ 確認取消',
+      CONFIRM_CANCEL_WAITING: '✅ 確認取消',
     }
   }
 };
