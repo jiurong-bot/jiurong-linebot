@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-9] 顯示可預約課程，透過補齊文字與放大字體達成完美對齊
+* [V36.7 FINAL-FIX-10] 顯示可預約課程，調整「無其他頁」樣式以對齊版面
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4498,8 +4498,6 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
            
            const createSessionButton = (session) => {
-               // ====================== [修改點 1] ======================
-               // 當沒有課程時，回傳一個帶有「-」文字的無作用按鈕
                if (!session) {
                    return {
                        type: 'box',
@@ -4516,16 +4514,15 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                            },
                            {
                                type: 'text',
-                               text: '-', // 補上「-」
+                               text: '-',
                                size: 'xs',
-                               color: '#F0F0F0', // 使用與按鈕相同的顏色
+                               color: '#F0F0F0',
                                align: 'end',
                                margin: 'xs'
                            }
                        ]
                    };
                }
-               // =======================================================
                const remainingSpots = session.capacity - (session.students || []).length;
                const isFull = remainingSpots <= 0;
                const waitingCount = (session.waiting || []).length;
@@ -4602,12 +4599,15 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    margin: 'md',
                    contents: [
                        {
+                           // ====================== [修改] ======================
                            type: 'text',
-                           text: '— 無其他頁 —',
-                           // ====================== [修改點 2] ======================
-                           size: 'md', // 將字體從 sm 放大到 md
+                           text: '|\n— 無其他頁 —\n|', // 加上 | 符號與換行
+                           color: '#FFFFFF',          // 顏色改為白色
+                           lineSpacing: '4px',        // 增加行距
+                           size: 'md',
+                           align: 'center',
+                           wrap: true
                            // =======================================================
-                           color: '#AAAAAA'
                        }
                    ]
                };
