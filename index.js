@@ -4626,6 +4626,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     layout: 'horizontal', 
                     paddingAll: 'lg',
                     spacing: 'lg',
+                    alignItems: 'flex-end',
                     contents: [
                         {
                             type: 'box', 
