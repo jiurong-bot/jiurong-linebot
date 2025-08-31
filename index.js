@@ -1,4 +1,4 @@
-// index.js - V39.7c
+// index.js - V39.7 (課程排版優化）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
