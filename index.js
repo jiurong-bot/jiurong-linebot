@@ -4597,9 +4597,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    layout: 'vertical',
                    justifyContent: 'center',
                    margin: 'md',
-                   // ====================== [修改] ======================
-                   spacing: 'none', // 將間距縮到最小
-                   // =======================================================
+                   spacing: 'none',
                    contents: [
                        {
                            type: 'text',
@@ -4630,18 +4628,25 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     spacing: 'lg',
                     contents: [
                         {
-                            type: 'image',
-                            url: series.teacherImageUrl || placeholder_avatar,
-                            aspectRatio: '1:1',
-                            aspectMode: 'cover',
-                            size: 'md',
-                            flex: 2 
+                            type: 'box', 
+                            layout: 'vertical',
+                            flex: 2, 
+                            contents: [
+                                {
+                                    type: 'image',
+                                    url: series.teacherImageUrl || placeholder_avatar,
+                                    aspectRatio: '1:1',
+                                    aspectMode: 'cover',
+                                    size: 'full'
+                                }
+                            ]
                         },
                         {
                             type: 'box',
                             layout: 'vertical',
                             spacing: 'sm',
                             flex: 4, 
+                            justifyContent: 'flex-start',
                             contents: [
                                 { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
@@ -4691,6 +4696,8 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        return flexMessage;
    });
 }
+
+// ... (檔案後面的程式碼保持不變) ...
 
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
