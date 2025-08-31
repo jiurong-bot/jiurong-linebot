@@ -1,4 +1,4 @@
-// index.js - V39.7b
+// index.js - V39.7c
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
