@@ -1,4 +1,4 @@
-// index.js - V39.7b
+// index.js - V39.7c
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-12] 顯示可預約課程，縮小符號間距達成最終對齊
+* [V36.7 FINAL-FIX-13] 顯示可預約課程，調整圖片大小使其與右側文字底部對齊
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4597,9 +4597,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                    layout: 'vertical',
                    justifyContent: 'center',
                    margin: 'md',
-                   // ====================== [修改] ======================
-                   spacing: 'none', // 將間距縮到最小
-                   // =======================================================
+                   spacing: 'none',
                    contents: [
                        {
                            type: 'text',
@@ -4630,18 +4628,32 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                     spacing: 'lg',
                     contents: [
                         {
-                            type: 'image',
-                            url: series.teacherImageUrl || placeholder_avatar,
-                            aspectRatio: '1:1',
-                            aspectMode: 'cover',
-                            size: 'md',
-                            flex: 2 
+                            type: 'box', // 包裹圖片的 box
+                            layout: 'vertical',
+                            // ====================== [修改] ======================
+                            // 調整 flex 比例讓圖片容器高度與右側文字區塊更接近
+                            // 原始圖片 flex: 2，右側文字 flex: 4
+                            // 我們將圖片的 flex 設為 2，並為右側文字區塊也調整 flex 比例，
+                            // 讓兩者能更和諧地分配高度。
+                            flex: 2, 
+                            contents: [
+                                {
+                                    type: 'image',
+                                    url: series.teacherImageUrl || placeholder_avatar,
+                                    aspectRatio: '1:1',
+                                    aspectMode: 'cover',
+                                    size: 'md', // 保持 md 尺寸，讓 flex 調整其外部容器高度
+                                    flex: 1 // 讓圖片在容器中盡可能佔滿空間
+                                }
+                            ]
                         },
                         {
                             type: 'box',
                             layout: 'vertical',
                             spacing: 'sm',
                             flex: 4, 
+                            // 確保右側內容區塊的高度彈性，使其能與圖片區塊對齊
+                            justifyContent: 'flex-start', // 內容從頂部開始
                             contents: [
                                 { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
                                 { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
@@ -4663,34 +4675,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                                             type: 'box',
                                             layout: 'horizontal',
                                             contents: [
-                                                { type: 'text', text: `費用：${series.pointsCost} 點`, size: 'sm', color: '#666666' },
-                                                { type: 'text', text: `總名額：${series.capacity} 位`, size: 'sm', color: '#666666', align: 'end' }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-               footer: {
-                   type: 'box',
-                   layout: 'vertical',
-                   spacing: 'none',
-                   paddingAll: 'md',
-                   contents: footerContents
-               }
-           };
-       });
-       
-       const headerText = '🗓️ 預約課程總覽';
-       const flexMessage = { type: 'flex', altText: headerText, contents: { type: 'carousel', contents: seriesBubbles } };
-       if (!postbackData.has('show_more')) {
-           return [{ type: 'text', text: `你好！${headerText}如下，請左右滑動查看：` }, flexMessage];
-       }
-       return flexMessage;
-   });
-}
+                                                { type: 'text', text: `費用：${series.pointsCost} 
 
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
