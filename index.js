@@ -4425,7 +4425,7 @@ async function showPendingOrders(page) {
 }
 
 /**
-* [V36.7 FINAL-FIX-9] 顯示可預約課程，在 footer 底部增加 spacer 來實現置頂對齊
+* [V36.7 FINAL-FIX-9] 顯示可預約課程，透過補齊文字與放大字體達成完美對齊
 * @param {string} userId - 使用者 ID
 * @param {URLSearchParams} [postbackData=new URLSearchParams()] - 從 postback 事件來的數據，用於處理「顯示更多」
 * @returns {Promise<object|string>} - Flex Message 物件或無資料時的文字訊息
@@ -4498,9 +4498,34 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            const hasMoreSessions = series.sessions.length > offset + SESSIONS_PER_PAGE;
            
            const createSessionButton = (session) => {
+               // ====================== [修改點 1] ======================
+               // 當沒有課程時，回傳一個帶有「-」文字的無作用按鈕
                if (!session) {
-                   return { type: 'box', layout: 'vertical', contents: [{ type: 'spacer' }], flex: 1 };
+                   return {
+                       type: 'box',
+                       layout: 'vertical',
+                       spacing: 'xs',
+                       flex: 1,
+                       contents: [
+                           {
+                               type: 'button',
+                               action: { type: 'postback', label: ' ', data: 'action=do_nothing' },
+                               height: 'sm',
+                               style: 'secondary',
+                               color: '#F0F0F0'
+                           },
+                           {
+                               type: 'text',
+                               text: '-', // 補上「-」
+                               size: 'xs',
+                               color: '#F0F0F0', // 使用與按鈕相同的顏色
+                               align: 'end',
+                               margin: 'xs'
+                           }
+                       ]
+                   };
                }
+               // =======================================================
                const remainingSpots = session.capacity - (session.students || []).length;
                const isFull = remainingSpots <= 0;
                const waitingCount = (session.waiting || []).length;
@@ -4532,7 +4557,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
            };
 
            const sessionButtonRows = [];
-           for (let i = 0; i < sessionsToShow.length; i += 2) {
+           for (let i = 0; i < SESSIONS_PER_PAGE; i += 2) {
                const leftSession = sessionsToShow[i];
                const rightSession = sessionsToShow[i + 1];
                sessionButtonRows.push({
@@ -4579,19 +4604,15 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                        {
                            type: 'text',
                            text: '— 無其他頁 —',
-                           size: 'sm',
+                           // ====================== [修改點 2] ======================
+                           size: 'md', // 將字體從 sm 放大到 md
+                           // =======================================================
                            color: '#AAAAAA'
                        }
                    ]
                };
            }
            footerContents.push(paginationComponent);
-
-           // ====================== [關鍵修正] ======================
-           // 在所有 footer 內容的最底部加上一個 spacer
-           // 這個 spacer 會填滿所有多餘的垂直空間，將上面的內容全部推到頂部
-           footerContents.push({ type: 'spacer' });
-           // =======================================================
 
            return {
                type: 'bubble',
@@ -4649,7 +4670,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                footer: {
                    type: 'box',
                    layout: 'vertical',
-                   spacing: 'sm', //改回 sm 讓按鈕間有預設間距
+                   spacing: 'none',
                    paddingAll: 'md',
                    contents: footerContents
                }
