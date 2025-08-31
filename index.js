@@ -4649,9 +4649,9 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             flex: 4, 
                             justifyContent: 'flex-start',
                             contents: [
-                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'lg', wrap: true },
-                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'sm' },
-                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 'xs', color: '#888888', wrap: true, margin: 'xs' },
+                                { type: 'text', text: series.mainTitle, weight: 'bold', size: 'xl', wrap: true },
+                                { type: 'text', text: `授課老師：${series.teacherName}`, size: 'md' },
+                                { type: 'text', text: (series.teacherBio || '').substring(0, 28) + '...', size: 's', color: '#888888', wrap: true, margin: 'xs' },
                                 { type: 'separator', margin: 'md'},
                                 {
                                     type: 'box',
