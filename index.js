@@ -7234,7 +7234,7 @@ async function handleEvent(event) {
             const action = postbackData.get('action');
             const continuationActions = [ 'set_course_weekday', 'select_teacher_for_course', 'confirm_add_product', 'edit_product_field', 'start_booking_confirmation', 'execute_booking',
                                           'execute_product_purchase',  'confirm_teacher_profile_update', 'start_purchase_history_search', 'start_exchange_history_search', 'start_message_history_search',
-                                          'select_student_for_purchase_history', 'select_student_for_exchange_history', 'select_student_for_message_history','publish_prefilled_announcement','edit_prefilled_announcement'];
+                                          'select_student_for_purchase_history', 'select_student_for_exchange_history', 'select_student_for_message_history','publish_prefilled_announcement','edit_prefilled_announcement','execute_preorder'];
             if (continuationActions.includes(action)) {
                 shouldClear = false;
             }
