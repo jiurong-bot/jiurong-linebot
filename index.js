@@ -1,4 +1,4 @@
-// index.js - V39.8 (按鍵標準化）
+// index.js - V39.9 (單位元修正）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
