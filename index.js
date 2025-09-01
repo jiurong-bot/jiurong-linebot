@@ -3179,7 +3179,7 @@ event.message.text.trim().normalize() : '';
                                 style: 'primary',
                                 action: {
                                     type: 'postback',
-                                    label: '✅ 確認預訂',
+                                    label: '✅ 確認',
                                     data: 'action=execute_preorder'
                                 }
                             },
