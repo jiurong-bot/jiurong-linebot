@@ -1,4 +1,4 @@
-// index.js - V39.9 (單位元修正）
+// index.js - V39.9 (單位元改正）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -2416,7 +2416,7 @@ async function handleTeacherCommands(event, userId) {
             if (!proceedToNextStep) { return { type: 'text', text: errorImageUrlMessage, quickReply: { items: getCancelMenu() } };
             }
             state.image_url = imageUrl; state.step = 'await_confirmation';
-            const summaryText = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 點\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
+            const summaryText = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 元\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
             return {
                 type: 'text',
                 text: summaryText,
@@ -5094,7 +5094,7 @@ async function showProductManagementList(page = 1, filter = null) {
                             layout: 'horizontal',
                             margin: 'md',
                             contents: [
-                                { type: 'text', text: `價格: ${p.price} 點`, size: 'md' },
+                                { type: 'text', text: `價格: ${p.price} 元`, size: 'md' },
                                 { type: 'text', text: `庫存: ${p.inventory}`, size: 'md', align: 'end' }
                             ]
                         }
@@ -5589,7 +5589,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V39.8 (按鍵標準化)`);
+    console.log(`Bot 版本 V39.9 (單位元改正)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
@@ -6306,7 +6306,7 @@ async function handlePostback(event, user) {
             if (!product) return '找不到該商品。';
             pendingProductEdit[userId] = { product, field };
             setupConversationTimeout(userId, pendingProductEdit, 'pendingProductEdit', u => enqueuePushTask(u, { type: 'text', text: '編輯商品操作逾時，自動取消。' }));
-            const fieldMap = { name: '名稱', description: '描述', price: '價格 (點數)', image_url: '圖片網址' };
+            const fieldMap = { name: '名稱', description: '描述', price: '價格 (元)', image_url: '圖片網址' };
             return { type: 'text', text: `請輸入新的「${fieldMap[field]}」：\n(目前為：${product[field] || '無'})`, quickReply: { items: getCancelMenu() } };
         }
         case 'adjust_inventory_start': {
@@ -6642,12 +6642,12 @@ async function handlePostback(event, user) {
                 return `✅ 已成功確認訂單 (ID: ...${data.get('orderUID').slice(-6)})。\n系統已發送通知給學員 ${order.user_name}。`;
             });
         }
-        case 'cancel_shop_order_start': {
-    const orderUID = data.get('orderUID');
-    const order = await getProductOrder(orderUID);
-    if (!order) return '找不到該訂單。';
-    return { type: 'text', text: `您確定要取消學員 ${order.user_name} 的訂單「${order.product_name}」嗎？\n\n⚠️ 此操作將會歸還 ${order.points_spent} 點給學員，並將商品庫存加回 1。`, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_shop_order_execute&orderUID=${orderUID}` } }, { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } } ] } };
-         }
+         case 'cancel_shop_order_start': {
+            const orderUID = data.get('orderUID');
+            const order = await getProductOrder(orderUID);
+            if (!order) return '找不到該訂單。';
+            return { type: 'text', text: `您確定要取消學員 ${order.user_name} 的訂單「${order.product_name}」嗎？\n\n⚠️ 此操作會將商品庫存加回系統，且無法復原。`, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_shop_order_execute&orderUID=${orderUID}` } }, { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } } ] } };
+        }
          case 'reject_shop_order': {
             const orderUID = data.get('orderUID');
             return executeDbQuery(async (client) => {
