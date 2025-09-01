@@ -6389,6 +6389,56 @@ async function handlePostback(event, user) {
             }
         }
 
+        // [新增] 處理商品預訂流程
+        case 'start_preorder': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '抱歉，找不到該商品。';
+
+            pendingPreorder[userId] = { 
+                step: 'await_quantity', 
+                product_id: productId,
+                product_name: product.name 
+            };
+            setupConversationTimeout(userId, pendingPreorder, 'pendingPreorder', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '預訂操作已逾時，自動取消。' });
+            });
+
+            return {
+                type: 'text',
+                text: `您好，請問您想預訂幾個「${product.name}」？\n請直接輸入數字：`,
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+
+        case 'execute_preorder': {
+            const state = pendingPreorder[userId];
+            if (!state || state.step !== 'await_confirmation') {
+                return '預訂操作已逾時或無效，請重新操作。';
+            }
+
+            // 組合要存入 feedback_messages 的內容
+            const preorderMessage = `【商品預訂通知】
+學員：${user.name}
+商品：${state.product_name}
+數量：${state.quantity} 個`;
+
+            // 將預訂存入訊息系統
+            await executeDbQuery(client =>
+                client.query('INSERT INTO feedback_messages (id, user_id, user_name, message, timestamp) VALUES ($1, $2, $3, $4, NOW())', [`F${Date.now()}`, userId, user.name, preorderMessage])
+            );
+            
+            // 清除狀態
+            delete pendingPreorder[userId];
+
+            // 通知所有老師
+            const notifyMessage = { type: 'text', text: `🔔 商品預訂通知\n學員 ${user.name} 預訂了「${state.product_name}」x${state.quantity}。\n請至「學員管理」->「查看未回覆留言」確認。` };
+            await notifyAllTeachers(notifyMessage);
+
+            // 回覆學員
+            return '✅ 您的預訂需求已成功送出！\n我們已轉知老師，商品到貨後將會盡快通知您。';
+        }
+
         // [V35.6 新增] 處理商品購買數量選擇
         case 'select_product_quantity': {
             const productId = data.get('product_id');
