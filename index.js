@@ -2381,7 +2381,7 @@ async function handleTeacherCommands(event, userId) {
         case 'await_name': state.name = text;
         state.step = 'await_description'; return { type: 'text', text: '請輸入商品描述 (可換行)，或輸入「無」：', quickReply: { items: getCancelMenu() } };
         case 'await_description': state.description = text === '無' ? null : text; state.step = 'await_price';
-            return { type: 'text', text: '請輸入商品售價 (元整，純數字)：', quickReply: { items: getCancelMenu() } };
+            return { type: 'text', text: '請輸入商品售價 (元，純數字)：', quickReply: { items: getCancelMenu() } };
         case 'await_price':
             const price = parseInt(text, 10);
             if (isNaN(price) || price < 0) { proceed = false; errorMessage = '價格格式不正確，請輸入一個非負整數。';
@@ -4996,7 +4996,7 @@ async function showShopProducts(page) {
                             layout: 'horizontal',
                             margin: 'md',
                             contents: [
-                                { type: 'text', text: `${p.price} 元整`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
+                                { type: 'text', text: `${p.price} 元`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
                                 { type: 'text', text: `庫存: ${p.inventory}`, size: 'sm', color: '#666666', align: 'end', flex: 1, gravity: 'bottom' }
                             ]
                         },
