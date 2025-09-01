@@ -3140,6 +3140,64 @@ event.message.text.trim().normalize() : '';
         }
     }
     
+    // [新增] 處理商品預訂的數量輸入
+    else if (pendingPreorder[userId]) {
+        const state = pendingPreorder[userId];
+        if (state.step === 'await_quantity') {
+            const quantity = parseInt(text, 10);
+            if (isNaN(quantity) || quantity <= 0) {
+                return {
+                    type: 'text',
+                    text: '格式錯誤，請輸入一個大於 0 的數字。',
+                    quickReply: { items: getCancelMenu() }
+                };
+            }
+            state.quantity = quantity;
+            state.step = 'await_confirmation';
+            
+            const confirmMessage = `您確定要預訂 ${quantity} 個「${state.product_name}」嗎？`;
+
+            return {
+                type: 'flex',
+                altText: '確認預訂資訊',
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: confirmMessage, wrap: true }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                action: {
+                                    type: 'postback',
+                                    label: '✅ 確認預訂',
+                                    data: 'action=execute_preorder'
+                                }
+                            },
+                            {
+                                type: 'button',
+                                style: 'secondary',
+                                action: {
+                                    type: 'message',
+                                    label: '❌ 取消',
+                                    text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                }
+                            }
+                        ]
+                    }
+                }
+            };
+        }
+    }
     const purchaseFlowResult = await handlePurchaseFlow(event, userId);
   
   if (purchaseFlowResult.handled) {
