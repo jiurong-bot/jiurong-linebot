@@ -1,4 +1,4 @@
-// index.js - V39.9 (單位元改正）
+// index.js - V40.0 (商品預訂）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -4973,16 +4973,15 @@ async function showShopProducts(page) {
         if (pageProducts.length === 0) {
             return '沒有更多商品了。';
         }
-
-
-        const productBubbles = pageProducts.map(p => {
+            const productBubbles = pageProducts.map(p => {
             const isSoldOut = p.inventory <= 0;
             const buttonStyle = isSoldOut ? 'secondary' : 'primary';
-            const buttonLabel = isSoldOut ? '已售完' : '我要購買';
+            const buttonLabel = isSoldOut ? '預訂商品' : '我要購買'; // 修改點
             const buttonAction = isSoldOut
-                ? { type: 'message', label: buttonLabel, text: '此商品已售完' }
+                ? { type: 'postback', label: buttonLabel, data: `action=start_preorder&product_id=${p.id}` } // 修改點
                 : { type: 'postback', label: buttonLabel, data: `action=select_product_quantity&product_id=${p.id}` };
-            return {
+
+        return {
                 type: 'bubble',
                 hero: (p.image_url && p.image_url.startsWith('https')) ?
                 { type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' } : undefined,
