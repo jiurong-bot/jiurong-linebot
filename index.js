@@ -5647,7 +5647,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V39.9 (單位元改正)`);
+    console.log(`Bot 版本 V40.0 (商品預訂)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
