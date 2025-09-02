@@ -4980,7 +4980,7 @@ async function showShopProducts(page) {
             const buttonStyle = isSoldOut ? 'secondary' : 'primary';
             const buttonLabel = isSoldOut ? '已售完' : '我要購買';
             const buttonAction = isSoldOut
-                ? { type: 'message', label: buttonLabel, text: '此商品已售完' }
+                ? { type: 'postback', label: buttonLabel, data: 'action=do_nothing' } // <--- 修改點
                 : { type: 'postback', label: buttonLabel, data: `action=select_product_quantity&product_id=${p.id}` };
             return {
                 type: 'bubble',
