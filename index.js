@@ -4966,9 +4966,7 @@ async function showSingleCoursesForCancellation(prefix, page) {
 async function showShopProducts(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
-        const productsRes = await client.query("SELECT * FROM products WHERE status = 'available' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
-
-
+    const productsRes = await client.query("SELECT * FROM products WHERE status IN ('available', 'preorder') ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
         const hasNextPage = productsRes.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageProducts = hasNextPage ? productsRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : productsRes.rows;
 
