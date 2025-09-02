@@ -4976,42 +4976,30 @@ async function showShopProducts(page) {
 
 
         const productBubbles = pageProducts.map(p => {
-            const isSoldOut = p.inventory <= 0;
-            const buttonStyle = isSoldOut ? 'secondary' : 'primary';
-            const buttonLabel = isSoldOut ? '已售完' : '我要購買';
-            const buttonAction = isSoldOut
-                ? { type: 'postback', label: buttonLabel, data: 'action=do_nothing' } // <--- 修改點
-                : { type: 'postback', label: buttonLabel, data: `action=select_product_quantity&product_id=${p.id}` };
-            return {
-                type: 'bubble',
-                hero: (p.image_url && p.image_url.startsWith('https')) ?
-                { type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' } : undefined,
-                body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [
-                        { type: 'text', text: p.name, weight: 'bold', size: 'xl' },
-                        {
-                            type: 'box',
-                            layout: 'horizontal',
-                            margin: 'md',
-                            contents: [
-                                { type: 'text', text: `${p.price} 元`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
-                                { type: 'text', text: `庫存: ${p.inventory}`, size: 'sm', color: '#666666', align: 'end', flex: 1, gravity: 'bottom' }
-                            ]
-                        },
-                        { type: 'text', text: p.description || ' ', wrap: true, size: 'sm', margin: 'md', color: '#666666' },
-                    ]
-                },
-                footer: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [
-                        {
-                            type: 'button',
-                            style: buttonStyle,
-                            action: buttonAction,
-                            color: isSoldOut ? '#AAAAAA' : '#52B69A',
+            let buttonLabel, buttonAction, buttonStyle, buttonColor;
+const isSoldOut = p.inventory <= 0;
+
+if (isSoldOut) {
+    if (p.status === 'preorder') {
+        // 情況 1：已售完，但開放預購
+        buttonLabel = '我要預購';
+        buttonAction = { type: 'postback', label: buttonLabel, data: `action=select_preorder_quantity&product_id=${p.id}` };
+        buttonStyle = 'primary';
+        buttonColor = '#FF9E00'; // 使用橘色代表預購
+    } else {
+        // 情況 2：已售完，且未開放預購
+        buttonLabel = '已售完';
+        buttonAction = { type: 'postback', label: buttonLabel, data: 'action=do_nothing' };
+        buttonStyle = 'secondary';
+        buttonColor = '#AAAAAA';
+    }
+} else {
+    // 情況 3：庫存充足，正常販售
+    buttonLabel = '我要購買';
+    buttonAction = { type: 'postback', label: buttonLabel, data: `action=select_product_quantity&product_id=${p.id}` };
+    buttonStyle = 'primary';
+    buttonColor = '#52B69A';
+}
                         }
                     ]
                 }
