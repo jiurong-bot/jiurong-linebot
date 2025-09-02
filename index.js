@@ -6098,7 +6098,7 @@ async function handlePostback(event, user) {
                         // 建立正式訂單
                         await client.query(
                             `INSERT INTO product_orders (order_uid, user_id, user_name, product_id, product_name, amount, status, payment_method)
-                             VALUES ($1, $2, $3, $4, $5, $6, 'pending_payment', 'transfer')`,
+                             VALUES ($1, $2, $3, $4, $5, 0, $6, 'pending_payment', 'transfer')`,
                             [orderUID, preorder.user_id, preorder.user_name, product.id, `${product.name} x${preorder.quantity}`, totalAmount]
                         );
 
