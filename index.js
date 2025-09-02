@@ -6481,7 +6481,7 @@ async function handlePostback(event, user) {
               學生：${userId}
               商品名稱：${state.item_name}
               商品描述：${state.description}
-              預訂數量：${quantity}
+              預訂數量：${state.quantity}
               `;
 
             // 將預訂存入訊息系統
