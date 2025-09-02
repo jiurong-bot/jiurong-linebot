@@ -6267,7 +6267,7 @@ async function handlePostback(event, user) {
                 }
             };
         }
-        case case 'confirm_product_preorder_start': {
+        case 'confirm_product_preorder_start': {
             const productId = data.get('product_id');
             const quantity = parseInt(data.get('qty') || '1', 10);
             const product = await getProduct(productId);
