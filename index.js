@@ -4858,10 +4858,11 @@ async function showMyMessages(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
         const res = await client.query(
-            `SELECT * FROM feedback_messages WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
+            // ====================== [修改] ======================
+            `SELECT * FROM feedback_messages WHERE user_id = $1 ORDER BY timestamp ASC LIMIT $2 OFFSET $3`,
+            // =======================================================
             [userId, CONSTANTS.PAGINATION_SIZE + 1, offset]
         );
-
 
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageMessages = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
