@@ -1,4 +1,4 @@
-// index.js - V40.1 (排序重整）
+// index.js - V40.2 (預購按鍵顏色）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
