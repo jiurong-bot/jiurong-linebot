@@ -6233,7 +6233,7 @@ async function handlePostback(event, user) {
                 }
             };
         }
-
+        
         case 'execute_product_preorder': {
             const productId = data.get('product_id');
             const quantity = parseInt(data.get('qty') || '1', 10);
@@ -6246,7 +6246,6 @@ async function handlePostback(event, user) {
                 }
                 const product = productRes.rows[0];
 
-                // 檢查是否已經預購過
                 const existingPreorder = await client.query(
                     "SELECT id FROM product_preorders WHERE user_id = $1 AND product_id = $2 AND status = 'active'",
                     [userId, productId]
@@ -6255,12 +6254,17 @@ async function handlePostback(event, user) {
                     return { success: false, message: '您已預購過此商品，請耐心等候到貨通知。' };
                 }
 
-                // 將預購紀錄寫入新的資料表
+                // ====================== [修改] ======================
+                // 1. 產生一個獨一無二的預購ID
+                const preorder_uid = `PRE-${Date.now()}-${userId.slice(-4)}`;
+
+                // 2. 在 INSERT 語句中加入 preorder_uid 欄位與值
                 await client.query(
-                    `INSERT INTO product_preorders (product_id, user_id, user_name, quantity, status)
-                     VALUES ($1, $2, $3, $4, 'active')`,
-                    [productId, userId, user.name, quantity]
+                    `INSERT INTO product_preorders (preorder_uid, product_id, user_id, user_name, quantity, status)
+                     VALUES ($1, $2, $3, $4, $5, 'active')`,
+                    [preorder_uid, productId, userId, user.name, quantity]
                 );
+                // =======================================================
                 
                 return { success: true, productName: product.name, quantity: quantity };
             });
@@ -6271,6 +6275,7 @@ async function handlePostback(event, user) {
                 return result.message;
             }
         }
+
         case 'cancel_announcement': {
             // 清除待處理的公告狀態，避免誤觸
             if (pendingAnnouncementCreation[userId]) {
