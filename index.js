@@ -5089,19 +5089,18 @@ async function showProductManagementList(page = 1, filter = null) {
                     ]
                 },
                 footer: {
-                    type: 'box',
-                    layout: 'vertical',
-                    spacing: 'sm',
-                    contents: [
-                        { type: 'button', style: 'primary', height: 'sm', color: '#52B69A', action: { type: 'postback', label: '✏️ 編輯資訊', data: `action=manage_product&product_id=${p.id}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 調整庫存', data: `action=adjust_inventory_start&product_id=${p.id}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', color: '#D9534F', action: { type: 'postback', label: toggleLabel, data: toggleAction } }
-                    ]
-                }
-            };
-        });
-
-
+            type: 'box',
+            layout: 'vertical',
+            contents: [{
+                type: 'button',
+                // ✨ 這裡直接使用上面 if/else 區塊定義好的變數
+                style: buttonStyle,
+                action: buttonAction,
+                color: buttonColor,
+            }]
+        }
+    };
+});
         const paginationBubble = createPaginationBubble(
             'action=view_products',
             page,
