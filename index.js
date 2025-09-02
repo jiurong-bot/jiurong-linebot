@@ -5997,18 +5997,55 @@ async function handlePostback(event, user) {
                 }
             };
         }
-
-        case 'execute_stop_preorder': {
+                case 'execute_stop_preorder': {
             const productId = data.get('product_id');
-            const result = await executeDbQuery(client =>
-                client.query("UPDATE products SET status = 'unavailable' WHERE id = $1 AND status = 'preorder' RETURNING name", [productId])
-            );
+            const result = await executeDbQuery(async (client) => {
+                // 使用交易來確保資料一致性
+                await client.query('BEGIN');
+                try {
+                    // 步驟 1: 先查詢商品目前的狀態，並鎖定該筆資料防止其他程序同時修改
+                    const productRes = await client.query("SELECT name, status FROM products WHERE id = $1 FOR UPDATE", [productId]);
 
-            if (result.rowCount > 0) {
-                const productName = result.rows[0].name;
-                return `✅ 已成功停止「${productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
+                    if (productRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { status: 'error', message: '❌ 操作失敗，找不到該商品。' };
+                    }
+
+                    const product = productRes.rows[0];
+
+                    // 步驟 2: 檢查商品是否已經是「下架」狀態
+                    if (product.status === 'unavailable') {
+                        // 如果是，代表這是重複的請求，我們直接回報「已處理」，不做任何事
+                        await client.query('ROLLBACK'); 
+                        return { status: 'processed' }; 
+                    }
+
+                    // 如果商品不是預購狀態，回報錯誤
+                    if (product.status !== 'preorder') {
+                        await client.query('ROLLBACK');
+                        return { status: 'error', message: '❌ 操作失敗，該商品不是預購狀態。' };
+                    }
+
+                    // 步驟 3: 確認狀態無誤，執行更新
+                    await client.query("UPDATE products SET status = 'unavailable' WHERE id = $1", [productId]);
+                    await client.query('COMMIT');
+                    return { status: 'success', productName: product.name };
+
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error("停止預購失敗:", err);
+                    return { status: 'error', message: '❌ 操作失敗，資料庫發生錯誤。' };
+                }
+            });
+
+            // 步驟 4: 根據上面回傳的狀態，決定要回覆什麼訊息
+            if (result.status === 'success') {
+                return `✅ 已成功停止「${result.productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
+            } else if (result.status === 'error') {
+                return result.message;
             }
-            return '❌ 操作失敗，找不到該預購商品或狀態已變更。';
+            // 如果狀態是 'processed'，代表是重複指令，我們就回傳 null，不做任何回覆
+            return null;
         }
 
         // =======================================================
@@ -6118,7 +6155,6 @@ async function handlePostback(event, user) {
             );
             return '✅ 已成功封存此商品的所有預購紀錄。';
         }
-// ...
 
         // =======================================================
         // [新增] 處理「開放預購」與「直接下架」的動作流程
