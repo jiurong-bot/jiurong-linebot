@@ -6232,8 +6232,8 @@ async function handlePostback(event, user) {
                     action: {
                         type: 'postback',
                         label: `${quantity} 個`,
-                        // 將選擇的數量 (qty) 傳遞到下一步
-                        data: `action=execute_product_preorder&product_id=${product.id}&qty=${quantity}`
+                        // 將選擇的數量 (qty) 傳遞到「確認步驟」
+                        data: `action=confirm_product_preorder_start&product_id=${product.id}&qty=${quantity}`
                     }
                 };
             });
