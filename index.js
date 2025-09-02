@@ -5234,6 +5234,133 @@ async function showSoldOutProducts(page) {
         noDataMessage: '太好了！目前沒有任何已售完的商品需要處理。'
     });
 }
+// =======================================================
+// [新增] 顯示預購中的商品管理介面
+// =======================================================
+async function showPreorderProducts(page) {
+    const mapRowToBubble = async (product) => {
+        // 取得此商品的預購總數
+        const preorderStats = await executeDbQuery(client =>
+            client.query("SELECT COUNT(*), SUM(quantity) as total_quantity FROM product_preorders WHERE product_id = $1 AND status = 'active'", [product.id])
+        ).then(res => ({
+            count: parseInt(res.rows[0].count, 10) || 0,
+            total_quantity: parseInt(res.rows[0].total_quantity, 10) || 0
+        }));
+
+        return {
+            type: 'bubble',
+            hero: (product.image_url && product.image_url.startsWith('https')) ? {
+                type: 'image', url: product.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
+            } : undefined,
+            body: {
+                type: 'box', layout: 'vertical', spacing: 'md',
+                contents: [
+                    { type: 'text', text: product.name, weight: 'bold', size: 'xl', wrap: true },
+                    { type: 'separator', margin: 'lg' },
+                    {
+                        type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                        contents: [
+                            { type: 'text', text: `預購人數：${preorderStats.count} 人`, size: 'sm' },
+                            { type: 'text', text: `預購總數：${preorderStats.total_quantity} 個`, size: 'sm' }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box', layout: 'vertical', spacing: 'sm',
+                contents: [
+                    {
+                        type: 'button', style: 'primary', height: 'sm',
+                        action: { type: 'postback', label: '📋 查看預購清單', data: `action=view_preorder_list&product_id=${product.id}` }
+                    },
+                    {
+                        type: 'button', style: 'secondary', color: '#DE5246', height: 'sm',
+                        action: { type: 'postback', label: '停止預購並下架', data: `action=stop_preorder_start&product_id=${product.id}` }
+                    }
+                ]
+            }
+        };
+    };
+
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return executeDbQuery(async (client) => {
+        const res = await client.query("SELECT * FROM products WHERE status = 'preorder' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageRows.length === 0 && page === 1) {
+            return '目前沒有任何商品正在預購中。';
+        }
+        if (pageRows.length === 0) {
+            return '沒有更多預購中的商品了。';
+        }
+
+        const bubbles = await Promise.all(pageRows.map(mapRowToBubble));
+        const paginationBubble = createPaginationBubble('action=view_preorder_products', page, hasNextPage);
+        if (paginationBubble) {
+            bubbles.push(paginationBubble);
+        }
+
+        return {
+            type: 'flex',
+            altText: '預購中商品管理',
+            contents: { type: 'carousel', contents: bubbles }
+        };
+    });
+}
+
+// =======================================================
+// [新增] 顯示單一商品的預購名單
+// =======================================================
+async function showPreorderRoster(productId) {
+    return executeDbQuery(async (client) => {
+        const productRes = await client.query("SELECT name FROM products WHERE id = $1", [productId]);
+        if (productRes.rows.length === 0) return '找不到該商品。';
+        const productName = productRes.rows[0].name;
+
+        const rosterRes = await client.query("SELECT user_name, quantity FROM product_preorders WHERE product_id = $1 AND status = 'active' ORDER BY created_at ASC", [productId]);
+
+        const bodyContents = [];
+        if (rosterRes.rows.length === 0) {
+            bodyContents.push({ type: 'text', text: '目前尚無學員預購', align: 'center', color: '#888888' });
+        } else {
+            const listItems = rosterRes.rows.map(row => ({
+                type: 'box',
+                layout: 'horizontal',
+                margin: 'md',
+                contents: [
+                    { type: 'text', text: row.user_name, flex: 3 },
+                    { type: 'text', text: `數量：${row.quantity}`, align: 'end', flex: 2 }
+                ]
+            }));
+            bodyContents.push(...listItems);
+        }
+
+        return {
+            type: 'flex',
+            altText: `${productName} 的預購名單`,
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: {
+                    type: 'box', layout: 'vertical',
+                    contents: [
+                        { type: 'text', text: '預購名單', color: '#FFFFFF', size: 'lg', weight: 'bold' },
+                        { type: 'text', text: productName, color: '#FFFFFF', wrap: true, size: 'sm' }
+                    ],
+                    backgroundColor: '#343A40', paddingAll: 'lg'
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'sm',
+                    paddingAll: 'lg',
+                    contents: bodyContents
+                }
+            }
+        };
+    });
+}
 
 // =======================================================
 // 程式碼修改：V35.5 (商品現金購 - Part 2)
