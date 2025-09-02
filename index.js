@@ -4990,13 +4990,17 @@ async function showSingleCoursesForCancellation(prefix, page) {
         };
     });
 }
+// =======================================================
+// [V39.10 預購功能整合] 顯示可預約/預購商品
+// =======================================================
 async function showShopProducts(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
-    const productsRes = await client.query("SELECT * FROM products WHERE status IN ('available', 'preorder') ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
+        // 修正：查詢條件應包含 'available' 和 'preorder' 兩種狀態
+        const productsRes = await client.query("SELECT * FROM products WHERE status IN ('available', 'preorder') ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
+
         const hasNextPage = productsRes.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageProducts = hasNextPage ? productsRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : productsRes.rows;
-
 
         if (pageProducts.length === 0 && page === 1) {
             return '目前商城沒有任何商品，敬請期待！';
@@ -5005,33 +5009,36 @@ async function showShopProducts(page) {
             return '沒有更多商品了。';
         }
 
-
         const productBubbles = pageProducts.map(p => {
+            // ---- 按鈕外觀邏輯 ----
             const isSoldOut = p.inventory <= 0 && p.status !== 'preorder';
-            const isPreorder = p.status === 'preorder';
+            const isPreorder = p.status === 'preorder';
 
-            let buttonLabel = '我要購買';
-            let buttonActionData = `action=select_product_quantity&product_id=${p.id}`;
-            let buttonStyle = 'primary';
-            let buttonColor = '#52B69A'; // 預設為綠色
+            let buttonLabel = '我要購買';
+            let buttonActionData = `action=select_product_quantity&product_id=${p.id}`;
+            let buttonStyle = 'primary';
+            let buttonColor = '#52B69A'; // 預設為綠色
 
-            if (isSoldOut) {
-                buttonLabel = '已售完';
-                buttonActionData = 'action=do_nothing';
-                buttonStyle = 'secondary';
-                buttonColor = '#AAAAAA';
-            } else if (isPreorder) {
-                buttonLabel = '我要預購';
-                // 注意：這裡我們指向一個新的 action，專門處理預購
-                buttonActionData = `action=select_preorder_quantity&product_id=${p.id}`;
-                buttonColor = '#FF9E00'; // 預購使用橘色
-            }
+            if (isSoldOut) {
+                buttonLabel = '已售完';
+                buttonActionData = 'action=do_nothing';
+                buttonStyle = 'secondary';
+                buttonColor = '#AAAAAA';
+            } else if (isPreorder) {
+                buttonLabel = '我要預購';
+                buttonActionData = `action=select_preorder_quantity&product_id=${p.id}`;
+                // *** 關鍵點：設定預購按鈕顏色為橘色 ***
+                buttonColor = '#FF9E00';
+            }
 
-            const buttonAction = { type: 'postback', label: buttonLabel, data: buttonActionData };
+            const buttonAction = { type: 'postback', label: buttonLabel, data: buttonActionData };
+            // ---- 按鈕邏輯結束 ----
+
             return {
                 type: 'bubble',
-                hero: (p.image_url && p.image_url.startsWith('https')) ?
-                { type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' } : undefined,
+                hero: (p.image_url && p.image_url.startsWith('https')) ? {
+                    type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
+                } : undefined,
                 body: {
                     type: 'box',
                     layout: 'vertical',
@@ -5043,7 +5050,7 @@ async function showShopProducts(page) {
                             margin: 'md',
                             contents: [
                                 { type: 'text', text: `${p.price} 元`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
-                                { type: 'text', text: `庫存: ${p.inventory}`, size: 'sm', color: '#666666', align: 'end', flex: 1, gravity: 'bottom' }
+                                { type: 'text', text: isPreorder ? '開放預購中' : `庫存: ${p.inventory}`, size: 'sm', color: isPreorder ? '#FF9E00' : '#666666', align: 'end', flex: 1, gravity: 'bottom' }
                             ]
                         },
                         { type: 'text', text: p.description || ' ', wrap: true, size: 'sm', margin: 'md', color: '#666666' },
@@ -5052,29 +5059,25 @@ async function showShopProducts(page) {
                 footer: {
                     type: 'box',
                     layout: 'vertical',
-                    contents: [
-                        {
-                            type: 'button',
-                            style: buttonStyle,
-                            action: buttonAction,
-                            color: isSoldOut ? '#AAAAAA' : '#52B69A',
-                        }
-                    ]
+                    contents: [{
+                        type: 'button',
+                        style: buttonStyle,
+                        action: buttonAction,
+                        // *** 關鍵點：將設定好的顏色應用到按鈕上 ***
+                        color: buttonColor,
+                    }]
                 }
             };
         });
-
 
         const paginationBubble = createPaginationBubble('action=view_shop_products', page, hasNextPage);
         if (paginationBubble) {
             productBubbles.push(paginationBubble);
         }
 
-
         return { type: 'flex', altText: '活動商城', contents: { type: 'carousel', contents: productBubbles } };
     });
 }
-
 
 async function showProductManagementList(page = 1, filter = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
