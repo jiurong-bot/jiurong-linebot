@@ -1563,8 +1563,10 @@ async function showShopManagementMenu(event, user) {
     if (pendingShopOrdersCount > 0) { 
         pendingShopOrdersLabel += ` (${pendingShopOrdersCount})`;
     }
-
-
+    let soldOutLabel = '📦 管理零庫存商品';
+    if (soldOutCount > 0) {
+        soldOutLabel += ` (${soldOutCount})`;
+    }
     return { 
         type: 'flex', 
         altText: '商城管理', 
