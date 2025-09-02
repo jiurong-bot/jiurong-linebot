@@ -5129,6 +5129,84 @@ async function showProductManagementList(page = 1, filter = null) {
     });
 }
 // =======================================================
+// [新增] 顯示零庫存商品，供老師決定下架或開放預購
+// =======================================================
+async function showSoldOutProducts(page) {
+    // 定義如何將一筆資料庫的 row 轉換成一個 Flex Bubble
+    const mapRowToBubble = (product) => {
+        return {
+            type: 'bubble',
+            hero: (product.image_url && product.image_url.startsWith('https')) ? {
+                type: 'image',
+                url: product.image_url,
+                size: 'full',
+                aspectRatio: '1:1',
+                aspectMode: 'cover',
+            } : undefined,
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                    { type: 'text', text: product.name, weight: 'bold', size: 'xl', wrap: true },
+                    { type: 'text', text: product.description || '無描述', wrap: true, size: 'sm', color: '#666666', margin: 'md' },
+                    { type: 'separator', margin: 'lg' },
+                    {
+                        type: 'box',
+                        layout: 'horizontal',
+                        margin: 'md',
+                        contents: [
+                            { type: 'text', text: `價格: ${product.price} 元`, size: 'md' },
+                            { type: 'text', text: `庫存: 0`, size: 'md', align: 'end', color: '#DE5246' }
+                        ]
+                    }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: [
+                    {
+                        type: 'button',
+                        style: 'primary',
+                        color: '#FF9E00', // 橘色代表預購
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '🚀 開放預購',
+                            data: `action=enable_preorder_start&product_id=${product.id}`
+                        }
+                    },
+                    {
+                        type: 'button',
+                        style: 'secondary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '直接下架',
+                            data: `action=disable_product_start&product_id=${product.id}`
+                        }
+                    }
+                ]
+            }
+        };
+    };
+
+    // 使用我們通用的分頁輪播產生器來建立訊息
+    return createPaginatedCarousel({
+        altText: '零庫存商品管理',
+        baseAction: 'action=view_sold_out_products',
+        page: page,
+        // 查詢條件：庫存為0，且狀態仍為 'available' 的商品
+        dataQuery: "SELECT * FROM products WHERE inventory <= 0 AND status = 'available' ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+        queryParams: [],
+        mapRowToBubble: mapRowToBubble,
+        noDataMessage: '太好了！目前沒有任何已售完的商品需要處理。'
+    });
+}
+
+// =======================================================
 // 程式碼修改：V35.5 (商品現金購 - Part 2)
 // =======================================================
 // [V35.6 優化] 將購買紀錄改為條列式，並區分待處理與歷史訂單
