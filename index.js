@@ -5788,6 +5788,102 @@ async function handlePostback(event, user) {
             }
             return '❌ 操作失敗，找不到該商品。';
         }
+        // =======================================================
+        // [新增] 處理學員點擊「我要預購」後的流程
+        // =======================================================
+        case 'select_preorder_quantity': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            // 再次確認商品狀態
+            if (!product || product.status !== 'preorder') {
+                return '抱歉，此商品目前未開放預購。';
+            }
+
+            // 預購一次最多 5 個
+            const maxQuantity = 5;
+            const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
+                const quantity = i + 1;
+                return {
+                    type: 'button',
+                    style: 'secondary',
+                    height: 'sm',
+                    margin: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: `${quantity} 個`,
+                        // 將選擇的數量 (qty) 傳遞到下一步
+                        data: `action=execute_product_preorder&product_id=${product.id}&qty=${quantity}`
+                    }
+                };
+            });
+
+            return {
+                type: 'flex',
+                altText: '請選擇預購數量',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '請選擇預購數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                        backgroundColor: '#FF9E00' // 橘色
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
+                            { type: 'text', text: `單價：${product.price} 元 (到貨後付款)`, size: 'sm', color: '#666666', margin: 'md' },
+                            { type: 'separator', margin: 'lg' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: quantityButtons
+                    }
+                }
+            };
+        }
+
+        case 'execute_product_preorder': {
+            const productId = data.get('product_id');
+            const quantity = parseInt(data.get('qty') || '1', 10);
+
+            // 執行預購流程
+            const result = await executeDbQuery(async (client) => {
+                const productRes = await client.query("SELECT name, status FROM products WHERE id = $1", [productId]);
+                if (productRes.rows.length === 0 || productRes.rows[0].status !== 'preorder') {
+                    return { success: false, message: '預購失敗，此商品目前未開放預購。' };
+                }
+                const product = productRes.rows[0];
+
+                // 檢查是否已經預購過
+                const existingPreorder = await client.query(
+                    "SELECT id FROM product_preorders WHERE user_id = $1 AND product_id = $2 AND status = 'active'",
+                    [userId, productId]
+                );
+                if (existingPreorder.rows.length > 0) {
+                    return { success: false, message: '您已預購過此商品，請耐心等候到貨通知。' };
+                }
+
+                // 將預購紀錄寫入新的資料表
+                await client.query(
+                    `INSERT INTO product_preorders (product_id, user_id, user_name, quantity, status)
+                     VALUES ($1, $2, $3, $4, 'active')`,
+                    [productId, userId, user.name, quantity]
+                );
+                
+                return { success: true, productName: product.name, quantity: quantity };
+            });
+
+            if (result.success) {
+                return `✅ 預購成功！\n\n您已成功預購「${result.productName}」共 ${result.quantity} 個。\n商品到貨後，系統將會發送訊息通知您付款。`;
+            } else {
+                return result.message;
+            }
+        }
         case 'cancel_announcement': {
             // 清除待處理的公告狀態，避免誤觸
             if (pendingAnnouncementCreation[userId]) {
