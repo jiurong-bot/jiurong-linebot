@@ -4982,12 +4982,27 @@ async function showShopProducts(page) {
 
 
         const productBubbles = pageProducts.map(p => {
-            const isSoldOut = p.inventory <= 0;
-            const buttonStyle = isSoldOut ? 'secondary' : 'primary';
-            const buttonLabel = isSoldOut ? '已售完' : '我要購買';
-            const buttonAction = isSoldOut
-                ? { type: 'postback', label: buttonLabel, data: 'action=do_nothing' } // <--- 修改點
-                : { type: 'postback', label: buttonLabel, data: `action=select_product_quantity&product_id=${p.id}` };
+            const isSoldOut = p.inventory <= 0 && p.status !== 'preorder';
+            const isPreorder = p.status === 'preorder';
+
+            let buttonLabel = '我要購買';
+            let buttonActionData = `action=select_product_quantity&product_id=${p.id}`;
+            let buttonStyle = 'primary';
+            let buttonColor = '#52B69A'; // 預設為綠色
+
+            if (isSoldOut) {
+                buttonLabel = '已售完';
+                buttonActionData = 'action=do_nothing';
+                buttonStyle = 'secondary';
+                buttonColor = '#AAAAAA';
+            } else if (isPreorder) {
+                buttonLabel = '我要預購';
+                // 注意：這裡我們指向一個新的 action，專門處理預購
+                buttonActionData = `action=select_preorder_quantity&product_id=${p.id}`;
+                buttonColor = '#FF9E00'; // 預購使用橘色
+            }
+
+            const buttonAction = { type: 'postback', label: buttonLabel, data: buttonActionData };
             return {
                 type: 'bubble',
                 hero: (p.image_url && p.image_url.startsWith('https')) ?
