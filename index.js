@@ -1,4 +1,4 @@
-// index.js - V40.1 (商品預購）
+// index.js - V40.1a (商品預購）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
