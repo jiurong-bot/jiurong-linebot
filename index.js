@@ -6291,7 +6291,7 @@ async function handlePostback(event, user) {
                             type: 'action',
                             action: {
                                 type: 'postback',
-                                label: '✅ 確認預購',
+                                label: '✅ 確認',
                                 // 按下確認後，才真正執行預購
                                 data: `action=execute_product_preorder&product_id=${product.id}&qty=${quantity}`
                             }
