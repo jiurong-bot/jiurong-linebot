@@ -5487,9 +5487,45 @@ async function showStudentExchangeHistory(userId, page = 1) { // page 參數暫�
 
         const bodyContents = [];
         const separator = { type: 'separator', margin: 'md' };
+        
+      // 步驟 2: 產生「歷史訂單」列表
+        if (historyOrders.length > 0) {
+            bodyContents.push({ type: 'text', text: '歷史訂單', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
 
 
-        // 步驟 2: 產生「待處理訂單」列表
+            historyOrders.forEach(order => {
+                let statusText, statusColor;
+                if (order.status === 'completed') {
+                    statusText = '✅ 已完成';
+                    statusColor = '#28a745';
+                } else { // cancelled
+                    statusText = '❌ 已取消';
+                    statusColor = '#dc3545';
+                }
+
+
+                bodyContents.push({
+                    type: 'box',
+                    layout: 'vertical',
+                    margin: 'lg',
+                    spacing: 'sm',
+                    contents: [
+                        { type: 'text', text: order.product_name, weight: 'bold', wrap: true, color: '#888888' },
+                        { type: 'text', text: `金額：${order.amount} 元`, size: 'sm', color: '#888888' },
+                        {
+                            type: 'box',
+                            layout: 'horizontal',
+                            contents: [
+                                { type: 'text', text: statusText, size: 'sm', color: statusColor },
+                                { type: 'text', text: formatDateTime(order.created_at), size: 'sm', color: '#AAAAAA', align: 'end' }
+                            ]
+                        }
+                    ]
+                });
+                bodyContents.push(separator);
+            });
+        }
+         // 步驟 3: 產生「待處理訂單」列表
         if (pendingOrders.length > 0) {
             bodyContents.push({ type: 'text', text: '待處理訂單', weight: 'bold', size: 'lg', margin: 'md', color: '#1A759F' });
             
@@ -5537,46 +5573,7 @@ async function showStudentExchangeHistory(userId, page = 1) { // page 參數暫�
                 bodyContents.push(separator);
             });
         }
-
-
-        // 步驟 3: 產生「歷史訂單」列表
-        if (historyOrders.length > 0) {
-            bodyContents.push({ type: 'text', text: '歷史訂單', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
-
-
-            historyOrders.forEach(order => {
-                let statusText, statusColor;
-                if (order.status === 'completed') {
-                    statusText = '✅ 已完成';
-                    statusColor = '#28a745';
-                } else { // cancelled
-                    statusText = '❌ 已取消';
-                    statusColor = '#dc3545';
-                }
-
-
-                bodyContents.push({
-                    type: 'box',
-                    layout: 'vertical',
-                    margin: 'lg',
-                    spacing: 'sm',
-                    contents: [
-                        { type: 'text', text: order.product_name, weight: 'bold', wrap: true, color: '#888888' },
-                        { type: 'text', text: `金額：${order.amount} 元`, size: 'sm', color: '#888888' },
-                        {
-                            type: 'box',
-                            layout: 'horizontal',
-                            contents: [
-                                { type: 'text', text: statusText, size: 'sm', color: statusColor },
-                                { type: 'text', text: formatDateTime(order.created_at), size: 'sm', color: '#AAAAAA', align: 'end' }
-                            ]
-                        }
-                    ]
-                });
-                bodyContents.push(separator);
-            });
-        }
-        
+      
         // 移除最後一個多餘的分隔線
         if (bodyContents.length > 0 && bodyContents[bodyContents.length - 1].type === 'separator') {
             bodyContents.pop();
