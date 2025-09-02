@@ -2219,7 +2219,7 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
     return executeDbQuery(async (client) => {
         // 抓取最近 20 筆相關紀錄
         const res = await client.query(
-            `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 20`,
+            `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp ASC LIMIT 20`,
             [userId]
         );
 
