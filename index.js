@@ -1555,8 +1555,10 @@ async function showShopManagementMenu(event, user) {
     const pendingShopOrdersCount = await executeDbQuery(client => 
         client.query("SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')")
     ).then(res => parseInt(res.rows[0].count, 10));
-
-
+      // 查詢零庫存、且仍在架上的商品數量
+    const soldOutCount = await executeDbQuery(client =>
+        client.query("SELECT COUNT(*) FROM products WHERE inventory <= 0 AND status = 'available'")
+    ).then(res => parseInt(res.rows[0].count, 10));
     let pendingShopOrdersLabel = '📋 查看待處理訂單';
     if (pendingShopOrdersCount > 0) { 
         pendingShopOrdersLabel += ` (${pendingShopOrdersCount})`;
