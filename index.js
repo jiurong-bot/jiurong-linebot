@@ -6012,6 +6012,115 @@ async function handlePostback(event, user) {
         }
 
         // =======================================================
+        // [新增] 處理商品到貨通知與封存
+        // =======================================================
+        case 'view_fulfillment_list': {
+            return showFulfillmentList(page);
+        }
+
+        case 'notify_product_arrival_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到商品。';
+            
+            const count = await executeDbQuery(client => 
+                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+            ).then(res => parseInt(res.rows[0].count, 10));
+
+            if (count === 0) {
+                return `「${product.name}」沒有需要通知的預購者。您可以直接封存此紀錄。`;
+            }
+
+            return {
+                type: 'text',
+                text: `您確定要通知 ${count} 位學員「${product.name}」已到貨嗎？\n\n系統將會為他們建立待付款訂單，並發送通知。`,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認通知', data: `action=execute_notify_product_arrival&product_id=${productId}` } },
+                    { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                ]}
+            };
+        }
+
+        case 'execute_notify_product_arrival': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [productId]);
+                    if (productRes.rows.length === 0) throw new Error('找不到商品');
+                    const product = productRes.rows[0];
+
+                    const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
+                    if (preorders.length === 0) throw new Error('找不到有效的預購紀錄');
+
+                    const notificationTasks = [];
+                    for (const preorder of preorders) {
+                        const totalAmount = product.price * preorder.quantity;
+                        const orderUID = `PROD-${Date.now()}-${preorder.user_id.slice(-4)}`;
+                        
+                        // 建立正式訂單
+                        await client.query(
+                            `INSERT INTO product_orders (order_uid, user_id, user_name, product_id, product_name, amount, status, payment_method)
+                             VALUES ($1, $2, $3, $4, $5, $6, 'pending_payment', 'transfer')`,
+                            [orderUID, preorder.user_id, preorder.user_name, product.id, `${product.name} x${preorder.quantity}`, totalAmount]
+                        );
+
+                        // 準備通知
+                        notificationTasks.push({
+                            recipientId: preorder.user_id,
+                            message: { type: 'text', text: `🔔 商品到貨通知！\n您預購的「${product.name}」已經到貨囉！系統已為您建立訂單，請至「商城」->「我的購買紀錄」完成付款。` }
+                        });
+                    }
+
+                    // 更新預購紀錄狀態
+                    await client.query("UPDATE product_preorders SET status = 'notified' WHERE product_id = $1 AND status = 'active'", [productId]);
+
+                    await client.query('COMMIT');
+                    return { success: true, tasks: notificationTasks, count: preorders.length };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('執行到貨通知時失敗:', err);
+                    return { success: false, message: `處理失敗：${err.message}` };
+                }
+            });
+
+            if (result.success) {
+                if (result.tasks.length > 0) {
+                    await enqueueBatchPushTasks(result.tasks);
+                }
+                return `✅ 成功！已為 ${result.count} 位學員建立訂單並發送付款通知。`;
+            } else {
+                return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
+            }
+        }
+        
+        case 'archive_preorder_start': {
+             const productId = data.get('product_id');
+             const product = await getProduct(productId);
+             if (!product) return '找不到商品。';
+             return {
+                 type: 'text',
+                 text: `您確定要將「${product.name}」的所有預購紀錄封存嗎？\n\n此項目將會從此列表移除。`,
+                 quickReply: { items: [
+                     { type: 'action', action: { type: 'postback', label: '✅ 確認封存', data: `action=execute_archive_preorder&product_id=${productId}` } },
+                     { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                 ]}
+             };
+        }
+
+        case 'execute_archive_preorder': {
+            // 封存：將所有相關的 preorder 紀錄狀態改為 archived
+            const productId = data.get('product_id');
+            // 我們可以新增一個 'archived' 狀態，或直接刪除
+            // 為了保留紀錄，更新狀態較佳
+            await executeDbQuery(client => 
+                client.query("UPDATE product_preorders SET status = 'archived' WHERE product_id = $1", [productId])
+            );
+            return '✅ 已成功封存此商品的所有預購紀錄。';
+        }
+// ...
+
+        // =======================================================
         // [新增] 處理「開放預購」與「直接下架」的動作流程
         // =======================================================
         case 'enable_preorder_start': {
