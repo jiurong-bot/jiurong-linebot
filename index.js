@@ -6476,10 +6476,13 @@ async function handlePostback(event, user) {
             }
 
             // 組合要存入 feedback_messages 的內容
-            const preorderMessage = `【商品預訂通知】
-學員：${user.name}
-商品：${state.product_name}
-數量：${state.quantity} 個`;
+            const teacherMessage = `
+              商品預訂通知：
+              學生：${userId}
+              商品名稱：${item.item_name}
+              商品描述：${item.description}
+              預訂數量：${quantity}
+              `;
 
             // 將預訂存入訊息系統
             await executeDbQuery(client =>
