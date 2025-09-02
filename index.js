@@ -5589,7 +5589,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V39.9 (單位元改正)`);
+    console.log(`Bot 版本 V39.10 (已售完錯誤改正)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
@@ -5604,7 +5604,10 @@ async function handlePostback(event, user) {
     const userId = user.id;
     const page = parseInt(data.get('page') || '1', 10);
     switch (action) {
-
+        // [新增] 處理無效或無需回應的點擊動作
+        case 'do_nothing': {
+            return null; // 直接回傳 null，不做任何事
+        }
         // [V39.0 新增] 處理全局通知設定的切換
         case 'toggle_global_setting': {
             const key = data.get('key');
