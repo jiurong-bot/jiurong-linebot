@@ -6267,7 +6267,43 @@ async function handlePostback(event, user) {
                 }
             };
         }
-        
+        case case 'confirm_product_preorder_start': {
+            const productId = data.get('product_id');
+            const quantity = parseInt(data.get('qty') || '1', 10);
+            const product = await getProduct(productId);
+
+            if (!product) {
+                return '抱歉，找不到該商品。';
+            }
+
+            const message = `您確定要預購以下商品嗎？\n\n「${product.name}」x ${quantity} 個\n\n(商品到貨後將會通知您付款)`;
+
+            return {
+                type: 'text',
+                text: message,
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'postback',
+                                label: '✅ 確認預購',
+                                // 按下確認後，才真正執行預購
+                                data: `action=execute_product_preorder&product_id=${product.id}&qty=${quantity}`
+                            }
+                        },
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: '❌ 取消',
+                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                            }
+                        }
+                    ]
+                }
+            };
+        }
         case 'execute_product_preorder': {
             const productId = data.get('product_id');
             const quantity = parseInt(data.get('qty') || '1', 10);
