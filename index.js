@@ -97,6 +97,7 @@ const CONSTANTS = {
         MANAGE_UNAVAILABLE_PRODUCTS: '@管理已下架商品',
         MANAGE_SOLD_OUT_PRODUCTS: '@管理零庫存商品',
         MANAGE_PREORDER_PRODUCTS: '@管理預購中商品',
+        MANAGE_FULFILLMENT: '@待出貨預購管理',
         SHOP_ORDER_MANAGEMENT: '@訂單管理',
         VIEW_SHOP_EXCHANGE_HISTORY: '@查詢購買紀錄',
       REPORT: '@統計報表',
