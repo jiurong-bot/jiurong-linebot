@@ -1,4 +1,4 @@
-// index.js - V39.9 (單位元改正）
+// index.js - V39.10 (單位元改正）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -4957,8 +4957,9 @@ async function showSingleCoursesForCancellation(prefix, page) {
         };
     });
 }
+// 修正「已售完」按鈕行為
 async function showShopProducts(page) {
-    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    [span_0](start_span)const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;[span_0](end_span)
     return executeDbQuery(async (client) => {
         const productsRes = await client.query("SELECT * FROM products WHERE status = 'available' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
 
@@ -4968,7 +4969,7 @@ async function showShopProducts(page) {
 
 
         if (pageProducts.length === 0 && page === 1) {
-            return '目前商城沒有任何商品，敬請期待！';
+            [span_1](start_span)return '目前商城沒有任何商品，敬請期待！';[span_1](end_span)
         }
         if (pageProducts.length === 0) {
             return '沒有更多商品了。';
@@ -4978,57 +4979,64 @@ async function showShopProducts(page) {
         const productBubbles = pageProducts.map(p => {
             const isSoldOut = p.inventory <= 0;
             const buttonStyle = isSoldOut ? 'secondary' : 'primary';
-            const buttonLabel = isSoldOut ? '已售完' : '我要購買';
+            [span_2](start_span)const buttonLabel = isSoldOut ? '已售完' : '我要購買';[span_2](end_span)
+            
+            // ====================== [修改點] ======================
+            // 將原本的 message action 改為 postback action，並帶上一個無作用的 data
             const buttonAction = isSoldOut
-                ? { type: 'message', label: buttonLabel, text: '此商品已售完' }
+                ? { type: 'postback', label: buttonLabel, data: 'action=do_nothing' }
                 : { type: 'postback', label: buttonLabel, data: `action=select_product_quantity&product_id=${p.id}` };
+            // =======================================================
+
             return {
                 type: 'bubble',
                 hero: (p.image_url && p.image_url.startsWith('https')) ?
-                { type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' } : undefined,
+{ type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' } : undefined,
                 body: {
                     type: 'box',
                     layout: 'vertical',
                     contents: [
-                        { type: 'text', text: p.name, weight: 'bold', size: 'xl' },
+                 { type: 'text', text: p.name, weight: 'bold', size: 'xl' },
                         {
                             type: 'box',
-                            layout: 'horizontal',
+       layout: 'horizontal',
                             margin: 'md',
                             contents: [
-                                { type: 'text', text: `${p.price} 元`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
+                                { type: 
+'text', text: `${p.price} 元`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
                                 { type: 'text', text: `庫存: ${p.inventory}`, size: 'sm', color: '#666666', align: 'end', flex: 1, gravity: 'bottom' }
                             ]
-                        },
-                        { type: 'text', text: p.description || ' ', wrap: true, size: 'sm', margin: 'md', color: '#666666' },
+            },
+                        { type: 'text', text: p.description ||
+' ', wrap: true, size: 'sm', margin: 'md', color: '#666666' },
                     ]
                 },
                 footer: {
                     type: 'box',
-                    layout: 'vertical',
+    layout: 'vertical',
                     contents: [
                         {
                             type: 'button',
-                            style: buttonStyle,
+       style: buttonStyle,
                             action: buttonAction,
-                            color: isSoldOut ? '#AAAAAA' : '#52B69A',
+                            color: isSoldOut ?
+'#AAAAAA' : '#52B69A',
                         }
                     ]
                 }
-            };
+            [span_3](start_span)};[span_3](end_span)
         });
 
 
         const paginationBubble = createPaginationBubble('action=view_shop_products', page, hasNextPage);
         if (paginationBubble) {
-            productBubbles.push(paginationBubble);
+            [span_4](start_span)productBubbles.push(paginationBubble);[span_4](end_span)
         }
 
 
-        return { type: 'flex', altText: '活動商城', contents: { type: 'carousel', contents: productBubbles } };
+        [span_5](start_span)return { type: 'flex', altText: '活動商城', contents: { type: 'carousel', contents: productBubbles } };[span_5](end_span)
     });
 }
-
 
 async function showProductManagementList(page = 1, filter = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
