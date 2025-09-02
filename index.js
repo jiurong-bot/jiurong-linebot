@@ -6479,8 +6479,8 @@ async function handlePostback(event, user) {
             const teacherMessage = `
               商品預訂通知：
               學生：${userId}
-              商品名稱：${item.item_name}
-              商品描述：${item.description}
+              商品名稱：${state.item_name}
+              商品描述：${state.description}
               預訂數量：${quantity}
               `;
 
