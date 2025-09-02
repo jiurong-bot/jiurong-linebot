@@ -1,4 +1,4 @@
-// index.js - V39.10 (已售完錯誤改正）
+// index.js - V40.1 (開放預購）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
