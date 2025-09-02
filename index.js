@@ -5323,6 +5323,84 @@ async function showPreorderProducts(page) {
         };
     });
 }
+// =======================================================
+// [新增] 顯示待出貨的預購商品列表
+// =======================================================
+async function showFulfillmentList(page) {
+    const mapRowToBubble = async (product) => {
+        const rosterRes = await executeDbQuery(client =>
+            client.query("SELECT user_name, quantity FROM product_preorders WHERE product_id = $1 AND status = 'active' ORDER BY created_at ASC", [product.id])
+        );
+        const rosterItems = rosterRes.rows.map(r => `• ${r.user_name} (x${r.quantity})`).join('\n');
+
+        return {
+            type: 'bubble',
+            size: 'giga',
+            header: {
+                type: 'box', layout: 'vertical', paddingAll: 'lg', backgroundColor: '#1A759F',
+                contents: [
+                    { type: 'text', text: product.name, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
+                    { type: 'text', text: '待通知出貨', size: 'sm', color: '#FFFFFF' }
+                ]
+            },
+            body: {
+                type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
+                contents: [
+                    { type: 'text', text: '最終預購名單：', weight: 'bold' },
+                    { type: 'text', text: rosterItems.length > 0 ? rosterItems : '無', wrap: true, size: 'sm' }
+                ]
+            },
+            footer: {
+                type: 'box', layout: 'vertical', spacing: 'sm',
+                contents: [
+                    {
+                        type: 'button', style: 'primary', color: '#28A745', height: 'sm',
+                        action: { type: 'postback', label: '🚚 商品已到貨 (通知付款)', data: `action=notify_product_arrival_start&product_id=${product.id}` }
+                    },
+                    {
+                        type: 'button', style: 'secondary', height: 'sm',
+                        action: { type: 'postback', label: '完成所有交易 (封存紀錄)', data: `action=archive_preorder_start&product_id=${product.id}` }
+                    }
+                ]
+            }
+        };
+    };
+
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return executeDbQuery(async (client) => {
+        const res = await client.query(`
+            SELECT p.* FROM products p
+            WHERE p.status = 'unavailable' 
+            AND EXISTS (
+                SELECT 1 FROM product_preorders pp 
+                WHERE pp.product_id = p.id AND pp.status = 'active'
+            )
+            ORDER BY p.created_at DESC LIMIT $1 OFFSET $2
+        `, [CONSTANTS.PAGINATION_SIZE + 1, offset]);
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageRows.length === 0 && page === 1) {
+            return '目前沒有待處理的已到貨預購商品。';
+        }
+        if (pageRows.length === 0) {
+            return '沒有更多待處理的預購商品了。';
+        }
+
+        const bubbles = await Promise.all(pageRows.map(mapRowToBubble));
+        const paginationBubble = createPaginationBubble('action=view_fulfillment_list', page, hasNextPage);
+        if (paginationBubble) {
+            bubbles.push(paginationBubble);
+        }
+
+        return {
+            type: 'flex',
+            altText: '待出貨預購管理',
+            contents: { type: 'carousel', contents: bubbles }
+        };
+    });
+}
 
 // =======================================================
 // [新增] 顯示單一商品的預購名單
