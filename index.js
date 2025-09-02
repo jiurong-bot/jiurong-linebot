@@ -1,4 +1,4 @@
-// index.js - V40.0 (商品預訂）
+// index.js - V40.1 (商品預訂_描述）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
