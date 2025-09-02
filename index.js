@@ -6275,7 +6275,11 @@ async function handlePostback(event, user) {
             if (!product) {
                 return '抱歉，找不到該商品。';
             }
-
+            // 在問問題的同時，設定一個「等待中」的狀態
+            pendingBookingConfirmation[userId] = { type: 'preorder_confirmation' };
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '預購確認操作已逾時，自動取消。' });
+            });
             const message = `您確定要預購以下商品嗎？\n\n「${product.name}」x ${quantity} 個\n\n(商品到貨後將會通知您付款)`;
 
             return {
