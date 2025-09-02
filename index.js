@@ -1,4 +1,4 @@
-// index.js - V40 (商品預購）
+// index.js - V40.1 (排序重整）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -5915,7 +5915,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V40 (商品預購）`);
+    console.log(`Bot 版本 V40.1 (排序重整）`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
