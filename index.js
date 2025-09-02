@@ -5708,6 +5708,67 @@ async function handlePostback(event, user) {
             // 重新顯示面板以展示最新狀態
             return buildAdminPanelFlex();
         }
+        // =======================================================
+        // [新增] 處理零庫存商品分頁
+        // =======================================================
+        case 'view_sold_out_products':
+            return showSoldOutProducts(page);
+
+        // =======================================================
+        // [新增] 處理「開放預購」與「直接下架」的動作流程
+        // =======================================================
+        case 'enable_preorder_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            return {
+                type: 'text',
+                text: `您確定要為「${product.name}」開啟預購功能嗎？\n\n開啟後，學員將可以在商品頁看到並預購此商品。`,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認開啟', data: `action=execute_enable_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'execute_enable_preorder': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(client =>
+                client.query("UPDATE products SET status = 'preorder' WHERE id = $1 AND inventory <= 0 RETURNING name", [productId])
+            );
+            if (result.rowCount > 0) {
+                const productName = result.rows[0].name;
+                return `✅ 已成功將「${productName}」轉為預購模式。`;
+            }
+            return '❌ 操作失敗，找不到該商品或商品仍有庫存。';
+        }
+        case 'disable_product_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            return {
+                type: 'text',
+                text: `您確定要將「${product.name}」直接下架嗎？\n\n下架後，商品將會移至「管理已下架商品」區。`,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認下架', data: `action=execute_disable_product&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'execute_disable_product': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(client =>
+                client.query("UPDATE products SET status = 'unavailable' WHERE id = $1 RETURNING name", [productId])
+            );
+            if (result.rowCount > 0) {
+                const productName = result.rows[0].name;
+                return `✅ 已成功將「${productName}」下架。`;
+            }
+            return '❌ 操作失敗，找不到該商品。';
+        }
         case 'cancel_announcement': {
             // 清除待處理的公告狀態，避免誤觸
             if (pendingAnnouncementCreation[userId]) {
