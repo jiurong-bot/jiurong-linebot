@@ -1556,7 +1556,11 @@ async function showShopManagementMenu(event, user) {
     const pendingShopOrdersCount = await executeDbQuery(client => 
         client.query("SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')")
     ).then(res => parseInt(res.rows[0].count, 10));
-      // 查詢零庫存、且仍在架上的商品數量
+       // 查詢正在預購中的商品數量
+    const preorderCount = await executeDbQuery(client =>
+        client.query("SELECT COUNT(*) FROM products WHERE status = 'preorder'")
+    ).then(res => parseInt(res.rows[0].count, 10)); 
+    // 查詢零庫存、且仍在架上的商品數量
     const soldOutCount = await executeDbQuery(client =>
         client.query("SELECT COUNT(*) FROM products WHERE inventory <= 0 AND status = 'available'")
     ).then(res => parseInt(res.rows[0].count, 10));
@@ -1567,6 +1571,10 @@ async function showShopManagementMenu(event, user) {
     let soldOutLabel = '📦 管理零庫存商品';
     if (soldOutCount > 0) {
         soldOutLabel += ` (${soldOutCount})`;
+    }
+    let preorderLabel = '🚀 管理預購中商品';
+    if (preorderCount > 0) {
+        preorderLabel += ` (${preorderCount})`;
     }
     return { 
         type: 'flex', 
@@ -1590,6 +1598,7 @@ async function showShopManagementMenu(event, user) {
                 contents: [ 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 上架新商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.ADD_PRODUCT)}` } }, 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 管理販售中商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_AVAILABLE_PRODUCTS)}` } }, 
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: preorderLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_PREORDER_PRODUCTS)}` } },
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: soldOutLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_SOLD_OUT_PRODUCTS)}` } },
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 管理已下架商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_UNAVAILABLE_PRODUCTS)}` } }, 
                     { type: 'separator', margin: 'md'}, 
