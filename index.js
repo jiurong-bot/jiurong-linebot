@@ -5867,6 +5867,55 @@ async function handlePostback(event, user) {
         // =======================================================
         case 'view_sold_out_products':
             return showSoldOutProducts(page);
+                // =======================================================
+        // [新增] 處理預購商品管理的 Postback
+        // =======================================================
+        case 'view_preorder_products':
+            return showPreorderProducts(page);
+
+        case 'view_preorder_list': {
+            const productId = data.get('product_id');
+            return showPreorderRoster(productId);
+        }
+
+        case 'stop_preorder_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+
+            const preorderCount = await executeDbQuery(client => 
+                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+            ).then(res => parseInt(res.rows[0].count, 10) || 0);
+
+            let messageText = `您確定要停止「${product.name}」的預購並將其下架嗎？\n\n此操作將無法再接受新的預購。`;
+            if (preorderCount > 0) {
+                messageText += `\n目前共有 ${preorderCount} 位學員正在等候。`;
+            }
+
+            return {
+                type: 'text',
+                text: messageText,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認停止', data: `action=execute_stop_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+
+        case 'execute_stop_preorder': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(client =>
+                client.query("UPDATE products SET status = 'unavailable' WHERE id = $1 AND status = 'preorder' RETURNING name", [productId])
+            );
+
+            if (result.rowCount > 0) {
+                const productName = result.rows[0].name;
+                return `✅ 已成功停止「${productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
+            }
+            return '❌ 操作失敗，找不到該預購商品或狀態已變更。';
+        }
 
         // =======================================================
         // [新增] 處理「開放預購」與「直接下架」的動作流程
