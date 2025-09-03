@@ -7032,16 +7032,22 @@ async function handlePostback(event, user) {
                 quickReply: { items: getCancelMenu() }
             };
         }
-                case 'confirm_add_product': {
+        
+        case 'confirm_add_product': {
             const state = pendingProductCreation[userId];
             if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
             
-            // 執行資料庫操作並取得新商品的 ID
+            // ====================== [修改] ======================
+            // 根據我們之前設定的 isPreorder 標記，決定商品狀態
+            const productStatus = state.isPreorder ? 'preorder' : 'available';
+
             const newProduct = await executeDbQuery(client => 
                 client.query(
+                    // 將 'available' 改為參數 $6
                     `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) 
-                     VALUES ($1, $2, $3, $4, $5, 'available', $6, $7) RETURNING id, name`,
-                    [state.name, state.description, state.price, state.inventory, state.image_url, userId, user.name]
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+                    // 在對應的位置 ($6) 傳入 productStatus 變數
+                    [state.name, state.description, state.price, state.inventory, state.image_url, productStatus, userId, user.name]
                 )
             ).then(res => res.rows[0]);
 
