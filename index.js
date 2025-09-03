@@ -2846,7 +2846,7 @@ if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是
                                   
       // [修改] 標題可以加上時間方便辨識
                                         title: `${courseData.title} (${courseData.start_time}-${courseData.end_time})`,
-                                        time: courseDate.toISOString(),
+                                        time: courseDate.toISOString() ,
                                  
        capacity: courseData.capacity,
                                         points_cost: courseData.points_cost,
