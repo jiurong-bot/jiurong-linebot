@@ -116,10 +116,7 @@ REPORT: '@統計報表',
       CONFIRM_MANUAL_ADJUST: '✅ 確認調整',
       ADD_POINTS: '+ 加點',
       DEDUCT_POINTS: '- 扣點',
-      // [修改]
-      MESSAGE_SEARCH: '@查詢歷史留言',
-      
-CONFIRM_ADD_ANNOUNCEMENT: '✅ 確認頒佈',
+      CONFIRM_ADD_ANNOUNCEMENT: '✅ 確認頒佈',
       CONFIRM_DELETE_ANNOUNCEMENT: '✅ 確認刪除',
       CONFIRM_BATCH_CANCEL: '✅ 確認批次取消',
       CONFIRM_SINGLE_CANCEL: '✅ 確認取消單堂'
