@@ -2449,7 +2449,14 @@ async function handleTeacherCommands(event, userId) {
             if (!proceedToNextStep) { return { type: 'text', text: errorImageUrlMessage, quickReply: { items: getCancelMenu() } };
             }
             state.image_url = imageUrl; state.step = 'await_confirmation';
-            const summaryText = `請確認商品資訊：\n\n名稱：${state.name}\n描述：${state.description || '無'}\n價格：${state.price} 元\n庫存：${state.inventory}\n圖片：${state.image_url || '無'}\n\n確認無誤後請點擊「✅ 確認上架」。`;
+            const summaryText = `請確認商品資訊：\n\n` +
+                              `名稱：${state.name}\n` +
+                              `描述：${state.description || '無'}\n` +
+                              `價格：${state.price} 元\n` +
+                              `庫存：${state.inventory}\n` +
+                              `狀態：${state.isPreorder ? '開放預購' : '直接上架'}\n` + // 根據標記顯示不同狀態
+                              `圖片：${state.image_url || '無'}\n\n` +
+                              `確認無誤後請點擊「✅ 確認上架」。`;
             return {
                 type: 'text',
                 text: summaryText,
