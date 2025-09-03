@@ -47,8 +47,7 @@ const CONSTANTS = {
   PAGINATION_SIZE: 9,
   PURCHASE_PLANS: [
     { points: 5, amount: 500, label: '5 點 (500元)' },
-    { points: 10, amount: 1000, 
-label: '10 點 (1000元)' },
+    { points: 10, amount: 1000, label: '10 點 (1000元)' },
     { points: 20, amount: 2000, label: '20 點 (2000元)' },
     { points: 30, amount: 3000, label: '30 點 (3000元)' },
     { points: 50, amount: 5000, label: '50 點 (5000元)' },
@@ -64,8 +63,7 @@ label: '10 點 (1000元)' },
     },
     ADMIN: {
       PANEL: '@管理模式',
-   
-   SYSTEM_STATUS: '@系統狀態',
+      SYSTEM_STATUS: '@系統狀態',
       FAILED_TASK_MANAGEMENT: '@失敗任務管理',
       ADD_TEACHER: '@授權老師',
       REMOVE_TEACHER: '@移除老師',
@@ -79,8 +77,7 @@ label: '10 點 (1000元)' },
     TEACHER: {
       COURSE_MANAGEMENT: '@課程管理',
         ADD_COURSE_SERIES: '@新增課程系列',
-     
-   MANAGE_OPEN_COURSES: '@管理已開課程',
+        MANAGE_OPEN_COURSES: '@管理已開課程',
         COURSE_INQUIRY: '@課程查詢',
       POINT_MANAGEMENT: '@點數管理',
         PENDING_POINT_ORDERS: '@待確認點數訂單',
@@ -92,8 +89,7 @@ label: '10 點 (1000元)' },
         MESSAGE_SEARCH: '@查詢歷史留言',
       ANNOUNCEMENT_MANAGEMENT: '@公告管理',
         ADD_ANNOUNCEMENT: '@頒佈新公告',
-   
-     DELETE_ANNOUNCEMENT: '@刪除舊公告',
+        DELETE_ANNOUNCEMENT: '@刪除舊公告',
       SHOP_MANAGEMENT: '@商城管理',
         ADD_PRODUCT: '@上架新商品',
         VIEW_PRODUCTS: '@商品管理',
@@ -104,8 +100,7 @@ label: '10 點 (1000元)' },
         MANAGE_FULFILLMENT: '@待出貨預購管理',
         SHOP_ORDER_MANAGEMENT: '@訂單管理',
         VIEW_SHOP_EXCHANGE_HISTORY: '@查詢購買紀錄',
-      
-REPORT: '@統計報表',
+      REPORT: '@統計報表',
         COURSE_REPORT: '@課程報表',
         ORDER_REPORT: '@訂單報表',
         POINT_REPORT: '@點數報表',
@@ -131,8 +126,7 @@ REPORT: '@統計報表',
       VIEW_SHOP_PRODUCTS: '@瀏覽商品',
       EXCHANGE_HISTORY: '@購買紀錄',
       CHECK_POINTS: '@查看剩餘點數',
-  
-    BUY_POINTS: '@購買點數',
+      BUY_POINTS: '@購買點數',
       PURCHASE_HISTORY: '@購點紀錄',
       ADD_NEW_MESSAGE: '@新增一則留言',
       CANCEL_BOOKING: '@取消預約',
@@ -145,11 +139,11 @@ REPORT: '@統計報表',
       EDIT_LAST5_CARD_TRIGGER: '@修改匯款後五碼',
       CONFIRM_BOOKING: '✅ 確認預約',
       CONFIRM_CANCEL_BOOKING: '✅ 確認取消',
-      
-CONFIRM_CANCEL_WAITING: '✅ 確認取消',
+      CONFIRM_CANCEL_WAITING: '✅ 確認取消',
     }
   }
 };
+
 // =======================================================
 // [V31.3 新增] 通用快取工具
 // =======================================================
