@@ -2851,7 +2851,7 @@ if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是
                                         points_cost: courseData.points_cost,
                                         students: [],
                                         waiting: [],
-                                        teacher_id: courseData.teacher_id,
+                                        teacher_id: courseData.teacher_id
                                     };
 await saveCourse(course, client);
                                     currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
