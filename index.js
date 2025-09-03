@@ -6229,7 +6229,7 @@ async function handlePostback(event, user) {
                 text: `您確定要為「${product.name}」開啟預購功能嗎？\n\n開啟後，學員將可以在商品頁看到並預購此商品。`,
                 quickReply: {
                     items: [
-                        { type: 'action', action: { type: 'postback', label: '✅ 確認開啟', data: `action=execute_enable_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_enable_preorder&product_id=${productId}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                     ]
                 }
@@ -6255,7 +6255,7 @@ async function handlePostback(event, user) {
                 text: `您確定要將「${product.name}」直接下架嗎？\n\n下架後，商品將會移至「管理已下架商品」區。`,
                 quickReply: {
                     items: [
-                        { type: 'action', action: { type: 'postback', label: '✅ 確認下架', data: `action=execute_disable_product&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_disable_product&product_id=${productId}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                     ]
                 }
