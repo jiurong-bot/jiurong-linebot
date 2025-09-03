@@ -74,7 +74,7 @@ label: '10 點 (1000元)' },
       CONFIRM_ADD_TEACHER: '✅ 確認授權',
       CONFIRM_REMOVE_TEACHER: '✅ 確認移除',
       TOGGLE_NOTIFICATIONS: '@切換推播',
-      VIEW_ERROR_LOGS:'@查看錯誤日誌'
+      VIEW_ERROR_LOGS:'@查看錯誤日誌',
       },
     TEACHER: {
       COURSE_MANAGEMENT: '@課程管理',
