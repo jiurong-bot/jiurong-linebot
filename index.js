@@ -2844,16 +2844,14 @@ if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是
                                     const course = {
                                         id: `${prefix}${String(i + 1).padStart(2, '0')}`,
                                   
-      // [修改] 標題可以加上時間方便辨識
+                                        // [修改] 標題可以加上時間方便辨識
                                         title: `${courseData.title} (${courseData.start_time}-${courseData.end_time})`,
-                                        time: courseDate.toISOString() ,
-                                 
-       capacity: courseData.capacity,
+                                        time: courseDate.toISOString(),
+                                        capacity: courseData.capacity,
                                         points_cost: courseData.points_cost,
                                         students: [],
-                                  
-      waiting: [],
-                                        teacher_id: courseData.teacher_id
+                                        waiting: [],
+                                        teacher_id: courseData.teacher_id,
                                     };
 await saveCourse(course, client);
                                     currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
