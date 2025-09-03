@@ -6163,18 +6163,29 @@ async function handlePostback(event, user) {
                 ]}
             };
         }
-
-        case 'execute_cancel_preorder': {
+                case 'execute_cancel_preorder': {
             const productId = data.get('product_id');
             const result = await executeDbQuery(async (client) => {
                 await client.query('BEGIN');
                 try {
                     const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
-                    if (productRes.rows.length === 0) throw new Error('找不到商品');
+                    if (productRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { status: 'error', message: '找不到對應的商品。' };
+                    }
                     const product = productRes.rows[0];
 
+                    // 查詢狀態為 'active' 的預購單並鎖定
                     const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
-                    if (preorders.length === 0) throw new Error('找不到有效的預購紀錄');
+
+                    // ====================== [修改] ======================
+                    // 如果找不到 active 的預購單，代表已經被上一個指令處理完畢
+                    // 我們就回報 'processed' 狀態，讓主程式安靜地結束
+                    if (preorders.length === 0) {
+                        await client.query('ROLLBACK'); // 因為沒做任何事，所以撤銷交易
+                        return { status: 'processed' };
+                    }
+                    // =======================================================
 
                     const notificationTasks = preorders.map(preorder => ({
                         recipientId: preorder.user_id,
@@ -6189,7 +6200,7 @@ async function handlePostback(event, user) {
                 } catch (err) {
                     await client.query('ROLLBACK');
                     console.error('執行取消預購時失敗:', err);
-                    return { success: false, message: `處理失敗：${err.message}` };
+                    return { status: 'error', message: `處理失敗：${err.message}` };
                 }
             });
 
@@ -6198,9 +6209,12 @@ async function handlePostback(event, user) {
                     await enqueueBatchPushTasks(result.tasks);
                 }
                 return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
-            } else {
+            } else if (result.status === 'error') {
                 return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
             }
+            
+            // 如果狀態是 'processed'，回傳 null，不要發送任何訊息
+            return null;
         }
 
         // =======================================================
