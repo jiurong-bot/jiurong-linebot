@@ -119,7 +119,7 @@ REPORT: '@統計報表',
       CONFIRM_ADD_ANNOUNCEMENT: '✅ 確認頒佈',
       CONFIRM_DELETE_ANNOUNCEMENT: '✅ 確認刪除',
       CONFIRM_BATCH_CANCEL: '✅ 確認批次取消',
-      CONFIRM_SINGLE_CANCEL: '✅ 確認取消單堂'
+      CONFIRM_SINGLE_CANCEL: '✅ 確認取消單堂',
     },
     STUDENT: {
       BOOK_COURSE: '@預約課程',
