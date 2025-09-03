@@ -2427,6 +2427,7 @@ async function handleTeacherCommands(event, userId) {
             if (isNaN(inventory) || inventory < 0) { proceed = false; errorMessage = '庫存格式不正確，請輸入一個非負整數。';
             } 
             else { state.inventory = inventory;
+            state.isPreorder = (inventory === 0); // 如果庫存為 0，就給一個 true 的標記
             state.step = 'await_image_url'; return { type: 'text', text: '請直接上傳一張商品圖片，或輸入「無」：', quickReply: { items: getCancelMenu() } };
             }
             break;
