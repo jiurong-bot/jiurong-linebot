@@ -5363,8 +5363,15 @@ async function showFulfillmentList(page) {
                         action: { type: 'postback', label: '🚚 商品已到貨 (通知付款)', data: `action=notify_product_arrival_start&product_id=${product.id}` }
                     },
                     {
-                        type: 'button', style: 'secondary', height: 'sm',
-                        action: { type: 'postback', label: '完成所有交易 (封存紀錄)', data: `action=archive_preorder_start&product_id=${product.id}` }
+                        type: 'button',
+                        style: 'secondary',
+                        color: '#DE5246', // 使用紅色系以示警示
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '❗ 商品缺貨 (取消預購)',
+                            data: `action=cancel_preorder_start&product_id=${product.id}`
+                        }
                     }
                 ]
             }
