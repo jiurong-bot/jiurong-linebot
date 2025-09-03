@@ -1,4 +1,4 @@
-// index.js - V41.0 (重構對話狀態管理)
+// index.js - V41.0a (重構對話狀態管理)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
