@@ -5999,7 +5999,7 @@ async function handlePostback(event, user) {
                 text: messageText,
                 quickReply: {
                     items: [
-                        { type: 'action', action: { type: 'postback', label: '✅ 確認停止', data: `action=execute_stop_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_stop_preorder&product_id=${productId}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                     ]
                 }
@@ -6080,7 +6080,7 @@ async function handlePostback(event, user) {
                 type: 'text',
                 text: `您確定要通知 ${count} 位學員「${product.name}」已到貨嗎？\n\n系統將會為他們建立待付款訂單，並發送通知。`,
                 quickReply: { items: [
-                    { type: 'action', action: { type: 'postback', label: '✅ 確認通知', data: `action=execute_notify_product_arrival&product_id=${productId}` } },
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_notify_product_arrival&product_id=${productId}` } },
                     { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                 ]}
             };
@@ -6158,7 +6158,7 @@ async function handlePostback(event, user) {
                 type: 'text',
                 text: `⚠️ 您確定要因為缺貨而取消 ${count} 位學員的「${product.name}」預購嗎？\n\n系統將會發送通知告知學員，此操作無法復原。`,
                 quickReply: { items: [
-                    { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=execute_cancel_preorder&product_id=${productId}` } },
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_cancel_preorder&product_id=${productId}` } },
                     { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.MANAGE_FULFILLMENT } }
                 ]}
             };
