@@ -5091,7 +5091,6 @@ async function showShopProducts(page) {
         return { type: 'flex', altText: '活動商城', contents: { type: 'carousel', contents: productBubbles } };
     });
 }
-
 async function showProductManagementList(page = 1, filter = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -5099,23 +5098,18 @@ async function showProductManagementList(page = 1, filter = null) {
         const queryParams = [];
         let paramIndex = 1;
 
-
         if (filter) {
             baseQuery += ` WHERE status = $${paramIndex++}`;
             queryParams.push(filter);
         }
 
-
         baseQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
 
-
         const productsRes = await client.query(baseQuery, queryParams);
-
 
         const hasNextPage = productsRes.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageProducts = hasNextPage ? productsRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : productsRes.rows;
-
 
         if (pageProducts.length === 0 && page === 1) {
             const emptyMessage = filter === 'available'
@@ -5127,12 +5121,21 @@ async function showProductManagementList(page = 1, filter = null) {
             return '沒有更多商品了。';
         }
 
-
         const productBubbles = pageProducts.map(p => {
-            const statusColor = p.status === 'available' ? '#52B69A' : '#6A7D8B';
-            const toggleLabel = p.status === 'available' ? '下架商品' : '重新上架';
-            const toggleAction = `action=toggle_product_status&product_id=${p.id}`;
+            const footerButtons = [
+                { type: 'button', style: 'primary', height: 'sm', color: '#52B69A', action: { type: 'postback', label: '✏️ 編輯資訊', data: `action=manage_product&product_id=${p.id}` } },
+                { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 調整庫存', data: `action=adjust_inventory_start&product_id=${p.id}` } }
+            ];
 
+            // 判斷要顯示「下架/上架」還是「刪除」按鈕
+            if (filter === 'unavailable') {
+                // 如果是已下架商品，顯示「重新上架」和「刪除商品」
+                footerButtons.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '重新上架', data: `action=toggle_product_status&product_id=${p.id}` } });
+                footerButtons.push({ type: 'button', style: 'primary', height: 'sm', color: '#DE5246', action: { type: 'postback', label: '🗑️ 刪除商品', data: `action=delete_product_start&product_id=${p.id}` } });
+            } else {
+                // 否則 (販售中商品)，顯示「下架商品」
+                footerButtons.push({ type: 'button', style: 'secondary', height: 'sm', color: '#D9534F', action: { type: 'postback', label: '下架商品', data: `action=toggle_product_status&product_id=${p.id}` } });
+            }
 
             return {
                 type: 'bubble',
@@ -5166,15 +5169,10 @@ async function showProductManagementList(page = 1, filter = null) {
                     type: 'box',
                     layout: 'vertical',
                     spacing: 'sm',
-                    contents: [
-                        { type: 'button', style: 'primary', height: 'sm', color: '#52B69A', action: { type: 'postback', label: '✏️ 編輯資訊', data: `action=manage_product&product_id=${p.id}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 調整庫存', data: `action=adjust_inventory_start&product_id=${p.id}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', color: '#D9534F', action: { type: 'postback', label: toggleLabel, data: toggleAction } }
-                    ]
+                    contents: footerButtons
                 }
             };
         });
-
 
         const paginationBubble = createPaginationBubble(
             'action=view_products',
@@ -5185,7 +5183,6 @@ async function showProductManagementList(page = 1, filter = null) {
         if (paginationBubble) {
             productBubbles.push(paginationBubble);
         }
-
 
         return { type: 'flex', altText: '商品管理列表', contents: { type: 'carousel', contents: productBubbles } };
     });
