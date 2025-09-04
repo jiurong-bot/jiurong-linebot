@@ -2821,106 +2821,34 @@ if (isNaN(points) || points < 0) { return { type: 'text', text: '點數必須是
                 userConversationState.set(userId, currentState);
                     return buildTeacherSelectionCarousel();
             case 'await_confirmation':
-                    if (text === '✅ 確認新增') {
-                        const courseData = { ...currentState.data };
-                    userConversationState.delete(userId);
+                if (text === '✅ 確認新增') {
+                    const teacherId = userId;
+                    // 錯誤點 1: pendingCourseCreation 已經不存在
+                    const courseState = { ...pendingCourseCreation[userId] }; 
+                    // 錯誤點 2: pendingCourseCreation 已經不存在
+                    delete pendingCourseCreation[userId];
 
-                        return executeDbQuery(async (client) => {
-                            await client.query('BEGIN');
-                            try {
-                                const prefix = await generateUniqueCoursePrefix(client);
-                          
-      let currentDate = new Date();
-                                for (let i = 0; i < courseData.sessions; i++) {
-                                    // 注意：這裡我們使用 start_time 來計算課程的實際日期時間
-                                  
-  const courseDate = getNextDate(courseData.weekday, courseData.start_time, currentDate);
-                                    const course = {
-                                        id: `${prefix}${String(i + 1).padStart(2, '0')}`,
-                                  
-                                        // [修改] 標題可以加上時間方便辨識
-                                        title: `${courseData.title} (${courseData.start_time}-${courseData.end_time})`,
-                                        time: courseDate.toISOString(),
-                                        capacity: courseData.capacity,
-                                        points_cost: courseData.points_cost,
-                                        students: [],
-                                        waiting: [],
-                                        teacher_id: courseData.teacher_id
-                                    };
-await saveCourse(course, client);
-                                    currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
-                                }
-                                await client.query('COMMIT');
-const mainTitle = getCourseMainTitle(courseData.title);
-                                const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
-                                
-                                // 為發布公告建立新的對話狀態
-                                const announcementState = {
-                                    type: 'addAnnouncement',
-                                    step: 'await_final_confirmation',
-                                    data: { content: prefilledContent }
-                                };
-setupConversationTimeout(userId, announcementState, (u) => { 
-                                    enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
-                                });
-const finalFlexMessage = {
-                                    type: 'flex',
-                                    altText: '發佈系列課程公告？',
-                                    contents: {
-          
-                      type: 'bubble',
-                                        header: {
-                                            type: 'box',
-       
-                             layout: 'vertical',
-                                            contents: [{ type: 'text', text: '📢 發佈系列課程公告', weight: 'bold', color: '#FFFFFF' }],
-                       
-             backgroundColor: '#52B69A',
-                                            paddingAll: 'lg'
-                                        },
-                 
-               body: {
-                                            type: 'box',
-                                            layout: 'vertical',
-          
-                          spacing: 'md',
-                                            contents: [
-                                            
-    { type: 'text', text: prefilledContent, wrap: true }
-                                            ]
-                                        }
-                     
-       },
-                                    quickReply: {
-                                        items: [
-                                       
-     {
-                                                type: 'action',
-                                                action: {
-             
-                               type: 'postback',
-                                                    label: '✅ 直接發佈',
-                      
-                      data: 'action=publish_prefilled_announcement'
-                                                }
-                                            },
- 
-                                   { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
-                                        ]
-                            
-        }
-                                };
-return finalFlexMessage;
-
-                            } catch (e) {
-                                await client.query('ROLLBACK');
-console.error("新增課程系列失敗", e);
-                                return '新增課程時發生錯誤，請稍後再試。';
-                            }
-                        });
-} else {
-                        return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
-}
+                    return executeDbQuery(async (client) => {
+                        // ...
+                            const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
+                            // 錯誤點 3: pendingAnnouncementCreation 已經不存在
+                            pendingAnnouncementCreation[teacherId] = {
+                                step: 'await_final_confirmation',
+                                content: prefilledContent
+                            };
+                            // 錯誤點 4: setupConversationTimeout 呼叫方式錯誤，且使用不存在的變數
+                            setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                                enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+                            });
+                            const finalFlexMessage = {
+                                //...
+                            };
+                            return finalFlexMessage;
+                        // ...
+                    });
+                } else {
+                    return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
+                }
             }
             return;
         }
