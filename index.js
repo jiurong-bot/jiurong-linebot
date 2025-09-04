@@ -6580,7 +6580,6 @@ async function handleCourseActions(action, data, user) {
     }
     return null;
 }
-// ##############
 /**
  * 處理所有與「商品」相關的操作
  */
@@ -6614,6 +6613,41 @@ async function handleProductActions(action, data, user) {
                     ]
                 }
             };
+        }
+        case 'execute_stop_preorder': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query("SELECT name, status FROM products WHERE id = $1 FOR UPDATE", [productId]);
+                    if (productRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { status: 'error', message: '❌ 操作失敗，找不到該商品。' };
+                    }
+                    const product = productRes.rows[0];
+                    if (product.status === 'unavailable') {
+                        await client.query('ROLLBACK'); 
+                        return { status: 'processed' }; 
+                    }
+                    if (product.status !== 'preorder') {
+                        await client.query('ROLLBACK');
+                        return { status: 'error', message: '❌ 操作失敗，該商品不是預購狀態。' };
+                    }
+                    await client.query("UPDATE products SET status = 'unavailable' WHERE id = $1", [productId]);
+                    await client.query('COMMIT');
+                    return { status: 'success', productName: product.name };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error("停止預購失敗:", err);
+                    return { status: 'error', message: '❌ 操作失敗，資料庫發生錯誤。' };
+                }
+            });
+            if (result.status === 'success') {
+                return `✅ 已成功停止「${result.productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
+            } else if (result.status === 'error') {
+                return result.message;
+            }
+            return null;
         }
         case 'cancel_preorder_start': {
             const productId = data.get('product_id');
@@ -6674,41 +6708,6 @@ async function handleProductActions(action, data, user) {
                 return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
             } else if (result.status === 'error') {
                 return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
-            }
-            return null;
-        }
-        case 'execute_stop_preorder': {
-            const productId = data.get('product_id');
-            const result = await executeDbQuery(async (client) => {
-                await client.query('BEGIN');
-                try {
-                    const productRes = await client.query("SELECT name, status FROM products WHERE id = $1 FOR UPDATE", [productId]);
-                    if (productRes.rows.length === 0) {
-                        await client.query('ROLLBACK');
-                        return { status: 'error', message: '❌ 操作失敗，找不到該商品。' };
-                    }
-                    const product = productRes.rows[0];
-                    if (product.status === 'unavailable') {
-                        await client.query('ROLLBACK'); 
-                        return { status: 'processed' }; 
-                    }
-                    if (product.status !== 'preorder') {
-                        await client.query('ROLLBACK');
-                        return { status: 'error', message: '❌ 操作失敗，該商品不是預購狀態。' };
-                    }
-                    await client.query("UPDATE products SET status = 'unavailable' WHERE id = $1", [productId]);
-                    await client.query('COMMIT');
-                    return { status: 'success', productName: product.name };
-                } catch (err) {
-                    await client.query('ROLLBACK');
-                    console.error("停止預購失敗:", err);
-                    return { status: 'error', message: '❌ 操作失敗，資料庫發生錯誤。' };
-                }
-            });
-            if (result.status === 'success') {
-                return `✅ 已成功停止「${result.productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
-            } else if (result.status === 'error') {
-                return result.message;
             }
             return null;
         }
@@ -7156,11 +7155,57 @@ async function handleProductActions(action, data, user) {
             };
             return flexMessage;
         }
+        // [新增] 刪除商品相關的 case
+        case 'delete_product_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) {
+                return '找不到該商品，可能已被刪除。';
+            }
+            return {
+                type: 'text',
+                text: `⚠️ 您確定要「永久刪除」商品「${product.name}」嗎？\n\n此操作無法復原，但不會影響到與此商品相關的歷史訂單紀錄。`,
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'postback',
+                                label: '✅ 確認刪除',
+                                data: `action=delete_product_execute&product_id=${product.id}`
+                            }
+                        },
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: '❌ 取消',
+                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                            }
+                        }
+                    ]
+                }
+            };
+        }
+        case 'delete_product_execute': {
+            const productId = data.get('product_id');
+            if (!productId) {
+                return '操作失敗，缺少商品 ID。';
+            }
+            const result = await executeDbQuery(client => 
+                client.query("DELETE FROM products WHERE id = $1 RETURNING name", [productId])
+            );
+
+            if (result.rowCount > 0) {
+                const productName = result.rows[0].name;
+                return `✅ 已成功刪除商品「${productName}」。`;
+            } else {
+                return '找不到該商品，可能已被其他管理員刪除。';
+            }
+        }
     }
     return null;
 }
-//    ######$###$$##handleProductActions
-
 
 /**
  * 處理所有與「訂單」相關的操作
