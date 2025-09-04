@@ -6651,326 +6651,97 @@ async function handleCourseActions(action, data, user) {
     }
     return null;
 }
-// ##########
 /**
- * 處理所有與「商品」相關的操作
+ * [V42.0 新增] 處理所有與「商品」相關的操作
  */
 async function handleProductActions(action, data, user) {
     const userId = user.id;
+
     switch (action) {
-        case 'view_preorder_list': {
-            const productId = data.get('product_id');
-            return showPreorderRoster(productId);
-        }
-        case 'stop_preorder_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-
-            const preorderCount = await executeDbQuery(client => 
-                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
-            ).then(res => parseInt(res.rows[0].count, 10) || 0);
-            let messageText = `您確定要停止「${product.name}」的預購並將其下架嗎？\n\n此操作將無法再接受新的預購。`;
-            if (preorderCount > 0) {
-                messageText += `\n目前共有 ${preorderCount} 位學員正在等候。`;
-            }
-
-            return {
-                type: 'text',
-                text: messageText,
-                quickReply: {
-                    items: [
-                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_stop_preorder&product_id=${productId}` } },
-                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
-                    ]
-                }
-            };
-        }
-        case 'execute_stop_preorder': {
-            const productId = data.get('product_id');
-            const result = await executeDbQuery(async (client) => {
-                await client.query('BEGIN');
-                try {
-                    const productRes = await client.query("SELECT name, status FROM products WHERE id = $1 FOR UPDATE", [productId]);
-                    if (productRes.rows.length === 0) {
-                        await client.query('ROLLBACK');
-                        return { status: 'error', message: '❌ 操作失敗，找不到該商品。' };
-                    }
-                    const product = productRes.rows[0];
-                    if (product.status === 'unavailable') {
-                        await client.query('ROLLBACK'); 
-                        return { status: 'processed' }; 
-                    }
-                    if (product.status !== 'preorder') {
-                        await client.query('ROLLBACK');
-                        return { status: 'error', message: '❌ 操作失敗，該商品不是預購狀態。' };
-                    }
-                    await client.query("UPDATE products SET status = 'unavailable' WHERE id = $1", [productId]);
-                    await client.query('COMMIT');
-                    return { status: 'success', productName: product.name };
-                } catch (err) {
-                    await client.query('ROLLBACK');
-                    console.error("停止預購失敗:", err);
-                    return { status: 'error', message: '❌ 操作失敗，資料庫發生錯誤。' };
-                }
-            });
-            if (result.status === 'success') {
-                return `✅ 已成功停止「${result.productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
-            } else if (result.status === 'error') {
-                return result.message;
-            }
-            return null;
-        }
-        case 'cancel_preorder_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到商品。';
-            
-            const count = await executeDbQuery(client => 
-                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
-            ).then(res => parseInt(res.rows[0].count, 10));
-            if (count === 0) {
-                return `「${product.name}」沒有需要取消的預購。`;
-            }
-
-            return {
-                type: 'text',
-                text: `⚠️ 您確定要因為缺貨而取消 ${count} 位學員的「${product.name}」預購嗎？\n\n系統將會發送通知告知學員，此操作無法復原。`,
-                quickReply: { items: [
-                    { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_cancel_preorder&product_id=${productId}` } },
-                    { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.MANAGE_FULFILLMENT } }
-                ]}
-            };
-        }
-        case 'execute_cancel_preorder': {
-            const productId = data.get('product_id');
-            const result = await executeDbQuery(async (client) => {
-                await client.query('BEGIN');
-                try {
-                    const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
-                    if (productRes.rows.length === 0) {
-                         await client.query('ROLLBACK');
-                        return { status: 'error', message: '找不到對應的商品。' };
-                    }
-                    const product = productRes.rows[0];
-
-                    const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
-                    if (preorders.length === 0) {
-                        await client.query('ROLLBACK');
-                        return { status: 'processed' };
-                    }
-
-                    const notificationTasks = preorders.map(preorder => ({
-                        recipientId: preorder.user_id,
-                        message: { type: 'text', text: `❗️ 預購取消通知\n很抱歉，由於廠商供貨問題，您預購的商品「${product.name}」無法到貨，本次預購已為您取消。造成不便，敬請見諒。` }
-                    }));
-                    await client.query("UPDATE product_preorders SET status = 'canceled' WHERE product_id = $1 AND status = 'active'", [productId]);
-                    await client.query('COMMIT');
-                    return { success: true, tasks: notificationTasks, count: preorders.length, productName: product.name };
-                } catch (err) {
-                    await client.query('ROLLBACK');
-                    console.error('執行取消預購時失敗:', err);
-                    return { status: 'error', message: `處理失敗：${err.message}` };
-                }
-            });
-            if (result.success) {
-                if (result.tasks.length > 0) {
-                    await enqueueBatchPushTasks(result.tasks);
-                }
-                return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
-            } else if (result.status === 'error') {
-                return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
-            }
-            return null;
-        }
-        case 'enable_preorder_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            return {
-                type: 'text',
-                text: `您確定要為「${product.name}」開啟預購功能嗎？\n\n開啟後，學員將可以在商品頁看到並預購此商品。`,
-                quickReply: {
-                    items: [
-                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_enable_preorder&product_id=${productId}` } },
-                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
-                    ]
-                }
-            };
-        }
-        case 'execute_enable_preorder': {
-            const productId = data.get('product_id');
-            const result = await executeDbQuery(client =>
-                client.query("UPDATE products SET status = 'preorder' WHERE id = $1 AND inventory <= 0 RETURNING name", [productId])
-            );
-            if (result.rowCount > 0) {
-                const productName = result.rows[0].name;
-                return `✅ 已成功將「${productName}」轉為預購模式。`;
-            }
-            return '❌ 操作失敗，找不到該商品或商品仍有庫存。';
-        }
-        case 'disable_product_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            return {
-                type: 'text',
-                text: `您確定要將「${product.name}」直接下架嗎？\n\n下架後，商品將會移至「管理已下架商品」區。`,
-                quickReply: {
-                    items: [
-                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_disable_product&product_id=${productId}` } },
-                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
-                    ]
-                }
-            };
-        }
-        case 'execute_disable_product': {
-            const productId = data.get('product_id');
-            const result = await executeDbQuery(client =>
-                client.query("UPDATE products SET status = 'unavailable' WHERE id = $1 RETURNING name", [productId])
-            );
-            if (result.rowCount > 0) {
-                const productName = result.rows[0].name;
-                return `✅ 已成功將「${productName}」下架。`;
-            }
-            return '❌ 操作失敗，找不到該商品。';
-        }
-        case 'select_preorder_quantity': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product || product.status !== 'preorder') {
-                return '抱歉，此商品目前未開放預購。';
-            }
-            const maxQuantity = 5;
-            const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
-                const quantity = i + 1;
-                return {
-                    type: 'button',
-                    style: 'secondary',
-                    height: 'sm',
-                    margin: 'sm',
-                    action: {
-                        type: 'postback',
-                        label: `${quantity} 個`,
-                        data: `action=confirm_product_preorder_start&product_id=${product.id}&qty=${quantity}`
-                    }
-                };
-            });
-            return {
-                type: 'flex',
-                altText: '請選擇預購數量',
-                contents: {
-                    type: 'bubble',
-                    header: {
-                        type: 'box',
-                        layout: 'vertical',
-                        contents: [{ type: 'text', text: '請選擇預購數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
-                        backgroundColor: '#FF9E00'
-                    },
-                    body: {
-                        type: 'box',
-                        layout: 'vertical',
-                        contents: [
-                            { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
-                            { type: 'text', text: `單價：${product.price} 元 (到貨後付款)`, size: 'sm', color: '#666666', margin: 'md' },
-                            { type: 'separator', margin: 'lg' }
-                        ]
-                    },
-                    footer: {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'sm',
-                        contents: quantityButtons
-                    }
-                }
-            };
-        }
-        case 'confirm_product_preorder_start': {
-            const productId = data.get('product_id');
-            const quantity = parseInt(data.get('qty') || '1', 10);
-            const product = await getProduct(productId);
-
-            if (!product) {
-                return '抱歉，找不到該商品。';
-            }
-            pendingBookingConfirmation[userId] = { type: 'preorder_confirmation' };
-            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
-                enqueuePushTask(u, { type: 'text', text: '預購確認操作已逾時，自動取消。' });
-            });
-            const message = `您確定要預購以下商品嗎？\n\n「${product.name}」x ${quantity} 個\n\n(商品到貨後將會通知您付款)`;
-            return {
-                type: 'text',
-                text: message,
-                quickReply: {
-                    items: [
-                        {
-                            type: 'action',
-                            action: {
-                                type: 'postback',
-                                label: '✅ 確認',
-                                data: `action=execute_product_preorder&product_id=${product.id}&qty=${quantity}`
-                            }
-                        },
-                        {
-                            type: 'action',
-                            action: {
-                                type: 'message',
-                                label: '❌ 取消',
-                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
-                            }
-                        }
-                    ]
-                }
-            };
-        }
-        case 'execute_product_preorder': {
-            const productId = data.get('product_id');
-            const quantity = parseInt(data.get('qty') || '1', 10);
-            const result = await executeDbQuery(async (client) => {
-                const productRes = await client.query("SELECT name, status FROM products WHERE id = $1", [productId]);
-                if (productRes.rows.length === 0 || productRes.rows[0].status !== 'preorder') {
-                    return { success: false, message: '預購失敗，此商品目前未開放預購。' };
-                }
-                const product = productRes.rows[0];
-                const existingPreorder = await client.query(
-                    "SELECT id FROM product_preorders WHERE user_id = $1 AND product_id = $2 AND status = 'active'",
-                    [userId, productId]
-                );
-                if (existingPreorder.rows.length > 0) {
-                    return { success: false, message: '您已預購過此商品，請耐心等候到貨通知。' };
-                }
-                const preorder_uid = `PRE-${Date.now()}-${userId.slice(-4)}`;
-                await client.query(
-                    `INSERT INTO product_preorders (preorder_uid, product_id, user_id, user_name, quantity, status)
-                     VALUES ($1, $2, $3, $4, $5, 'active')`,
-                    [preorder_uid, productId, userId, user.name, quantity]
-                );
-                return { success: true, productName: product.name, quantity: quantity };
-            });
-            if (result.success) {
-                return `✅ 預購成功！\n\n您已成功預購「${result.productName}」共 ${result.quantity} 個。\n商品到貨後，系統將會發送訊息通知您付款。`;
-            } else {
-                return result.message;
-            }
-        }
-        case 'confirm_add_product': {
+        // [V42.0 新增] 處理商品建立過程中，老師點擊「規格按鈕」
+        case 'product_creation_select_attr': {
             const state = pendingProductCreation[userId];
-            if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
+            if (!state || state.step !== 'await_attribute_selection') return '操作已逾時。';
             
-            const productStatus = state.isPreorder ? 'preorder' : 'available';
-            const newProduct = await executeDbQuery(client => 
-                client.query(
-                    `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) 
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
-                    [state.name, state.description, state.price, state.inventory, state.image_url, productStatus, userId, user.name]
-                )
-            ).then(res => res.rows[0]);
+            const attr = decodeURIComponent(data.get('attr'));
+            const index = state.selectedAttributes.indexOf(attr);
+
+            if (index > -1) {
+                state.selectedAttributes.splice(index, 1); // 如果已選，就取消選擇
+            } else {
+                state.selectedAttributes.push(attr); // 如果未選，就加入選擇
+            }
+            // 刷新選擇卡片，顯示最新的選擇狀態
+            return buildAttributeSelectionFlex(state.selectedAttributes);
+        }
+
+        // [V42.0 新增] 處理老師點擊「完成選擇規格」
+        case 'product_creation_finish_attr_select': {
+            const state = pendingProductCreation[userId];
+            if (!state || state.step !== 'await_attribute_selection' || state.selectedAttributes.length === 0) {
+                return '操作已逾時或尚未選擇任何規格。';
+            }
+            state.step = 'await_variant_combination';
+            
+            const prompt = `好的，您選擇了【${state.selectedAttributes.join(', ')}】。\n\n現在，請依照這個順序，用「逗號」分隔，輸入第一組完整的規格值。\n\n範例：${state.selectedAttributes.map(attr => (attr === '顏色' ? '紅色' : 'S')).join(', ')}`;
+            
+            return { type: 'text', text: prompt, quickReply: { items: getCancelMenu() } };
+        }
+
+        // [V42.0 新增] 處理老師點擊「新增下一組規格」
+        case 'product_creation_add_another_variant': {
+            const state = pendingProductCreation[userId];
+            if (!state) return '操作已逾時。';
+            
+            state.step = 'await_variant_combination';
+            const prompt = `好的，請依照【${state.selectedAttributes.join(', ')}】的順序，輸入下一組規格值：`;
+            
+            return { type: 'text', text: prompt, quickReply: { items: getCancelMenu() } };
+        }
+
+        // [V42.0 新增] 處理老師最終點擊「確認上架」
+        case 'confirm_add_product_with_variants': {
+            const state = pendingProductCreation[userId];
+            if (!state || !state.baseProduct || state.variants.length === 0) {
+                return '操作已逾時或資料不完整，請重新操作。';
+            }
+
+            const { baseProduct, variants } = state;
+            
+            // 將商品主檔與所有規格寫入資料庫
+            const newProduct = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    // 1. 插入主商品資料，取得商品 ID
+                    const productRes = await client.query(
+                        `INSERT INTO products (name, description, image_url, status, creator_id, creator_name) 
+                         VALUES ($1, $2, $3, 'available', $4, $5) RETURNING id, name`,
+                        [baseProduct.name, baseProduct.description, variants[0].image_url || null, userId, user.name]
+                    );
+                    const newProduct = productRes.rows[0];
+                    const productId = newProduct.id;
+
+                    // 2. 遍歷所有規格，將它們逐一插入 variants 表格
+                    for (const variant of variants) {
+                        await client.query(
+                            `INSERT INTO product_variants (product_id, name, attributes, price, inventory, image_url)
+                             VALUES ($1, $2, $3, $4, $5, $6)`,
+                            [productId, variant.name, variant.attributes, variant.price, variant.inventory, variant.image_url]
+                        );
+                    }
+                    
+                    await client.query('COMMIT');
+                    return newProduct;
+                } catch (e) {
+                    await client.query('ROLLBACK');
+                    console.error("❌ 寫入多規格商品失敗", e);
+                    throw e; // 拋出錯誤，讓外層的 try-catch 捕捉
+                }
+            });
+
             delete pendingProductCreation[userId];
 
-            if (!newProduct) {
-                return '❌ 商品上架失敗，請稍後再試。';
-            }
-
+            // 準備後續的「發佈公告」流程
             const prefilledContent = `🛍️ 商城新品上架！\n\n「${newProduct.name}」現正熱賣中，快來逛逛吧！`;
             pendingAnnouncementCreation[userId] = {
                 step: 'await_final_confirmation',
@@ -6979,6 +6750,7 @@ async function handleProductActions(action, data, user) {
             setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
                 enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
             });
+            
             return {
                 type: 'flex',
                 altText: '發佈新品公告？',
@@ -7000,285 +6772,633 @@ async function handleProductActions(action, data, user) {
                 quickReply: {
                     items: [
                         { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
-                         { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                        { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
                     ]
                 }
             };
         }
-        case 'manage_product': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            const flexMessage = { type: 'flex', altText: '編輯商品資訊', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `編輯：${product.name}`, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#52B69A' }, body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯名稱', data: `action=edit_product_field&product_id=${productId}&field=name` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯描述', data: `action=edit_product_field&product_id=${productId}&field=description` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯價格', data: `action=edit_product_field&product_id=${productId}&field=price` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯圖片網址', data: `action=edit_product_field&product_id=${productId}&field=image_url` } } ]}}};
-            return flexMessage;
-        }
-        case 'edit_product_field': {
-            const productId = data.get('product_id');
-            const field = data.get('field');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            pendingProductEdit[userId] = { product, field };
-            setupConversationTimeout(userId, pendingProductEdit, 'pendingProductEdit', u => enqueuePushTask(u, { type: 'text', text: '編輯商品操作逾時，自動取消。' }));
-            const fieldMap = { name: '名稱', description: '描述', price: '價格 (元)', image_url: '圖片網址' };
-            return { type: 'text', text: `請輸入新的「${fieldMap[field]}」：\n(目前為：${product[field] || '無'})`, quickReply: { items: getCancelMenu() } };
-        }
-        case 'adjust_inventory_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到該商品。';
-            pendingInventoryAdjust[userId] = { product, originalInventory: product.inventory };
-            setupConversationTimeout(userId, pendingInventoryAdjust, 'pendingInventoryAdjust', u => enqueuePushTask(u, { type: 'text', text: '調整庫存操作逾時，自動取消。' }));
-            return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
-        }
-        case 'toggle_product_status': {
-            const productId = data.get('product_id');
-            const result = await executeDbQuery(async (client) => {
-                await client.query('BEGIN');
-                try {
-                    const productRes = await client.query('SELECT status, name FROM products WHERE id = $1 FOR UPDATE', [productId]);
-                    if (productRes.rows.length === 0) {
-                        await client.query('ROLLBACK');
-                        return { success: false, message: '找不到該商品。' };
-                    }
-                    const product = productRes.rows[0];
-                    const newStatus = product.status === 'available' ? 'unavailable' : 'available';
-                    await client.query('UPDATE products SET status = $1 WHERE id = $2', [newStatus, productId]);
-                    await client.query('COMMIT');
-                    
-                    if (newStatus === 'available') {
-                        const prefilledContent = `🔥 熱銷補貨到！\n\n「${product.name}」再度上架，上次沒買到的朋友別再錯過囉！`;
-                        pendingAnnouncementCreation[userId] = {
-                            step: 'await_final_confirmation',
-                            content: prefilledContent
-                        };
-                        setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
-                           enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
-                        });
-                        return { success: true, product: product, shouldAnnounce: true, announcementContent: prefilledContent };
-                    }
-                    
-                    return { success: true, product: product, shouldAnnounce: false };
-                } catch(e) {
-                    await client.query('ROLLBACK');
-                    console.error("切換商品狀態失敗:", e);
-                    return { success: false, message: '操作失敗，請稍後再試。' };
-                }
-            });
-            if (!result.success) {
-                return result.message;
-            }
 
-            if (result.shouldAnnounce) {
-                return {
-                    type: 'flex',
-                    altText: '發佈補貨公告？',
-                    contents: {
-                        type: 'bubble',
-                        header: {
-                            type: 'box',
-                            layout: 'vertical',
-                            contents: [{ type: 'text', text: '📢 發佈補貨公告', weight: 'bold', color: '#FFFFFF' }],
-                            backgroundColor: '#52B69A',
-                            paddingAll: 'lg'
-                        },
-                        body: {
-                            type: 'box',
-                            layout: 'vertical',
-                            contents: [{ type: 'text', text: result.announcementContent, wrap: true }]
+        default:
+            // 將您舊的 handleProductActions 內的 case 移到這裡
+            // 為了保持完整性，我將它們從您的 V41 檔案中複製過來
+            switch(action) {
+                case 'view_preorder_list': {
+                    const productId = data.get('product_id');
+                    return showPreorderRoster(productId);
+                }
+                case 'stop_preorder_start': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product) return '找不到該商品。';
+        
+                    const preorderCount = await executeDbQuery(client => 
+                        client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+                    ).then(res => parseInt(res.rows[0].count, 10) || 0);
+                    let messageText = `您確定要停止「${product.name}」的預購並將其下架嗎？\n\n此操作將無法再接受新的預購。`;
+                    if (preorderCount > 0) {
+                        messageText += `\n目前共有 ${preorderCount} 位學員正在等候。`;
+                    }
+        
+                    return {
+                        type: 'text',
+                        text: messageText,
+                        quickReply: {
+                            items: [
+                                { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_stop_preorder&product_id=${productId}` } },
+                                { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                            ]
                         }
-                    },
-                    quickReply: {
-                        items: [
-                            { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
-                            { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
-                        ]
-                    }
-                };
-            } else {
-                return `✅ 已成功將商品「${result.product.name}」設定為「下架」狀態。`;
-            }
-        }
-        case 'select_product_quantity': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product || product.status !== 'available' || product.inventory <= 0) {
-                return '抱歉，此商品目前無法購買。';
-            }
-            const maxQuantity = Math.min(5, product.inventory);
-            const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
-                const quantity = i + 1;
-                const totalAmount = product.price * quantity;
-                return {
-                    type: 'button',
-                    style: 'secondary',
-                    height: 'sm',
-                    margin: 'sm',
-                    action: {
-                        type: 'postback',
-                        label: `${quantity} 個 (共 ${totalAmount} 元)`,
-                        data: `action=confirm_product_purchase&product_id=${product.id}&qty=${quantity}`
-                    }
-                };
-            });
-            return {
-                type: 'flex',
-                altText: '請選擇購買數量',
-                contents: {
-                    type: 'bubble',
-                    header: {
-                        type: 'box',
-                        layout: 'vertical',
-                        contents: [{ type: 'text', text: '請選擇購買數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
-                        backgroundColor: '#52B69A'
-                    },
-                    body: {
-                        type: 'box',
-                        layout: 'vertical',
-                        contents: [
-                            { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
-                            { type: 'text', text: `單價：${product.price} 元`, size: 'sm', color: '#666666', margin: 'md' },
-                            { type: 'text', text: `剩餘庫存：${product.inventory} 個`, size: 'sm', color: '#666666' },
-                            { type: 'separator', margin: 'lg' }
-                        ]
-                    },
-                    footer: {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'sm',
-                        contents: quantityButtons
-                    }
+                    };
                 }
-            };
-        }
-        case 'confirm_product_purchase': {
-            const productId = data.get('product_id');
-            const quantity = parseInt(data.get('qty') || '1', 10);
-            const product = await getProduct(productId);
-            if (!product || product.status !== 'available') return '找不到此商品，或商品已下架。';
-            if (product.inventory < quantity) return `抱歉，此商品庫存不足！\n您想購買 ${quantity} 個，但僅剩 ${product.inventory} 個。`;
-            const totalAmount = product.price * quantity;
-            pendingBookingConfirmation[userId] = { type: 'product_purchase', productId: productId, quantity: quantity };
-            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
-                enqueuePushTask(u, { type: 'text', text: '商品購買操作已逾時，自動取消。' });
-            });
-
-            const flexMessage = {
-                type: 'flex',
-                altText: '請選擇付款方式',
-                contents: {
-                    type: 'bubble',
-                    header: {
-                        type: 'box',
-                        layout: 'vertical',
-                        contents: [{ type: 'text', text: '請確認訂單並選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }],
-                        backgroundColor: '#52B69A'
-                    },
-                    body: {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'md',
-                        contents: [
-                            { type: 'text', text: product.name, weight: 'bold', size: 'md', wrap: true },
-                            { type: 'text', text: `單價：${product.price} 元`, size: 'sm' },
-                            { type: 'text', text: `數量：${quantity} 個`, size: 'sm' },
-                            { type: 'separator', margin: 'sm' },
-                            { type: 'text', text: `總金額：${totalAmount} 元`, size: 'lg', weight: 'bold', margin: 'sm' }
-                        ]
-                    },
-                    footer: {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'sm',
-                        contents: [
-                            {
-                                type: 'button',
-                                style: 'primary',
-                                color: '#34A0A4',
-                                action: {
-                                    type: 'postback',
-                                    label: '🏦 轉帳付款',
-                                    data: `action=execute_product_purchase&product_id=${product.id}&method=transfer&qty=${quantity}`
-                                }
-                            },
-                            {
-                                type: 'button',
-                                style: 'primary',
-                                color: '#1A759F',
-                                action: {
-                                    type: 'postback',
-                                    label: '🤝 現金面交',
-                                    data: `action=execute_product_purchase&product_id=${product.id}&method=cash&qty=${quantity}`
-                                }
-                            },
-                            {
-                                type: 'button',
-                                style: 'secondary',
-                                height: 'sm',
-                                margin: 'md',
-                                action: {
-                                    type: 'message',
-                                    label: '取消',
-                                    text: CONSTANTS.COMMANDS.GENERAL.CANCEL
-                                }
+                case 'execute_stop_preorder': {
+                    const productId = data.get('product_id');
+                    const result = await executeDbQuery(async (client) => {
+                        await client.query('BEGIN');
+                        try {
+                            const productRes = await client.query("SELECT name, status FROM products WHERE id = $1 FOR UPDATE", [productId]);
+                            if (productRes.rows.length === 0) {
+                                await client.query('ROLLBACK');
+                                return { status: 'error', message: '❌ 操作失敗，找不到該商品。' };
                             }
-                        ]
+                            const product = productRes.rows[0];
+                            if (product.status === 'unavailable') {
+                                await client.query('ROLLBACK'); 
+                                return { status: 'processed' }; 
+                            }
+                            if (product.status !== 'preorder') {
+                                await client.query('ROLLBACK');
+                                return { status: 'error', message: '❌ 操作失敗，該商品不是預購狀態。' };
+                            }
+                            await client.query("UPDATE products SET status = 'unavailable' WHERE id = $1", [productId]);
+                            await client.query('COMMIT');
+                            return { status: 'success', productName: product.name };
+                        } catch (err) {
+                            await client.query('ROLLBACK');
+                            console.error("停止預購失敗:", err);
+                            return { status: 'error', message: '❌ 操作失敗，資料庫發生錯誤。' };
+                        }
+                    });
+                    if (result.status === 'success') {
+                        return `✅ 已成功停止「${result.productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
+                    } else if (result.status === 'error') {
+                        return result.message;
                     }
+                    return null;
                 }
-            };
-            return flexMessage;
-        }
-        // [新增] 刪除商品相關的 case
-        case 'delete_product_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) {
-                return '找不到該商品，可能已被刪除。';
-            }
-            return {
-                type: 'text',
-                text: `⚠️ 您確定要「永久刪除」商品「${product.name}」嗎？\n\n此操作無法復原，但不會影響到與此商品相關的歷史訂單紀錄。`,
-                quickReply: {
-                    items: [
-                        {
-                            type: 'action',
+                case 'cancel_preorder_start': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product) return '找不到商品。';
+                    
+                    const count = await executeDbQuery(client => 
+                        client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+                    ).then(res => parseInt(res.rows[0].count, 10));
+                    if (count === 0) {
+                        return `「${product.name}」沒有需要取消的預購。`;
+                    }
+        
+                    return {
+                        type: 'text',
+                        text: `⚠️ 您確定要因為缺貨而取消 ${count} 位學員的「${product.name}」預購嗎？\n\n系統將會發送通知告知學員，此操作無法復原。`,
+                        quickReply: { items: [
+                            { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_cancel_preorder&product_id=${productId}` } },
+                            { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.MANAGE_FULFILLMENT } }
+                        ]}
+                    };
+                }
+                case 'execute_cancel_preorder': {
+                    const productId = data.get('product_id');
+                    const result = await executeDbQuery(async (client) => {
+                        await client.query('BEGIN');
+                        try {
+                            const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
+                            if (productRes.rows.length === 0) {
+                                await client.query('ROLLBACK');
+                                return { status: 'error', message: '找不到對應的商品。' };
+                            }
+                            const product = productRes.rows[0];
+        
+                            const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
+                            if (preorders.length === 0) {
+                                await client.query('ROLLBACK');
+                                return { status: 'processed' };
+                            }
+        
+                            const notificationTasks = preorders.map(preorder => ({
+                                recipientId: preorder.user_id,
+                                message: { type: 'text', text: `❗️ 預購取消通知\n很抱歉，由於廠商供貨問題，您預購的商品「${product.name}」無法到貨，本次預購已為您取消。造成不便，敬請見諒。` }
+                            }));
+                            await client.query("UPDATE product_preorders SET status = 'canceled' WHERE product_id = $1 AND status = 'active'", [productId]);
+                            await client.query('COMMIT');
+                            return { success: true, tasks: notificationTasks, count: preorders.length, productName: product.name };
+                        } catch (err) {
+                            await client.query('ROLLBACK');
+                            console.error('執行取消預購時失敗:', err);
+                            return { status: 'error', message: `處理失敗：${err.message}` };
+                        }
+                    });
+                    if (result.success) {
+                        if (result.tasks.length > 0) {
+                            await enqueueBatchPushTasks(result.tasks);
+                        }
+                        return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
+                    } else if (result.status === 'error') {
+                        return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
+                    }
+                    return null;
+                }
+                case 'enable_preorder_start': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product) return '找不到該商品。';
+                    return {
+                        type: 'text',
+                        text: `您確定要為「${product.name}」開啟預購功能嗎？\n\n開啟後，學員將可以在商品頁看到並預購此商品。`,
+                        quickReply: {
+                            items: [
+                                { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_enable_preorder&product_id=${productId}` } },
+                                { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                            ]
+                        }
+                    };
+                }
+                case 'execute_enable_preorder': {
+                    const productId = data.get('product_id');
+                    const result = await executeDbQuery(client =>
+                        client.query("UPDATE products SET status = 'preorder' WHERE id = $1 AND inventory <= 0 RETURNING name", [productId])
+                    );
+                    if (result.rowCount > 0) {
+                        const productName = result.rows[0].name;
+                        return `✅ 已成功將「${productName}」轉為預購模式。`;
+                    }
+                    return '❌ 操作失敗，找不到該商品或商品仍有庫存。';
+                }
+                case 'disable_product_start': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product) return '找不到該商品。';
+                    return {
+                        type: 'text',
+                        text: `您確定要將「${product.name}」直接下架嗎？\n\n下架後，商品將會移至「管理已下架商品」區。`,
+                        quickReply: {
+                            items: [
+                                { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_disable_product&product_id=${productId}` } },
+                                { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                            ]
+                        }
+                    };
+                }
+                case 'execute_disable_product': {
+                    const productId = data.get('product_id');
+                    const result = await executeDbQuery(client =>
+                        client.query("UPDATE products SET status = 'unavailable' WHERE id = $1 RETURNING name", [productId])
+                    );
+                    if (result.rowCount > 0) {
+                        const productName = result.rows[0].name;
+                        return `✅ 已成功將「${productName}」下架。`;
+                    }
+                    return '❌ 操作失敗，找不到該商品。';
+                }
+                case 'select_preorder_quantity': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product || product.status !== 'preorder') {
+                        return '抱歉，此商品目前未開放預購。';
+                    }
+                    const maxQuantity = 5;
+                    const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
+                        const quantity = i + 1;
+                        return {
+                            type: 'button',
+                            style: 'secondary',
+                            height: 'sm',
+                            margin: 'sm',
                             action: {
                                 type: 'postback',
-                                label: '✅ 確認刪除',
-                                data: `action=delete_product_execute&product_id=${product.id}`
+                                label: `${quantity} 個`,
+                                data: `action=confirm_product_preorder_start&product_id=${product.id}&qty=${quantity}`
                             }
-                        },
-                        {
-                            type: 'action',
-                            action: {
-                                type: 'message',
-                                label: '❌ 取消',
-                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                        };
+                    });
+                    return {
+                        type: 'flex',
+                        altText: '請選擇預購數量',
+                        contents: {
+                            type: 'bubble',
+                            header: {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [{ type: 'text', text: '請選擇預購數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                                backgroundColor: '#FF9E00'
+                            },
+                            body: {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [
+                                    { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
+                                    { type: 'text', text: `單價：${product.price} 元 (到貨後付款)`, size: 'sm', color: '#666666', margin: 'md' },
+                                    { type: 'separator', margin: 'lg' }
+                                ]
+                            },
+                            footer: {
+                                type: 'box',
+                                layout: 'vertical',
+                                spacing: 'sm',
+                                contents: quantityButtons
                             }
                         }
-                    ]
+                    };
                 }
-            };
-        }
-        case 'delete_product_execute': {
-            const productId = data.get('product_id');
-            if (!productId) {
-                return '操作失敗，缺少商品 ID。';
+                case 'confirm_product_preorder_start': {
+                    const productId = data.get('product_id');
+                    const quantity = parseInt(data.get('qty') || '1', 10);
+                    const product = await getProduct(productId);
+                    if (!product) {
+                        return '抱歉，找不到該商品。';
+                    }
+                    pendingBookingConfirmation[userId] = { type: 'preorder_confirmation' };
+                    setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                        enqueuePushTask(u, { type: 'text', text: '預購確認操作已逾時，自動取消。' });
+                    });
+                    const message = `您確定要預購以下商品嗎？\n\n「${product.name}」x ${quantity} 個\n\n(商品到貨後將會通知您付款)`;
+                    return {
+                        type: 'text',
+                        text: message,
+                        quickReply: {
+                            items: [
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        label: '✅ 確認',
+                                        data: `action=execute_product_preorder&product_id=${product.id}&qty=${quantity}`
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        label: '❌ 取消',
+                                        text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                    }
+                                }
+                            ]
+                        }
+                    };
+                }
+                case 'execute_product_preorder': {
+                    const productId = data.get('product_id');
+                    const quantity = parseInt(data.get('qty') || '1', 10);
+                    const result = await executeDbQuery(async (client) => {
+                        const productRes = await client.query("SELECT name, status FROM products WHERE id = $1", [productId]);
+                        if (productRes.rows.length === 0 || productRes.rows[0].status !== 'preorder') {
+                            return { success: false, message: '預購失敗，此商品目前未開放預購。' };
+                        }
+                        const product = productRes.rows[0];
+                        const existingPreorder = await client.query(
+                            "SELECT id FROM product_preorders WHERE user_id = $1 AND product_id = $2 AND status = 'active'",
+                            [userId, productId]
+                        );
+                        if (existingPreorder.rows.length > 0) {
+                            return { success: false, message: '您已預購過此商品，請耐心等候到貨通知。' };
+                        }
+                        const preorder_uid = `PRE-${Date.now()}-${userId.slice(-4)}`;
+                        await client.query(
+                            `INSERT INTO product_preorders (preorder_uid, product_id, user_id, user_name, quantity, status)
+                             VALUES ($1, $2, $3, $4, $5, 'active')`,
+                            [preorder_uid, productId, userId, user.name, quantity]
+                        );
+                        return { success: true, productName: product.name, quantity: quantity };
+                    });
+                    if (result.success) {
+                        return `✅ 預購成功！\n\n您已成功預購「${result.productName}」共 ${result.quantity} 個。\n商品到貨後，系統將會發送訊息通知您付款。`;
+                    } else {
+                        return result.message;
+                    }
+                }
+                case 'confirm_add_product': {
+                    const state = pendingProductCreation[userId];
+                    if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
+                    
+                    const productStatus = state.isPreorder ? 'preorder' : 'available';
+                    const newProduct = await executeDbQuery(client => 
+                        client.query(
+                            `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) 
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+                            [state.name, state.description, state.price, state.inventory, state.image_url, productStatus, userId, user.name]
+                        )
+                    ).then(res => res.rows[0]);
+                    delete pendingProductCreation[userId];
+        
+                    if (!newProduct) {
+                        return '❌ 商品上架失敗，請稍後再試。';
+                    }
+        
+                    const prefilledContent = `🛍️ 商城新品上架！\n\n「${newProduct.name}」現正熱賣中，快來逛逛吧！`;
+                    pendingAnnouncementCreation[userId] = {
+                        step: 'await_final_confirmation',
+                        content: prefilledContent
+                    };
+                    setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                        enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+                    });
+                    return {
+                        type: 'flex',
+                        altText: '發佈新品公告？',
+                        contents: {
+                            type: 'bubble',
+                            header: {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [{ type: 'text', text: '📢 發佈新品上架公告', weight: 'bold', color: '#FFFFFF' }],
+                                backgroundColor: '#52B69A',
+                                paddingAll: 'lg'
+                            },
+                            body: {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [{ type: 'text', text: prefilledContent, wrap: true }]
+                            }
+                        },
+                        quickReply: {
+                            items: [
+                                { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
+                                { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                            ]
+                        }
+                    };
+                }
+                case 'manage_product': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product) return '找不到該商品。';
+                    const flexMessage = { type: 'flex', altText: '編輯商品資訊', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `編輯：${product.name}`, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#52B69A' }, body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯名稱', data: `action=edit_product_field&product_id=${productId}&field=name` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯描述', data: `action=edit_product_field&product_id=${productId}&field=description` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯價格', data: `action=edit_product_field&product_id=${productId}&field=price` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯圖片網址', data: `action=edit_product_field&product_id=${productId}&field=image_url` } } ]}}};
+                    return flexMessage;
+                }
+                case 'edit_product_field': {
+                    const productId = data.get('product_id');
+                    const field = data.get('field');
+                    const product = await getProduct(productId);
+                    if (!product) return '找不到該商品。';
+                    pendingProductEdit[userId] = { product, field };
+                    setupConversationTimeout(userId, pendingProductEdit, 'pendingProductEdit', u => enqueuePushTask(u, { type: 'text', text: '編輯商品操作逾時，自動取消。' }));
+                    const fieldMap = { name: '名稱', description: '描述', price: '價格 (元)', image_url: '圖片網址' };
+                    return { type: 'text', text: `請輸入新的「${fieldMap[field]}」：\n(目前為：${product[field] || '無'})`, quickReply: { items: getCancelMenu() } };
+                }
+                case 'adjust_inventory_start': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product) return '找不到該商品。';
+                    pendingInventoryAdjust[userId] = { product, originalInventory: product.inventory };
+                    setupConversationTimeout(userId, pendingInventoryAdjust, 'pendingInventoryAdjust', u => enqueuePushTask(u, { type: 'text', text: '調整庫存操作逾時，自動取消。' }));
+                    return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
+                }
+                case 'toggle_product_status': {
+                    const productId = data.get('product_id');
+                    const result = await executeDbQuery(async (client) => {
+                        await client.query('BEGIN');
+                        try {
+                            const productRes = await client.query('SELECT status, name FROM products WHERE id = $1 FOR UPDATE', [productId]);
+                            if (productRes.rows.length === 0) {
+                                await client.query('ROLLBACK');
+                                return { success: false, message: '找不到該商品。' };
+                            }
+                            const product = productRes.rows[0];
+                            const newStatus = product.status === 'available' ? 'unavailable' : 'available';
+                            await client.query('UPDATE products SET status = $1 WHERE id = $2', [newStatus, productId]);
+                            await client.query('COMMIT');
+                            
+                            if (newStatus === 'available') {
+                                const prefilledContent = `🔥 熱銷補貨到！\n\n「${product.name}」再度上架，上次沒買到的朋友別再錯過囉！`;
+                                pendingAnnouncementCreation[userId] = {
+                                    step: 'await_final_confirmation',
+                                    content: prefilledContent
+                                };
+                                setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                                   enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+                                });
+                                return { success: true, product: product, shouldAnnounce: true, announcementContent: prefilledContent };
+                            }
+                            
+                            return { success: true, product: product, shouldAnnounce: false };
+                        } catch(e) {
+                            await client.query('ROLLBACK');
+                            console.error("切換商品狀態失敗:", e);
+                            return { success: false, message: '操作失敗，請稍後再試。' };
+                        }
+                    });
+                    if (!result.success) {
+                        return result.message;
+                    }
+        
+                    if (result.shouldAnnounce) {
+                        return {
+                            type: 'flex',
+                            altText: '發佈補貨公告？',
+                            contents: {
+                                type: 'bubble',
+                                header: {
+                                    type: 'box',
+                                    layout: 'vertical',
+                                    contents: [{ type: 'text', text: '📢 發佈補貨公告', weight: 'bold', color: '#FFFFFF' }],
+                                    backgroundColor: '#52B69A',
+                                    paddingAll: 'lg'
+                                },
+                                body: {
+                                    type: 'box',
+                                    layout: 'vertical',
+                                    contents: [{ type: 'text', text: result.announcementContent, wrap: true }]
+                                }
+                            },
+                            quickReply: {
+                                items: [
+                                    { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
+                                    { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                                ]
+                            }
+                        };
+                    } else {
+                        return `✅ 已成功將商品「${result.product.name}」設定為「下架」狀態。`;
+                    }
+                }
+                case 'select_product_quantity': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product || product.status !== 'available' || product.inventory <= 0) {
+                        return '抱歉，此商品目前無法購買。';
+                    }
+                    const maxQuantity = Math.min(5, product.inventory);
+                    const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
+                        const quantity = i + 1;
+                        const totalAmount = product.price * quantity;
+                        return {
+                            type: 'button',
+                            style: 'secondary',
+                            height: 'sm',
+                            margin: 'sm',
+                            action: {
+                                type: 'postback',
+                                label: `${quantity} 個 (共 ${totalAmount} 元)`,
+                                data: `action=confirm_product_purchase&product_id=${product.id}&qty=${quantity}`
+                            }
+                        };
+                    });
+                    return {
+                        type: 'flex',
+                        altText: '請選擇購買數量',
+                        contents: {
+                            type: 'bubble',
+                            header: {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [{ type: 'text', text: '請選擇購買數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                                backgroundColor: '#52B69A'
+                            },
+                            body: {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [
+                                    { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
+                                    { type: 'text', text: `單價：${product.price} 元`, size: 'sm', color: '#666666', margin: 'md' },
+                                    { type: 'text', text: `剩餘庫存：${product.inventory} 個`, size: 'sm', color: '#666666' },
+                                    { type: 'separator', margin: 'lg' }
+                                ]
+                            },
+                            footer: {
+                                type: 'box',
+                                layout: 'vertical',
+                                spacing: 'sm',
+                                contents: quantityButtons
+                            }
+                        }
+                    };
+                }
+                case 'confirm_product_purchase': {
+                    const productId = data.get('product_id');
+                    const quantity = parseInt(data.get('qty') || '1', 10);
+                    const product = await getProduct(productId);
+                    if (!product || product.status !== 'available') return '找不到此商品，或商品已下架。';
+                    if (product.inventory < quantity) return `抱歉，此商品庫存不足！\n您想購買 ${quantity} 個，但僅剩 ${product.inventory} 個。`;
+                    const totalAmount = product.price * quantity;
+                    pendingBookingConfirmation[userId] = { type: 'product_purchase', productId: productId, quantity: quantity };
+                    setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                        enqueuePushTask(u, { type: 'text', text: '商品購買操作已逾時，自動取消。' });
+                    });
+                    const flexMessage = {
+                        type: 'flex',
+                        altText: '請選擇付款方式',
+                        contents: {
+                            type: 'bubble',
+                            header: {
+                                type: 'box',
+                                layout: 'vertical',
+                                contents: [{ type: 'text', text: '請確認訂單並選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }],
+                                backgroundColor: '#52B69A'
+                            },
+                            body: {
+                                type: 'box',
+                                layout: 'vertical',
+                                spacing: 'md',
+                                contents: [
+                                    { type: 'text', text: product.name, weight: 'bold', size: 'md', wrap: true },
+                                    { type: 'text', text: `單價：${product.price} 元`, size: 'sm' },
+                                    { type: 'text', text: `數量：${quantity} 個`, size: 'sm' },
+                                    { type: 'separator', margin: 'sm' },
+                                    { type: 'text', text: `總金額：${totalAmount} 元`, size: 'lg', weight: 'bold', margin: 'sm' }
+                                ]
+                            },
+                            footer: {
+                                type: 'box',
+                                layout: 'vertical',
+                                spacing: 'sm',
+                                contents: [
+                                    {
+                                        type: 'button',
+                                        style: 'primary',
+                                        color: '#34A0A4',
+                                        action: {
+                                            type: 'postback',
+                                            label: '🏦 轉帳付款',
+                                            data: `action=execute_product_purchase&product_id=${product.id}&method=transfer&qty=${quantity}`
+                                        }
+                                    },
+                                    {
+                                        type: 'button',
+                                        style: 'primary',
+                                        color: '#1A759F',
+                                        action: {
+                                            type: 'postback',
+                                            label: '🤝 現金面交',
+                                            data: `action=execute_product_purchase&product_id=${product.id}&method=cash&qty=${quantity}`
+                                        }
+                                    },
+                                    {
+                                        type: 'button',
+                                        style: 'secondary',
+                                        height: 'sm',
+                                        margin: 'md',
+                                        action: {
+                                            type: 'message',
+                                            label: '取消',
+                                            text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    };
+                    return flexMessage;
+                }
+                case 'delete_product_start': {
+                    const productId = data.get('product_id');
+                    const product = await getProduct(productId);
+                    if (!product) {
+                        return '找不到該商品，可能已被刪除。';
+                    }
+                    return {
+                        type: 'text',
+                        text: `⚠️ 您確定要「永久刪除」商品「${product.name}」嗎？\n\n此操作無法復原，但不會影響到與此商品相關的歷史訂單紀錄。`,
+                        quickReply: {
+                            items: [
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        label: '✅ 確認刪除',
+                                        data: `action=delete_product_execute&product_id=${product.id}`
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        label: '❌ 取消',
+                                        text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                    }
+                                }
+                            ]
+                        }
+                    };
+                }
+                case 'delete_product_execute': {
+                    const productId = data.get('product_id');
+                    if (!productId) {
+                        return '操作失敗，缺少商品 ID。';
+                    }
+                    const result = await executeDbQuery(client => 
+                        client.query("DELETE FROM products WHERE id = $1 RETURNING name", [productId])
+                    );
+                    if (result.rowCount > 0) {
+                        const productName = result.rows[0].name;
+                        return `✅ 已成功刪除商品「${productName}」。`;
+                    } else {
+                        return '找不到該商品，可能已被其他管理員刪除。';
+                    }
+                }
             }
-            const result = await executeDbQuery(client => 
-                client.query("DELETE FROM products WHERE id = $1 RETURNING name", [productId])
-            );
-
-            if (result.rowCount > 0) {
-                const productName = result.rows[0].name;
-                return `✅ 已成功刪除商品「${productName}」。`;
-            } else {
-                return '找不到該商品，可能已被其他管理員刪除。';
-            }
-        }
+            return null;
     }
-    return null;
 }
-// ##############
 /**
  * 處理所有與「訂單」相關的操作
  */
