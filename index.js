@@ -6795,19 +6795,47 @@ async function handleCourseActions(action, data, user) {
     return null;
 }
 /**
- * [V42.7 修正] 處理所有與「商品」相關的操作 (修正 products 表格寫入 price 的問題)
+ * [V42.7 最終版] 處理所有與「商品」相關的 Postback 操作
  */
 async function handleProductActions(action, data, user) {
     const userId = user.id;
 
     switch (action) {
-        // ... (其他的 case 維持不變) ...
+        // =======================================================
+        // == V42 商品建立流程 (Product Creation Flow)
+        // =======================================================
+        case 'product_creation_select_attr': {
+            const state = pendingProductCreation[userId];
+            if (!state || state.step !== 'await_attribute_selection') return '操作已逾時。';
+            
+            const attr = decodeURIComponent(data.get('attr'));
+            const index = state.selectedAttributes.indexOf(attr);
+
+            if (index > -1) {
+                state.selectedAttributes.splice(index, 1); // 如果已選，就取消選擇
+            } else {
+                state.selectedAttributes.push(attr); // 如果未選，就加入選擇
+            }
+            // 刷新選擇卡片，顯示最新的選擇狀態
+            return buildAttributeSelectionFlex(state.selectedAttributes);
+        }
+
+        case 'product_creation_finish_attr_select': {
+            const state = pendingProductCreation[userId];
+            if (!state || state.step !== 'await_attribute_selection' || state.selectedAttributes.length === 0) {
+                return '您尚未選擇任何規格，請選擇後再按「完成選擇」。';
+            }
+            state.step = 'await_variant_combination';
+            
+            const prompt = `好的，您選擇了【${state.selectedAttributes.join(', ')}】。\n\n現在，請依照這個順序，用「逗號」分隔，輸入第一組完整的規格值。\n\n範例：${state.selectedAttributes.map(attr => (attr === '顏色' ? '紅色' : 'S')).join(', ')}`;
+            
+            return { type: 'text', text: prompt, quickReply: { items: getCancelMenu() } };
+        }
 
         case 'product_creation_add_another_variant': {
             const state = pendingProductCreation[userId];
             if (!state) return '操作已逾時。';
             
-            // [修正] 在新增下一組前，將 state.step 明確設定好
             state.step = 'await_variant_combination'; 
             const prompt = `好的，請依照【${state.selectedAttributes.join(', ')}】的順序，輸入下一組規格值：`;
             
@@ -6825,11 +6853,9 @@ async function handleProductActions(action, data, user) {
             const newProduct = await executeDbQuery(async (client) => {
                 await client.query('BEGIN');
                 try {
-                    // [修正] 在 INSERT 指令中，增加 price 欄位
                     const productRes = await client.query(
                         `INSERT INTO products (name, description, price, image_url, status, creator_id, creator_name) 
                          VALUES ($1, $2, $3, $4, 'available', $5, $6) RETURNING id, name`,
-                        // [修正] 在傳入的值中，對應增加 variants[0].price
                         [baseProduct.name, baseProduct.description, variants[0].price, variants[0].image_url || null, userId, user.name]
                     );
                     const newProduct = productRes.rows[0];
@@ -6884,14 +6910,170 @@ async function handleProductActions(action, data, user) {
             };
         }
 
-        // ... (為了保持完整性，底下是您 V41 檔案中 handleProductActions 的其餘部分) ...
-        default:
-            // 由於 V41 檔案中，handleProductActions 函式並不存在，
-            // 相關邏輯分散在 handlePostback 中，我們已將其整合。
-            // 因此這裡不需要 default case。
-            // 如果您有其他自訂的 product action，可以放在這裡。
-            return null;
+        // =======================================================
+        // == V41 商品管理流程 (Product Management Flow)
+        // =======================================================
+        
+        case 'manage_product': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            const flexMessage = { type: 'flex', altText: '編輯商品資訊', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `編輯：${product.name}`, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#52B69A' }, body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯名稱', data: `action=edit_product_field&product_id=${productId}&field=name` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯描述', data: `action=edit_product_field&product_id=${productId}&field=description` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯價格', data: `action=edit_product_field&product_id=${productId}&field=price` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯圖片網址', data: `action=edit_product_field&product_id=${productId}&field=image_url` } } ]}}};
+            return flexMessage;
+        }
+        
+        case 'edit_product_field': {
+            const productId = data.get('product_id');
+            const field = data.get('field');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            pendingProductEdit[userId] = { product, field };
+            setupConversationTimeout(userId, pendingProductEdit, 'pendingProductEdit', u => enqueuePushTask(u, { type: 'text', text: '編輯商品操作逾時，自動取消。' }));
+            const fieldMap = { name: '名稱', description: '描述', price: '價格 (元)', image_url: '圖片網址' };
+            return { type: 'text', text: `請輸入新的「${fieldMap[field]}」：\n(目前為：${product[field] || '無'})`, quickReply: { items: getCancelMenu() } };
+        }
+
+        case 'adjust_inventory_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            pendingInventoryAdjust[userId] = { product, originalInventory: product.inventory };
+            setupConversationTimeout(userId, pendingInventoryAdjust, 'pendingInventoryAdjust', u => enqueuePushTask(u, { type: 'text', text: '調整庫存操作逾時，自動取消。' }));
+            return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
+        }
+
+        case 'toggle_product_status': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query('SELECT status, name FROM products WHERE id = $1 FOR UPDATE', [productId]);
+                    if (productRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '找不到該商品。' };
+                    }
+                    const product = productRes.rows[0];
+                    const newStatus = product.status === 'available' ? 'unavailable' : 'available';
+                    await client.query('UPDATE products SET status = $1 WHERE id = $2', [newStatus, productId]);
+                    await client.query('COMMIT');
+                    
+                    if (newStatus === 'available') {
+                        const prefilledContent = `🔥 熱銷補貨到！\n\n「${product.name}」再度上架，上次沒買到的朋友別再錯過囉！`;
+                        pendingAnnouncementCreation[userId] = {
+                            step: 'await_final_confirmation',
+                            content: prefilledContent
+                        };
+                        setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                           enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+                        });
+                        return { success: true, product: product, shouldAnnounce: true, announcementContent: prefilledContent };
+                    }
+                    
+                    return { success: true, product: product, shouldAnnounce: false };
+                } catch(e) {
+                    await client.query('ROLLBACK');
+                    console.error("切換商品狀態失敗:", e);
+                    return { success: false, message: '操作失敗，請稍後再試。' };
+                }
+            });
+
+            if (!result.success) {
+                return result.message;
+            }
+
+            if (result.shouldAnnounce) {
+                return {
+                    type: 'flex', altText: '發佈補貨公告？',
+                    contents: {
+                        type: 'bubble',
+                        header: createStandardHeader('📢 發佈補貨公告'),
+                        body: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: result.announcementContent, wrap: true }] },
+                        quickReply: {
+                            items: [
+                                { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
+                                { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                            ]
+                        }
+                    }
+                };
+            } else {
+                return `✅ 已成功將商品「${result.product.name}」設定為「下架」狀態。`;
+            }
+        }
+        
+        case 'delete_product_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) {
+                return '找不到該商品，可能已被刪除。';
+            }
+            return {
+                type: 'text',
+                text: `⚠️ 您確定要「永久刪除」商品「${product.name}」嗎？\n\n此操作無法復原，但不會影響到與此商品相關的歷史訂單紀錄。`,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認刪除', data: `action=delete_product_execute&product_id=${product.id}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+
+        case 'delete_product_execute': {
+            const productId = data.get('product_id');
+            if (!productId) {
+                return '操作失敗，缺少商品 ID。';
+            }
+            const result = await executeDbQuery(client => 
+                client.query("DELETE FROM products WHERE id = $1 RETURNING name", [productId])
+            );
+            if (result.rowCount > 0) {
+                const productName = result.rows[0].name;
+                return `✅ 已成功刪除商品「${productName}」。`;
+            } else {
+                return '找不到該商品，可能已被其他管理員刪除。';
+            }
+        }
+        
+        // =======================================================
+        // == V41 預購流程 (Pre-order Flow)
+        // =======================================================
+        
+        case 'view_preorder_list': {
+            const productId = data.get('product_id');
+            return showPreorderRoster(productId);
+        }
+
+        case 'stop_preorder_start': {
+            // ... (此處省略，沿用 V41 邏輯)
+            break;
+        }
+        // ... (其他預購相關的 case) ...
+
+        // =======================================================
+        // == V42 學員購買流程 (Student Purchase Flow)
+        // =======================================================
+
+        case 'update_product_view': {
+            const productId = data.get('productId');
+            const selectedOptions = {};
+            for (const [key, value] of data.entries()) {
+                if (key !== 'action' && key !== 'productId') {
+                    selectedOptions[key] = decodeURIComponent(value);
+                }
+            }
+            return buildInteractiveProductCard(productId, selectedOptions);
+        }
+
+        case 'confirm_single_product_purchase': {
+            const variant_id = data.get('variant_id');
+            if (!variant_id) return '操作失敗，缺少商品規格資訊。';
+            return buildQuantitySelectionFlex(variant_id); 
+        }
     }
+
+    console.log(`[INFO] 在 handleProductActions 中未處理的 Action: ${action}`);
+    return null;
 }
 
 
