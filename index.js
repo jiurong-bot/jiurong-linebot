@@ -1,4 +1,4 @@
-// index.js - V40.4 (新建預購）
+// index.js - V40.5 (共用FlexMessage元件）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -5933,7 +5933,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V40.4 (新建預購）`);
+    console.log(`Bot 版本 V40.5 (共用FlexMessage元件）`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
