@@ -1407,7 +1407,7 @@ async function showCourseInquiry(event, user) {
         contents: { 
             type: 'bubble', 
             size: 'giga', 
-            createStandardHeader('💎 點數管理'),
+            header:createStandardHeader('💎 點數管理'),
             body: { 
                 type: 'box', 
                 layout: 'vertical', 
