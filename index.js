@@ -5910,36 +5910,1642 @@ app.listen(PORT, async () => {
 // =======================================================
 // [優化建議] Postback 子處理函式區塊
 // =======================================================
-
+/**
+ * 處理所有「瀏覽分頁」相關的 Postback
+ */
 async function handleViewActions(action, data, user) {
-    // 這個函式將處理所有「瀏覽分頁」的邏輯
-}
+    const page = parseInt(data.get('page') || '1', 10);
+    const userId = user.id;
 
+    switch (action) {
+        case 'view_sold_out_products':
+            return showSoldOutProducts(page);
+        case 'view_preorder_products':
+            return showPreorderProducts(page);
+        case 'view_fulfillment_list':
+            return showFulfillmentList(page);
+        case 'view_error_logs':
+            return showErrorLogs(page);
+        case 'view_course_series':
+            return showCourseSeries(page);
+        case 'view_course_roster_summary':
+            return showCourseRosterSummary(page);
+        case 'view_course_roster_details':
+            return showCourseRosterDetails(data.get('course_id'));
+        case 'view_student_details':
+            return showStudentDetails(data.get('studentId'));
+        case 'list_teachers_for_removal':
+            return showTeacherListForRemoval(page);
+        case 'view_pending_orders':
+        case 'view_pending_orders_page':
+            return showPendingOrders(page);
+        case 'student_search_results':
+            return showStudentSearchResults(decodeURIComponent(data.get('query') || ''), page);
+        case 'view_unread_messages':
+            return showUnreadMessages(page);
+        case 'view_announcements_for_deletion':
+            return showAnnouncementsForDeletion(page);
+        case 'view_purchase_history':
+            return showPurchaseHistory(userId, page);
+        case 'view_available_courses':
+            return showAvailableCourses(userId, data);
+        case 'view_my_courses':
+            return showMyCourses(userId, page);
+        case 'view_shop_products':
+            return showShopProducts(page);
+        case 'view_my_messages':
+            return showMyMessages(userId, page);
+        case 'view_products':
+            return showProductManagementList(page, data.get('filter'));
+        case 'view_pending_shop_orders':
+            return showPendingShopOrders(page);
+        case 'view_exchange_history':
+            return showStudentExchangeHistory(userId, page);
+        case 'view_historical_messages':
+            return showHistoricalMessages(decodeURIComponent(data.get('query') || ''), page);
+        case 'view_failed_tasks':
+            return showFailedTasks(page);
+        case 'manage_course_group':
+            return showSingleCoursesForCancellation(data.get('prefix'), page);
+        case 'view_manual_adjust_history':
+            return showManualAdjustHistory(page, data.get('user_id'));
+        case 'view_all_purchase_history_as_teacher':
+            return showPurchaseHistoryAsTeacher(page);
+        case 'view_purchase_history_as_teacher':
+            return showPurchaseHistoryAsTeacher(page, data.get('user_id'));
+        case 'view_all_exchange_history_as_teacher':
+            return showExchangeHistoryAsTeacher(page);
+        case 'view_exchange_history_as_teacher':
+            return showExchangeHistoryAsTeacher(page, data.get('user_id'));
+        case 'view_all_historical_messages_as_teacher':
+            return showHistoricalMessagesAsTeacher(page);
+        case 'view_historical_messages_as_teacher':
+            return showHistoricalMessagesAsTeacher(page, data.get('user_id'));
+        case 'list_all_teachers':
+            return showAllTeachersList(page);
+    }
+    return null;
+}
+/**
+ * 處理「管理員專用」的指令
+ */
 async function handleAdminActions(action, data, user) {
-    // 這個函式將處理「管理員專用」的指令
-}
+    const userId = user.id;
+    switch (action) {
+        case 'toggle_global_setting': {
+            const key = data.get('key');
+            const currentValue = data.get('value') === 'true';
+            const newValue = !currentValue;
 
+            await executeDbQuery(async (db) => {
+                await db.query(
+                    `INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ($1, $2, NOW())
+                     ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2, updated_at = NOW()`,
+                    [key, newValue.toString()]
+                );
+            });
+            
+            simpleCache.clear(key);
+            return buildAdminPanelFlex();
+        }
+        case 'delete_error_log': {
+            const logId = data.get('id');
+            if (!logId) return '操作失敗，缺少日誌 ID。';
+            const result = await executeDbQuery(client =>
+                client.query('DELETE FROM error_logs WHERE id = $1', [logId])
+            );
+            return result.rowCount > 0
+                ? `✅ 已成功刪除錯誤日誌 #${logId}。`
+                : '找不到該筆錯誤日誌，可能已被刪除。';
+        }
+        case 'select_student_for_auth': {
+            const targetId = data.get('targetId');
+            const targetName = decodeURIComponent(data.get('targetName'));
+            if (!targetId || !targetName) return '操作失敗，缺少目標學員資訊。';
+            pendingTeacherAddition[userId] = { step: 'await_confirmation', targetUser: { id: targetId, name: targetName } };
+            setupConversationTimeout(userId, pendingTeacherAddition, 'pendingTeacherAddition', u => { enqueuePushTask(u, { type: 'text', text: '授權老師操作逾時。' }).catch(e => console.error(e)); });
+            return { type: 'text', text: `您確定要授權學員「${targetName}」成為老師嗎？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
+        }
+        case 'select_teacher_for_removal': {
+            const targetId = data.get('targetId');
+            const targetName = decodeURIComponent(data.get('targetName'));
+            if (!targetId || !targetName) return '操作失敗，缺少目標老師資訊。';
+            pendingTeacherRemoval[userId] = { step: 'await_confirmation', targetUser: { id: targetId, name: targetName } };
+            setupConversationTimeout(userId, pendingTeacherRemoval, 'pendingTeacherRemoval', u => enqueuePushTask(u, { type: 'text', text: '移除老師操作逾時。' }));
+            return { type: 'text', text: `您確定要移除老師「${targetName}」的權限嗎？\n該用戶將會變回學員身份。`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER, text: CONSTANTS.COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
+        }
+        case 'retry_failed_task':
+        case 'delete_failed_task': {
+            const failedTaskId = data.get('id');
+            if (action === 'retry_failed_task') {
+                return executeDbQuery(async (db) => {
+                    await db.query('BEGIN');
+                    try {
+                        const failedTaskRes = await db.query('SELECT * FROM failed_tasks WHERE id = $1 FOR UPDATE', [failedTaskId]);
+                        if (failedTaskRes.rows.length === 0) { await db.query('ROLLBACK'); return '找不到該失敗任務，可能已被處理。'; }
+                        const taskToRetry = failedTaskRes.rows[0];
+                        await db.query(`INSERT INTO tasks (recipient_id, message_payload, status, retry_count, last_error) VALUES ($1, $2, 'pending', 0, 'Retried from DLQ')`, [taskToRetry.recipient_id, taskToRetry.message_payload]);
+                        await db.query('DELETE FROM failed_tasks WHERE id = $1', [failedTaskId]);
+                        await db.query('COMMIT');
+                        return `✅ 已將任務 #${failedTaskId} 重新加入佇列等待發送。`;
+                    } catch (err) {
+                        await db.query('ROLLBACK');
+                        console.error(`❌ 重試失敗任務 ${failedTaskId} 失敗:`, err);
+                        return '處理任務時發生錯誤，操作已取消。';
+                    }
+                });
+            } else { // delete_failed_task
+                const result = await executeDbQuery(client => client.query('DELETE FROM failed_tasks WHERE id = $1', [failedTaskId]) );
+                return result.rowCount > 0 ? `✅ 已成功刪除失敗任務 #${failedTaskId}。` : '找不到該失敗任務，可能已被刪除。';
+            }
+        }
+    }
+    return null;
+}
+/**
+ * 處理「老師」相關的操作 (包含個人資訊設定、手動調點、啟動查詢流程等)
+ */
 async function handleTeacherActions(action, data, user) {
-    // 這個函式將處理「老師」相關的操作
+    const userId = user.id;
+    switch (action) {
+        case 'manage_personal_profile': {
+            return executeDbQuery(async (client) => {
+                const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
+                if (res.rows.length > 0) {
+                    const profile = res.rows[0];
+                    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
+                    return {
+                        type: 'flex', altText: '我的個人資訊',
+                        contents: {
+                            type: 'bubble',
+                            hero: { type: 'image', url: profile.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                            body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md', contents: [ { type: 'text', text: profile.name, weight: 'bold', size: 'xl' }, { type: 'text', text: profile.bio || '尚未填寫簡介', wrap: true, size: 'sm', color: '#666666' } ] },
+                            footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯姓名', data: `action=edit_teacher_profile_field&field=name` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯簡介', data: `action=edit_teacher_profile_field&field=bio` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📷 更換照片', data: `action=edit_teacher_profile_field&field=image_url` } }, ] }
+                        }
+                    };
+                } else {
+                    return { type: 'text', text: '您好！您尚未建立您的公開師資檔案。\n建立檔案後，您的資訊將會顯示在「師資查詢」列表中。', quickReply: { items: [{ type: 'action', action: { type: 'postback', label: '➕ 開始建立檔案', data: 'action=create_teacher_profile_start' } }] } };
+                }
+            });
+        }
+        case 'create_teacher_profile_start': {
+            pendingTeacherProfileEdit[userId] = { type: 'create', step: 'await_name', profileData: {} };
+            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfile-Edit', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '建立檔案操作逾時，自動取消。' });
+            });
+            return { type: 'text', text: '好的，我們開始建立您的師資檔案。\n\n首先，請輸入您希望顯示的姓名或暱稱：', quickReply: { items: getCancelMenu() } };
+        }
+        case 'edit_teacher_profile_field': {
+            const field = data.get('field');
+            const fieldMap = { name: '姓名/暱稱', bio: '個人簡介', image_url: '新的照片' };
+            const promptMap = { name: '請輸入您想更新的姓名或暱稱：', bio: '請輸入您想更新的個人簡介 (可換行)：', image_url: '請直接上傳一張您想更換的個人照片：' };
+            pendingTeacherProfileEdit[userId] = { type: 'edit', step: `await_${field}` };
+            setupConversationTimeout(userId, pendingTeacherProfileEdit, 'pendingTeacherProfileEdit', (u) => {
+                enqueuePushTask(u, { type: 'text', text: `編輯${fieldMap[field]}操作逾時，自動取消。` });
+            });
+            return { type: 'text', text: promptMap[field], quickReply: { items: getCancelMenu() } };
+        }
+        case 'confirm_teacher_profile_update': {
+            const state = pendingTeacherProfileEdit[userId];
+            if (!state || state.step !== 'await_confirmation' || !state.newData) { return '確認操作已逾時或無效，請重新操作。';
+            }
+            const newData = state.newData;
+            const isCreating = state.type === 'create';
+            delete pendingTeacherProfileEdit[userId];
+            
+            await executeDbQuery(async (client) => {
+                if (isCreating) {
+                    await client.query( `INSERT INTO teachers (line_user_id, name, bio, image_url) VALUES ($1, $2, $3, $4) ON CONFLICT (line_user_id) DO UPDATE SET name = EXCLUDED.name, bio = EXCLUDED.bio, image_url = EXCLUDED.image_url, updated_at = NOW()`, [userId, newData.name, newData.bio, newData.image_url] );
+                } else {
+                    const fields = Object.keys(newData);
+                    const setClauses = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+                    const values = Object.values(newData);
+                    await client.query( `UPDATE teachers SET ${setClauses}, updated_at = NOW() WHERE line_user_id = $${fields.length + 1}`, [...values, userId] );
+                }
+            });
+            const successMessage = isCreating ? '✅ 恭喜！您的師資檔案已成功建立！' : '✅ 您的個人檔案已成功更新！';
+            return successMessage;
+        }
+        case 'select_student_for_adjust': {
+            const studentId = data.get('studentId');
+            const student = await getUser(studentId);
+            if (!student) return '找不到該學員的資料。';
+            pendingManualAdjust[userId] = { step: 'await_operation', targetStudent: { id: student.id, name: student.name } };
+            setupConversationTimeout(userId, pendingManualAdjust, 'pendingManualAdjust', (u) => enqueuePushTask(u, { type: 'text', text: '手動調整點數逾時，自動取消。' }));
+            return { type: 'text', text: `已選擇學員：「${student.name}」。\n請問您要為他加點或扣點？`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS, text: CONSTANTS.COMMANDS.TEACHER.ADD_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS, text: CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
+        }
+        case 'select_announcement_for_deletion': {
+            const ann_id = data.get('ann_id');
+            const annRes = await executeDbQuery(client => client.query("SELECT content FROM announcements WHERE id = $1", [ann_id]) );
+            if(annRes.rows.length === 0) return '找不到該公告。';
+            pendingAnnouncementDeletion[userId] = { ann_id };
+            setupConversationTimeout(userId, pendingAnnouncementDeletion, 'pendingAnnouncementDeletion', u => enqueuePushTask(u, { type: 'text', text: '刪除公告操作逾時。' }));
+            return { type: 'text', text: `您確定要刪除以下公告嗎？\n\n「${annRes.rows[0].content.substring(0, 100)}...」`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_DELETE_ANNOUNCEMENT, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_DELETE_ANNOUNCEMENT}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
+        }
+        case 'select_purchase_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的購點紀錄，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部紀錄', data: 'action=view_all_purchase_history_as_teacher&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_purchase_history_search' } }
+                    ]
+                }
+            };
+        }
+        case 'select_exchange_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的購買紀錄，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部紀錄', data: 'action=view_all_exchange_history_as_teacher&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_exchange_history_search' } }
+                    ]
+                }
+            };
+        }
+        case 'select_message_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的留言，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部留言', data: 'action=view_all_historical_messages_as_teacher&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_message_history_search' } }
+                    ]
+                }
+            };
+        }
+        case 'select_adjust_history_view_type': {
+            return {
+                type: 'text',
+                text: '請問您要查詢所有學員的紀錄，還是特定學員？',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '📜 顯示全部紀錄', data: 'action=view_manual_adjust_history&page=1' } },
+                        { type: 'action', action: { type: 'postback', label: '🔍 搜尋特定學員', data: 'action=start_manual_adjust_history_search' } }
+                    ]
+                }
+            };
+        }
+        case 'start_manual_adjust_history_search': {
+            pendingManualAdjustSearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingManualAdjustSearch, 'pendingManualAdjustSearch', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '搜尋操作已逾時，自動取消。' });
+            });
+            return {
+                type: 'text',
+                text: '請輸入您想查詢的學員姓名：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+        case 'start_purchase_history_search': {
+            pendingPurchaseHistorySearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingPurchaseHistorySearch, 'pendingPurchaseHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋購點紀錄操作逾時，自動取消。' }));
+            return {
+                type: 'text',
+                text: '請輸入您想查詢購點紀錄的學員姓名或 User ID：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+        case 'start_exchange_history_search': {
+            pendingExchangeHistorySearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingExchangeHistorySearch, 'pendingExchangeHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋購買紀錄操作逾時，自動取消。' }));
+            return {
+                type: 'text',
+                text: '請輸入您想查詢購買紀錄的學員姓名或 User ID：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+        case 'start_message_history_search': {
+            pendingMessageHistorySearch[userId] = { step: 'await_student_name' };
+            setupConversationTimeout(userId, pendingMessageHistorySearch, 'pendingMessageHistorySearch', u => enqueuePushTask(u, { type: 'text', text: '搜尋歷史留言操作逾時，自動取消。' }));
+            return {
+                type: 'text',
+                text: '請輸入您想查詢歷史留言的學員姓名或 User ID：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+    }
+    return null;
 }
-
+/**
+ * 處理所有與「課程」相關的操作
+ */
 async function handleCourseActions(action, data, user) {
-    // 這個函式將處理所有與「課程」相關的操作
-}
+    const userId = user.id;
+    switch (action) {
+        case 'set_course_weekday': {
+            const state = pendingCourseCreation[userId];
+            if (!state || state.step !== 'await_weekday') return '新增課程流程已逾時或中斷。';
+            state.weekday = parseInt(data.get('day'), 10);
+            state.weekday_label = WEEKDAYS.find(d => d.value === state.weekday).label;
+            state.step = 'await_start_time';
+            return {
+                type: 'text',
+                text: `好的，課程固定在每${state.weekday_label}。\n\n請問『開始』時間是幾點？（請輸入四位數時間，例如：19:30）`,
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+        case 'select_teacher_for_course': {
+            const state = pendingCourseCreation[userId];
+            const teacher_id = parseInt(data.get('teacher_id'), 10);
+            if (!state || state.step !== 'await_teacher' || !teacher_id) {
+                return '操作已逾時或無效，請重新新增課程。';
+            }
+            state.teacher_id = teacher_id;
+            state.step = 'await_confirmation';
+            const teacher = await executeDbQuery(client =>
+                client.query('SELECT name FROM teachers WHERE id = $1', [teacher_id])
+            ).then(res => res.rows[0]);
+            state.teacher_name = teacher?.name || '未知老師';
 
+            const firstDate = getNextDate(state.weekday, state.start_time);
+            const summary = `請確認課程資訊：\n\n` +
+                `標題：${state.title}\n` +
+                `老師：${state.teacher_name}\n` +
+                `時間：每${state.weekday_label} ${state.start_time} - ${state.end_time}\n` +
+                `堂數：${state.sessions} 堂\n` +
+                `名額：${state.capacity} 位\n` +
+                `費用：${state.points_cost} 點/堂\n\n` +
+                `首堂開課日約為：${firstDate.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })}`;
+            return {
+                type: 'text',
+                text: summary,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'message', label: '✅ 確認新增', text: '✅ 確認新增' } },
+                        { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'publish_prefilled_announcement': {
+            const state = pendingAnnouncementCreation[userId];
+            if (!state || !state.content) return '操作已逾時或無效，請重新操作。';
+            
+            const contentToPublish = state.content;
+            delete pendingAnnouncementCreation[userId];
+            await executeDbQuery(client => 
+                client.query( "INSERT INTO announcements (content, creator_id, creator_name) VALUES ($1, $2, $3)", [contentToPublish, userId, user.name])
+            );
+            return '✅ 公告已成功頒佈！學員可在「最新公告」中查看。';
+        }
+        case 'edit_prefilled_announcement': {
+            const state = pendingAnnouncementCreation[userId];
+            if (!state) return '操作已逾時或無效，請重新操作。';
+            state.step = 'await_content';
+            return { 
+                type: 'text', 
+                text: '請輸入您修改後的完整公告內容：',
+                quickReply: { items: getCancelMenu() } 
+            };
+        }
+        case 'cancel_announcement': {
+            if (pendingAnnouncementCreation[userId]) {
+                delete pendingAnnouncementCreation[userId];
+            }
+            return '好的，暫不發佈。';
+        }
+        case 'cancel_course_group_confirm': {
+            const prefix = data.get('prefix');
+            const courseTitle = await executeDbQuery(client => client.query("SELECT title FROM courses WHERE id LIKE $1 LIMIT 1", [`${prefix}%`])).then(res => res.rows[0]?.title);
+            if (!courseTitle) return '找不到此課程系列。';
+            const mainTitle = getCourseMainTitle(courseTitle);
+            pendingCourseCancellation[userId] = { type: 'batch', prefix };
+            setupConversationTimeout(userId, pendingCourseCancellation, 'pendingCourseCancellation', u => enqueuePushTask(u, { type: 'text', text: '取消課程操作逾時。' }));
+            return { type: 'text', text: `⚠️ 警告：您確定要批次取消「${mainTitle}」系列的所有未來課程嗎？\n此操作將會退還點數給所有已預約的學員，且無法復原。`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
+        }
+        case 'confirm_single_course_cancel': {
+            const courseId = data.get('course_id');
+            const course = await getCourse(courseId);
+            if (!course) return '找不到此課程。';
+            pendingCourseCancellation[userId] = { type: 'single', course_id: courseId };
+            setupConversationTimeout(userId, pendingCourseCancellation, 'pendingCourseCancellation', u => enqueuePushTask(u, { type: 'text', text: '取消課程操作逾時。' }));
+            return { type: 'text', text: `您確定要取消單堂課程「${course.title}」嗎？\n此操作將退還點數給已預約的學員。`, quickReply: { items: [{type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL, text: CONSTANTS.COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL}}, {type: 'action', action: {type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL }}]}};
+        }
+        case 'select_booking_spots': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) return '抱歉，找不到該課程。';
+            const remainingSpots = course.capacity - course.students.length;
+            if (remainingSpots <= 0) return '抱歉，此課程名額已滿。';
+            const maxSpots = Math.min(5, remainingSpots);
+            const buttons = Array.from({ length: maxSpots }, (_, i) => ({ type: 'button', style: 'secondary', height: 'sm', margin: 'sm', action: { type: 'postback', label: `${i + 1} 位 (共 ${course.points_cost * (i + 1)} 點)`, data: `action=start_booking_confirmation&course_id=${course.id}&spots=${i + 1}` } }));
+            return { type: 'flex', altText: '請選擇預約人數', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '選擇預約人數', weight: 'bold', size: 'lg', color: '#FFFFFF' }], backgroundColor: '#52b69a' }, body: { type: 'box', layout: 'vertical', contents: [ { type: 'text', text: course.title, wrap: true, weight: 'bold', size: 'md' }, { type: 'text', text: `剩餘名額：${remainingSpots} 位`, size: 'sm', color: '#666666', margin: 'md' }, { type: 'separator', margin: 'lg' } ] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: buttons } } };
+        }
+        case 'start_booking_confirmation': {
+            const course_id = data.get('course_id');
+            const spotsToBook = parseInt(data.get('spots'), 10);
+            const course = await getCourse(course_id);
+            if (!course) return '抱歉，找不到該課程。';
+            const totalCost = course.points_cost * spotsToBook;
+            const remainingSpots = course.capacity - course.students.length;
+            if (spotsToBook > remainingSpots) return `抱歉，課程名額不足！\n目前僅剩 ${remainingSpots} 位。`;
+            if (user.points < totalCost) return `抱歉，您的點數不足！\n預約 ${spotsToBook} 位需 ${totalCost} 點，您目前有 ${user.points} 點。`;
+            pendingBookingConfirmation[userId] = { type: 'confirm_book', course_id: course.id, spots: spotsToBook };
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '預約操作已逾時，自動取消。' });
+            });
+            const message = `請確認預約資訊：\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n預約：${spotsToBook} 位\n花費：${totalCost} 點\n\n您目前的點數為：${user.points} 點`;
+            return { type: 'text', text: message, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認預約', data: `action=execute_booking&course_id=${course.id}&spots=${spotsToBook}` } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}};
+        }
+        case 'execute_booking': {
+            const course_id = data.get('course_id');
+            const spotsToBook = parseInt(data.get('spots'), 10);
+            const result = await executeDbQuery(async (clientDB) => {
+                await clientDB.query('BEGIN');
+                try {
+                    const userForUpdate = await clientDB.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
+                    const courseForUpdate = await clientDB.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
+                    const course = courseForUpdate.rows[0];
+                    const student = userForUpdate.rows[0];
+                    if (!course) { await clientDB.query('ROLLBACK'); return '抱歉，找不到該課程，可能已被老師取消。'; }
+                    const remainingSpots = course.capacity - course.students.length;
+                    if (spotsToBook > remainingSpots) { await clientDB.query('ROLLBACK'); return `預約失敗，課程名額不足！\n目前剩餘 ${remainingSpots} 位，您想預約 ${spotsToBook} 位。`; }
+                    const totalCost = course.points_cost * spotsToBook;
+                    if (student.points < totalCost) { await clientDB.query('ROLLBACK');
+                        return `預約失敗，您的點數不足！\n需要點數：${totalCost}\n您目前有：${student.points}`; }
+                    
+                    const newStudents = [...course.students, ...Array(spotsToBook).fill(userId)];
+                    const historyEntry = { action: `預約課程 (共${spotsToBook}位)：${course.title}`, pointsChange: -totalCost, time: new Date().toISOString() };
+                    const newHistory = student.history ?
+                        [...student.history, historyEntry] : [historyEntry];
+                    await clientDB.query('UPDATE users SET points = points - $1, history = $2 WHERE id = $3', [totalCost, JSON.stringify(newHistory), userId]);
+                    await clientDB.query('UPDATE courses SET students = $1 WHERE id = $2', [newStudents, course_id]);
+                    const reminderTime = new Date(new Date(course.time).getTime() - CONSTANTS.TIME.ONE_HOUR_IN_MS);
+                    if (reminderTime > new Date()) {
+                        const reminderMessage = { type: 'text', text: `🔔 課程提醒 🔔\n您預約的課程「${course.title}」即將在約一小時後開始，請準備好上課囉！` };
+                        await enqueuePushTask(userId, reminderMessage, reminderTime);
+                    }
+                    await clientDB.query('COMMIT');
+                    return `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`;
+                } catch (e) {
+                    await clientDB.query('ROLLBACK');
+                    console.error('多人預約課程失敗:', e); 
+                    return '預約時發生錯誤，請稍後再試。';
+                }
+            });
+            delete pendingBookingConfirmation[userId];
+            return result;
+        }
+        case 'confirm_cancel_booking_start':
+        case 'confirm_cancel_waiting_start': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) return '找不到該課程，可能已被老師取消或已結束。';
+            const isBooking = action === 'confirm_cancel_booking_start';
+            pendingBookingConfirmation[userId] = { type: isBooking ? 'cancel_book' : 'cancel_wait', course_id: course_id };
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => enqueuePushTask(u, { type: 'text', text: '取消操作已逾時，自動放棄。' }));
+            const actionText = isBooking ? '取消預約' : '取消候補';
+            const confirmCommand = isBooking ? CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING : CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING;
+            return { type: 'text', text: `您確定要「${actionText}」以下課程嗎？\n\n課程：${course.title}\n時間：${formatDateTime(course.time)}`, quickReply: { items: [ { type: 'action', action: { type: 'message', label: `✅ 確認${actionText}`, text: confirmCommand } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ] } };
+        }
+        case 'confirm_join_waiting_list_start': {
+            const course_id = data.get('course_id');
+            const course = await getCourse(course_id);
+            if (!course) return '抱歉，找不到該課程，可能已被老師取消。';
+            
+            pendingBookingConfirmation[userId] = { type: 'confirm_wait', course_id: course_id };
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '加入候補操作已逾時，自動取消。' });
+            });
+            const message = `您確定要加入以下課程的候補名單嗎？\n\n課程：${getCourseMainTitle(course.title)}\n時間：${formatDateTime(course.time)}\n\n候補不需支付點數，當有名額釋出時，系統將會發送通知給您。`;
+            
+            return {
+                type: 'text',
+                text: message,
+                quickReply: {
+                    items: [
+                         { type: 'action', action: { type: 'postback', label: '✅ 確認加入候補', data: `action=execute_join_waiting_list&course_id=${course.id}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消操作', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'execute_join_waiting_list': {
+            const course_id = data.get('course_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const courseRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [course_id]);
+                    if (courseRes.rows.length === 0) { await client.query('ROLLBACK'); return '抱歉，找不到該課程，可能已被老師取消。'; }
+                    const course = courseRes.rows[0];
+                    if ((course.students?.length || 0) < course.capacity) { await client.query('ROLLBACK'); return '好消息！這堂課剛好有名額釋出了，請回到列表直接點擊「預約課程」按鈕。'; }
+                    if (course.waiting?.includes(userId)) { await client.query('ROLLBACK'); return '您已在候補名單中，請耐心等候通知。'; }
+
+                     const newWaitingList = [...(course.waiting || []), userId];
+                    await client.query('UPDATE courses SET waiting = $1 WHERE id = $2', [newWaitingList, course_id]);
+                    await client.query('COMMIT');
+                    return `✅ 已成功將您加入「${getCourseMainTitle(course.title)}」的候補名單！\n當有名額釋出時，系統將會發送通知給您。`;
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error(`加入候補失敗 courseId: ${course_id}`, err);
+                    return '加入候補時發生錯誤，請稍後再試。';
+                }
+            });
+            delete pendingBookingConfirmation[userId];
+            return result;
+        }
+        case 'waitlist_confirm': {
+            const course_id = data.get('course_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const inviteRes = await client.query(
+                         `SELECT * FROM waitlist_notifications 
+                         WHERE course_id = $1 AND user_id = $2 AND status = 'pending' AND expires_at > NOW() 
+                         FOR UPDATE`,
+                         [course_id, userId]
+                    );
+
+                    if (inviteRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return '抱歉，您的候補邀請已失效或已被處理。';
+                    }
+
+                    const userRes = await client.query("SELECT * FROM users WHERE id = $1 FOR UPDATE", [userId]);
+                    const courseRes = await client.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [course_id]);
+                    const user = userRes.rows[0];
+                    const course = courseRes.rows[0];
+                    if (!course) { await client.query('ROLLBACK'); return '抱歉，找不到此課程。'; }
+                    if (user.points < course.points_cost) { await client.query('ROLLBACK');
+                        return `點數不足！預約此課程需要 ${course.points_cost} 點，您目前有 ${user.points} 點。`; }
+                    if (course.students.length >= course.capacity) {
+                        await client.query('ROLLBACK');
+                        return '抱歉，您慢了一步，課程名額剛好被補滿了。';
+                    }
+
+                    await client.query("UPDATE waitlist_notifications SET status = 'confirmed' WHERE id = $1", [inviteRes.rows[0].id]);
+                    const newStudents = [...course.students, userId];
+                    const newPoints = user.points - course.points_cost;
+                    await client.query("UPDATE users SET points = $1 WHERE id = $2", [newPoints, userId]);
+                    await client.query("UPDATE courses SET students = $1 WHERE id = $2", [newStudents, course_id]);
+                    
+                    await client.query('COMMIT');
+                    return `✅ 候補成功！已為您預約課程「${getCourseMainTitle(course.title)}」，並扣除 ${course.points_cost} 點。`;
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('[Waitlist Confirm] 候補確認失敗:', err);
+                    return '系統忙碌中，候補確認失敗，請稍後再試。';
+                }
+            });
+            return result;
+        }
+        case 'waitlist_forfeit': {
+            const course_id = data.get('course_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const updateRes = await client.query(
+                         `UPDATE waitlist_notifications SET status = 'forfeited' 
+                         WHERE course_id = $1 AND user_id = $2 AND status = 'pending'
+                         RETURNING id`,
+                         [course_id, userId]
+                    );
+                    
+                    if (updateRes.rowCount === 0) {
+                         await client.query('ROLLBACK');
+                        return '您的候補邀請已失效。';
+                    }
+
+                    const courseRes = await client.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [course_id]);
+                    const course = courseRes.rows[0];
+                    if (course && course.waiting?.length > 0) {
+                        const nextUserId = course.waiting[0];
+                        const newWaitingList = course.waiting.slice(1);
+                        await client.query("UPDATE courses SET waiting = $1 WHERE id = $2", [newWaitingList, course_id]);
+                        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+                        await client.query(
+                            `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
+                            [course_id, nextUserId, expiresAt]
+                        );
+                        const mainTitle = getCourseMainTitle(course.title);
+                        const invitationMessage = { /* ... 此處省略 Flex Message 結構 ... */ };
+                        await enqueuePushTask(nextUserId, invitationMessage);
+                    }
+
+                    await client.query('COMMIT');
+                    return '好的，已為您放棄此次候補資格。';
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('[Waitlist Forfeit] 候補放棄失敗:', err);
+                    return '系統忙碌中，操作失敗，請稍後再試。';
+                }
+            });
+             const forfeitMessage = {
+                type: 'text',
+                text: '好的，已為您放棄此次候補資格。'
+             };
+            await enqueuePushTask(userId, forfeitMessage);
+            return;
+        }
+    }
+    return null;
+}
+/**
+ * 處理所有與「商品」相關的操作
+ */
 async function handleProductActions(action, data, user) {
-    // 這個函式將處理所有與「商品」相關的操作
-}
+    const userId = user.id;
+    switch (action) {
+        case 'view_preorder_list': {
+            const productId = data.get('product_id');
+            return showPreorderRoster(productId);
+        }
+        case 'stop_preorder_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
 
+            const preorderCount = await executeDbQuery(client => 
+                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+            ).then(res => parseInt(res.rows[0].count, 10) || 0);
+            let messageText = `您確定要停止「${product.name}」的預購並將其下架嗎？\n\n此操作將無法再接受新的預購。`;
+            if (preorderCount > 0) {
+                messageText += `\n目前共有 ${preorderCount} 位學員正在等候。`;
+            }
+
+            return {
+                type: 'text',
+                text: messageText,
+                quickReply: {
+                    items: [
+                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_stop_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'execute_stop_preorder': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query("SELECT name, status FROM products WHERE id = $1 FOR UPDATE", [productId]);
+                    if (productRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { status: 'error', message: '❌ 操作失敗，找不到該商品。' };
+                    }
+                    const product = productRes.rows[0];
+                    if (product.status === 'unavailable') {
+                        await client.query('ROLLBACK'); 
+                        return { status: 'processed' }; 
+                    }
+                    if (product.status !== 'preorder') {
+                        await client.query('ROLLBACK');
+                        return { status: 'error', message: '❌ 操作失敗，該商品不是預購狀態。' };
+                    }
+                    await client.query("UPDATE products SET status = 'unavailable' WHERE id = $1", [productId]);
+                    await client.query('COMMIT');
+                    return { status: 'success', productName: product.name };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error("停止預購失敗:", err);
+                    return { status: 'error', message: '❌ 操作失敗，資料庫發生錯誤。' };
+                }
+            });
+            if (result.status === 'success') {
+                return `✅ 已成功停止「${result.productName}」的預購並將商品下架。\n\n商品到貨後，請至「待出貨管理」頁面通知學員。`;
+            } else if (result.status === 'error') {
+                return result.message;
+            }
+            return null;
+        }
+        case 'enable_preorder_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            return {
+                type: 'text',
+                text: `您確定要為「${product.name}」開啟預購功能嗎？\n\n開啟後，學員將可以在商品頁看到並預購此商品。`,
+                quickReply: {
+                    items: [
+                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_enable_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'execute_enable_preorder': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(client =>
+                client.query("UPDATE products SET status = 'preorder' WHERE id = $1 AND inventory <= 0 RETURNING name", [productId])
+            );
+            if (result.rowCount > 0) {
+                const productName = result.rows[0].name;
+                return `✅ 已成功將「${productName}」轉為預購模式。`;
+            }
+            return '❌ 操作失敗，找不到該商品或商品仍有庫存。';
+        }
+        case 'disable_product_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            return {
+                type: 'text',
+                text: `您確定要將「${product.name}」直接下架嗎？\n\n下架後，商品將會移至「管理已下架商品」區。`,
+                quickReply: {
+                    items: [
+                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_disable_product&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                    ]
+                }
+            };
+        }
+        case 'execute_disable_product': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(client =>
+                client.query("UPDATE products SET status = 'unavailable' WHERE id = $1 RETURNING name", [productId])
+            );
+            if (result.rowCount > 0) {
+                const productName = result.rows[0].name;
+                return `✅ 已成功將「${productName}」下架。`;
+            }
+            return '❌ 操作失敗，找不到該商品。';
+        }
+        case 'select_preorder_quantity': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product || product.status !== 'preorder') {
+                return '抱歉，此商品目前未開放預購。';
+            }
+            const maxQuantity = 5;
+            const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
+                const quantity = i + 1;
+                return {
+                    type: 'button',
+                    style: 'secondary',
+                    height: 'sm',
+                    margin: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: `${quantity} 個`,
+                        data: `action=confirm_product_preorder_start&product_id=${product.id}&qty=${quantity}`
+                    }
+                };
+            });
+            return {
+                type: 'flex',
+                altText: '請選擇預購數量',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '請選擇預購數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                        backgroundColor: '#FF9E00'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
+                            { type: 'text', text: `單價：${product.price} 元 (到貨後付款)`, size: 'sm', color: '#666666', margin: 'md' },
+                            { type: 'separator', margin: 'lg' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: quantityButtons
+                    }
+                }
+            };
+        }
+        case 'confirm_product_preorder_start': {
+            const productId = data.get('product_id');
+            const quantity = parseInt(data.get('qty') || '1', 10);
+            const product = await getProduct(productId);
+
+            if (!product) {
+                return '抱歉，找不到該商品。';
+            }
+            pendingBookingConfirmation[userId] = { type: 'preorder_confirmation' };
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '預購確認操作已逾時，自動取消。' });
+            });
+            const message = `您確定要預購以下商品嗎？\n\n「${product.name}」x ${quantity} 個\n\n(商品到貨後將會通知您付款)`;
+            return {
+                type: 'text',
+                text: message,
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'postback',
+                                label: '✅ 確認',
+                                data: `action=execute_product_preorder&product_id=${product.id}&qty=${quantity}`
+                            }
+                        },
+                        {
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: '❌ 取消',
+                                text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                            }
+                        }
+                    ]
+                }
+            };
+        }
+        case 'execute_product_preorder': {
+            const productId = data.get('product_id');
+            const quantity = parseInt(data.get('qty') || '1', 10);
+            const result = await executeDbQuery(async (client) => {
+                const productRes = await client.query("SELECT name, status FROM products WHERE id = $1", [productId]);
+                if (productRes.rows.length === 0 || productRes.rows[0].status !== 'preorder') {
+                    return { success: false, message: '預購失敗，此商品目前未開放預購。' };
+                }
+                const product = productRes.rows[0];
+                const existingPreorder = await client.query(
+                    "SELECT id FROM product_preorders WHERE user_id = $1 AND product_id = $2 AND status = 'active'",
+                    [userId, productId]
+                );
+                if (existingPreorder.rows.length > 0) {
+                    return { success: false, message: '您已預購過此商品，請耐心等候到貨通知。' };
+                }
+                const preorder_uid = `PRE-${Date.now()}-${userId.slice(-4)}`;
+                await client.query(
+                    `INSERT INTO product_preorders (preorder_uid, product_id, user_id, user_name, quantity, status)
+                     VALUES ($1, $2, $3, $4, $5, 'active')`,
+                    [preorder_uid, productId, userId, user.name, quantity]
+                );
+                return { success: true, productName: product.name, quantity: quantity };
+            });
+            if (result.success) {
+                return `✅ 預購成功！\n\n您已成功預購「${result.productName}」共 ${result.quantity} 個。\n商品到貨後，系統將會發送訊息通知您付款。`;
+            } else {
+                return result.message;
+            }
+        }
+        case 'confirm_add_product': {
+            const state = pendingProductCreation[userId];
+            if (!state || state.step !== 'await_confirmation') return '上架流程已逾時或中斷，請重新操作。';
+            
+            const productStatus = state.isPreorder ? 'preorder' : 'available';
+            const newProduct = await executeDbQuery(client => 
+                client.query(
+                    `INSERT INTO products (name, description, price, inventory, image_url, status, creator_id, creator_name) 
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+                    [state.name, state.description, state.price, state.inventory, state.image_url, productStatus, userId, user.name]
+                )
+            ).then(res => res.rows[0]);
+            delete pendingProductCreation[userId];
+
+            if (!newProduct) {
+                return '❌ 商品上架失敗，請稍後再試。';
+            }
+
+            const prefilledContent = `🛍️ 商城新品上架！\n\n「${newProduct.name}」現正熱賣中，快來逛逛吧！`;
+            pendingAnnouncementCreation[userId] = {
+                step: 'await_final_confirmation',
+                content: prefilledContent
+            };
+            setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+            });
+            return {
+                type: 'flex',
+                altText: '發佈新品公告？',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '📢 發佈新品上架公告', weight: 'bold', color: '#FFFFFF' }],
+                        backgroundColor: '#52B69A',
+                        paddingAll: 'lg'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: prefilledContent, wrap: true }]
+                    }
+                },
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
+                         { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                    ]
+                }
+            };
+        }
+        case 'manage_product': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            const flexMessage = { type: 'flex', altText: '編輯商品資訊', contents: { type: 'bubble', header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `編輯：${product.name}`, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }], backgroundColor: '#52B69A' }, body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯名稱', data: `action=edit_product_field&product_id=${productId}&field=name` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯描述', data: `action=edit_product_field&product_id=${productId}&field=description` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯價格', data: `action=edit_product_field&product_id=${productId}&field=price` } }, { type: 'button', style: 'link', height: 'sm', action: { type: 'postback', label: '✏️ 編輯圖片網址', data: `action=edit_product_field&product_id=${productId}&field=image_url` } } ]}}};
+            return flexMessage;
+        }
+        case 'edit_product_field': {
+            const productId = data.get('product_id');
+            const field = data.get('field');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            pendingProductEdit[userId] = { product, field };
+            setupConversationTimeout(userId, pendingProductEdit, 'pendingProductEdit', u => enqueuePushTask(u, { type: 'text', text: '編輯商品操作逾時，自動取消。' }));
+            const fieldMap = { name: '名稱', description: '描述', price: '價格 (元)', image_url: '圖片網址' };
+            return { type: 'text', text: `請輸入新的「${fieldMap[field]}」：\n(目前為：${product[field] || '無'})`, quickReply: { items: getCancelMenu() } };
+        }
+        case 'adjust_inventory_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到該商品。';
+            pendingInventoryAdjust[userId] = { product, originalInventory: product.inventory };
+            setupConversationTimeout(userId, pendingInventoryAdjust, 'pendingInventoryAdjust', u => enqueuePushTask(u, { type: 'text', text: '調整庫存操作逾時，自動取消。' }));
+            return { type: 'text', text: `正在調整「${product.name}」的庫存 (目前為 ${product.inventory})。\n請輸入要調整的數量 (正數為增加，負數為減少)：`, quickReply: { items: getCancelMenu() } };
+        }
+        case 'toggle_product_status': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query('SELECT status, name FROM products WHERE id = $1 FOR UPDATE', [productId]);
+                    if (productRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '找不到該商品。' };
+                    }
+                    const product = productRes.rows[0];
+                    const newStatus = product.status === 'available' ? 'unavailable' : 'available';
+                    await client.query('UPDATE products SET status = $1 WHERE id = $2', [newStatus, productId]);
+                    await client.query('COMMIT');
+                    
+                    if (newStatus === 'available') {
+                        const prefilledContent = `🔥 熱銷補貨到！\n\n「${product.name}」再度上架，上次沒買到的朋友別再錯過囉！`;
+                        pendingAnnouncementCreation[userId] = {
+                            step: 'await_final_confirmation',
+                            content: prefilledContent
+                        };
+                        setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
+                           enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
+                        });
+                        return { success: true, product: product, shouldAnnounce: true, announcementContent: prefilledContent };
+                    }
+                    
+                    return { success: true, product: product, shouldAnnounce: false };
+                } catch(e) {
+                    await client.query('ROLLBACK');
+                    console.error("切換商品狀態失敗:", e);
+                    return { success: false, message: '操作失敗，請稍後再試。' };
+                }
+            });
+            if (!result.success) {
+                return result.message;
+            }
+
+            if (result.shouldAnnounce) {
+                return {
+                    type: 'flex',
+                    altText: '發佈補貨公告？',
+                    contents: {
+                        type: 'bubble',
+                        header: {
+                            type: 'box',
+                            layout: 'vertical',
+                            contents: [{ type: 'text', text: '📢 發佈補貨公告', weight: 'bold', color: '#FFFFFF' }],
+                            backgroundColor: '#52B69A',
+                            paddingAll: 'lg'
+                        },
+                        body: {
+                            type: 'box',
+                            layout: 'vertical',
+                            contents: [{ type: 'text', text: result.announcementContent, wrap: true }]
+                        }
+                    },
+                    quickReply: {
+                        items: [
+                            { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
+                            { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                        ]
+                    }
+                };
+            } else {
+                return `✅ 已成功將商品「${result.product.name}」設定為「下架」狀態。`;
+            }
+        }
+        case 'select_product_quantity': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product || product.status !== 'available' || product.inventory <= 0) {
+                return '抱歉，此商品目前無法購買。';
+            }
+            const maxQuantity = Math.min(5, product.inventory);
+            const quantityButtons = Array.from({ length: maxQuantity }, (_, i) => {
+                const quantity = i + 1;
+                const totalAmount = product.price * quantity;
+                return {
+                    type: 'button',
+                    style: 'secondary',
+                    height: 'sm',
+                    margin: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: `${quantity} 個 (共 ${totalAmount} 元)`,
+                        data: `action=confirm_product_purchase&product_id=${product.id}&qty=${quantity}`
+                    }
+                };
+            });
+            return {
+                type: 'flex',
+                altText: '請選擇購買數量',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '請選擇購買數量', weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                        backgroundColor: '#52B69A'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: product.name, wrap: true, weight: 'bold', size: 'md' },
+                            { type: 'text', text: `單價：${product.price} 元`, size: 'sm', color: '#666666', margin: 'md' },
+                            { type: 'text', text: `剩餘庫存：${product.inventory} 個`, size: 'sm', color: '#666666' },
+                            { type: 'separator', margin: 'lg' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: quantityButtons
+                    }
+                }
+            };
+        }
+        case 'confirm_product_purchase': {
+            const productId = data.get('product_id');
+            const quantity = parseInt(data.get('qty') || '1', 10);
+            const product = await getProduct(productId);
+            if (!product || product.status !== 'available') return '找不到此商品，或商品已下架。';
+            if (product.inventory < quantity) return `抱歉，此商品庫存不足！\n您想購買 ${quantity} 個，但僅剩 ${product.inventory} 個。`;
+            const totalAmount = product.price * quantity;
+            pendingBookingConfirmation[userId] = { type: 'product_purchase', productId: productId, quantity: quantity };
+            setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '商品購買操作已逾時，自動取消。' });
+            });
+
+            const flexMessage = {
+                type: 'flex',
+                altText: '請選擇付款方式',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{ type: 'text', text: '請確認訂單並選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }],
+                        backgroundColor: '#52B69A'
+                    },
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: product.name, weight: 'bold', size: 'md', wrap: true },
+                            { type: 'text', text: `單價：${product.price} 元`, size: 'sm' },
+                            { type: 'text', text: `數量：${quantity} 個`, size: 'sm' },
+                            { type: 'separator', margin: 'sm' },
+                            { type: 'text', text: `總金額：${totalAmount} 元`, size: 'lg', weight: 'bold', margin: 'sm' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                color: '#34A0A4',
+                                action: {
+                                    type: 'postback',
+                                    label: '🏦 轉帳付款',
+                                    data: `action=execute_product_purchase&product_id=${product.id}&method=transfer&qty=${quantity}`
+                                }
+                            },
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                color: '#1A759F',
+                                action: {
+                                    type: 'postback',
+                                    label: '🤝 現金面交',
+                                    data: `action=execute_product_purchase&product_id=${product.id}&method=cash&qty=${quantity}`
+                                }
+                            },
+                            {
+                                type: 'button',
+                                style: 'secondary',
+                                height: 'sm',
+                                margin: 'md',
+                                action: {
+                                    type: 'message',
+                                    label: '取消',
+                                    text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                }
+                            }
+                        ]
+                    }
+                }
+            };
+            return flexMessage;
+        }
+    }
+    return null;
+}
+/**
+ * 處理所有與「訂單」相關的操作
+ */
 async function handleOrderActions(action, data, user) {
-    // 這個函式將處理所有與「訂單」相關的操作
-}
+    const userId = user.id;
+    switch (action) {
+        case 'notify_product_arrival_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到商品。';
+            
+            const count = await executeDbQuery(client => 
+                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+            ).then(res => parseInt(res.rows[0].count, 10));
+            if (count === 0) {
+                return `「${product.name}」沒有需要通知的預購者。您可以直接封存此紀錄。`;
+            }
 
+            return {
+                type: 'text',
+                text: `您確定要通知 ${count} 位學員「${product.name}」已到貨嗎？\n\n系統將會為他們建立待付款訂單，並發送通知。`,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_notify_product_arrival&product_id=${productId}` } },
+                    { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
+                ]}
+            };
+        }
+        case 'execute_notify_product_arrival': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [productId]);
+                    if (productRes.rows.length === 0) throw new Error('找不到商品');
+                    const product = productRes.rows[0];
+
+                    const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
+                    if (preorders.length === 0) throw new Error('找不到有效的預購紀錄');
+
+                    const notificationTasks = [];
+                    for (const preorder of preorders) {
+                        const totalAmount = product.price * preorder.quantity;
+                        const orderUID = `PROD-${Date.now()}-${preorder.user_id.slice(-4)}`;
+                        
+                        await client.query(
+                            `INSERT INTO product_orders (order_uid, user_id, user_name, product_id, product_name, points_spent, amount, status, payment_method)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_payment', 'transfer')`,
+                            [orderUID, preorder.user_id, preorder.user_name, product.id, `${product.name} x${preorder.quantity}`, 0, totalAmount]
+                        );
+                        
+                        notificationTasks.push({
+                            recipientId: preorder.user_id,
+                            message: { type: 'text', text: `🔔 商品到貨通知！\n您預購的「${product.name}」已經到貨囉！系統已為您建立訂單，請至「商城」->「我的購買紀錄」完成付款。` }
+                        });
+                    }
+
+                    await client.query("UPDATE product_preorders SET status = 'notified' WHERE product_id = $1 AND status = 'active'", [productId]);
+                    await client.query('COMMIT');
+                    return { success: true, tasks: notificationTasks, count: preorders.length };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('執行到貨通知時失敗:', err);
+                    return { success: false, message: `處理失敗：${err.message}` };
+                }
+            });
+            if (result.success) {
+                if (result.tasks.length > 0) {
+                    await enqueueBatchPushTasks(result.tasks);
+                }
+                return `✅ 成功！已為 ${result.count} 位學員建立訂單並發送付款通知。`;
+            } else {
+                return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
+            }
+        }
+        case 'cancel_preorder_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到商品。';
+            
+            const count = await executeDbQuery(client => 
+                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+            ).then(res => parseInt(res.rows[0].count, 10));
+            if (count === 0) {
+                return `「${product.name}」沒有需要取消的預購。`;
+            }
+
+            return {
+                type: 'text',
+                text: `⚠️ 您確定要因為缺貨而取消 ${count} 位學員的「${product.name}」預購嗎？\n\n系統將會發送通知告知學員，此操作無法復原。`,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_cancel_preorder&product_id=${productId}` } },
+                    { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.MANAGE_FULFILLMENT } }
+                ]}
+            };
+        }
+        case 'execute_cancel_preorder': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
+                    if (productRes.rows.length === 0) {
+                         await client.query('ROLLBACK');
+                        return { status: 'error', message: '找不到對應的商品。' };
+                    }
+                    const product = productRes.rows[0];
+
+                    const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
+                    if (preorders.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { status: 'processed' };
+                    }
+
+                    const notificationTasks = preorders.map(preorder => ({
+                        recipientId: preorder.user_id,
+                        message: { type: 'text', text: `❗️ 預購取消通知\n很抱歉，由於廠商供貨問題，您預購的商品「${product.name}」無法到貨，本次預購已為您取消。造成不便，敬請見諒。` }
+                    }));
+                    await client.query("UPDATE product_preorders SET status = 'canceled' WHERE product_id = $1 AND status = 'active'", [productId]);
+                    await client.query('COMMIT');
+                    return { success: true, tasks: notificationTasks, count: preorders.length, productName: product.name };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('執行取消預購時失敗:', err);
+                    return { status: 'error', message: `處理失敗：${err.message}` };
+                }
+            });
+            if (result.success) {
+                if (result.tasks.length > 0) {
+                    await enqueueBatchPushTasks(result.tasks);
+                }
+                return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
+            } else if (result.status === 'error') {
+                return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
+            }
+            return null;
+        }
+        case 'select_purchase_plan': {
+            const points = parseInt(data.get('plan'), 10);
+            const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+            if (!plan) return '找不到您選擇的購買方案。';
+            return {
+                type: 'flex',
+                altText: '請選擇付款方式',
+                contents: {
+                    type: 'bubble',
+                    header: {
+                        type: 'box', layout: 'vertical',
+                        contents: [{ type: 'text', text: '確認訂單並選擇付款方式', weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }],
+                        backgroundColor: '#52B69A'
+                    },
+                    body: {
+                        type: 'box', layout: 'vertical', spacing: 'md',
+                        contents: [
+                            { type: 'text', text: `方案：${plan.label}`, weight: 'bold', size: 'md' },
+                            { type: 'text', text: `金額：${plan.amount} 元`, size: 'lg', weight: 'bold', margin: 'sm' }
+                        ]
+                    },
+                    footer: {
+                        type: 'box', layout: 'vertical', spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'button', style: 'primary', color: '#34A0A4',
+                                action: {
+                                    type: 'postback',
+                                    label: '🏦 轉帳付款',
+                                    data: `action=execute_point_purchase&plan=${plan.points}&method=transfer`
+                                }
+                            },
+                            {
+                                type: 'button', style: 'primary', color: '#1A759F',
+                                action: {
+                                    type: 'postback',
+                                    label: '🤝 現金面交',
+                                    data: `action=execute_point_purchase&plan=${plan.points}&method=cash`
+                                }
+                            },
+                            {
+                                type: 'button', style: 'secondary', height: 'sm', margin: 'md',
+                                action: {
+                                    type: 'message',
+                                    label: '取消',
+                                    text: CONSTANTS.COMMANDS.GENERAL.CANCEL
+                                }
+                            }
+                        ]
+                    }
+                }
+            };
+        }
+        case 'execute_point_purchase': {
+            const points = parseInt(data.get('plan'), 10);
+            const paymentMethod = data.get('method');
+            const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
+
+            if (!plan) return '方案選擇無效，請重新操作。';
+            const order_id = `PO${Date.now()}`;
+            const order = {
+                order_id: order_id,
+                user_id: userId,
+                user_name: user.name,
+                points: plan.points,
+                amount: plan.amount,
+                last_5_digits: null,
+                status: 'pending_payment',
+                timestamp: new Date().toISOString(),
+                payment_method: paymentMethod
+            };
+            await executeDbQuery(async (client) => {
+                await client.query(
+                    `INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp, payment_method) 
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                     ON CONFLICT (order_id) DO UPDATE SET 
+                     user_id = $2, user_name = $3, points = $4, amount = $5, last_5_digits = $6, status = $7, timestamp = $8, payment_method = $9`,
+                    [order.order_id, order.user_id, order.user_name, order.points, order.amount, order.last_5_digits, order.status, order.timestamp, order.payment_method]
+                );
+            });
+            if (paymentMethod === 'transfer') {
+                const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${plan.amount} 元\n\n匯款完成後，請至「點數查詢」->「查詢購點紀錄」回報後五碼。`;
+                return replyText;
+            } else { // cash
+                const replyText = `✅ 訂單已成立！\n您選擇了現金支付「${plan.label}」，總金額 ${plan.amount} 元。\n請直接與老師聯繫並完成支付，支付完成後老師會為您手動加點。`;
+                const notifyMessage = { type: 'text', text: `🔔 點數訂單通知\n學員 ${user.name} 建立了一筆「現金」購點訂單。\n方案：${plan.label}\n金額：${plan.amount} 元\n請至「待確認訂單」查看並準備收款。`};
+                await notifyAllTeachers(notifyMessage);
+                return replyText;
+            }
+        }
+        case 'confirm_order': {
+            const order_id = data.get('order_id');
+            return executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const orderRes = await client.query("SELECT * FROM orders WHERE order_id = $1 FOR UPDATE", [order_id]);
+                    if (orderRes.rows.length === 0) { await client.query('ROLLBACK'); return '找不到此訂單，可能已被其他老師處理。'; }
+                    const order = orderRes.rows[0];
+                    if (!['pending_confirmation', 'pending_payment'].includes(order.status)) { await client.query('ROLLBACK'); 
+                    return `此訂單狀態為「${order.status}」，無法執行此操作。`; }
+                    await client.query("UPDATE orders SET status = 'completed' WHERE order_id = $1", [order_id]);
+                    const userRes = await client.query("SELECT points FROM users WHERE id = $1 FOR UPDATE", [order.user_id]);
+                    const newPoints = userRes.rows[0].points + order.points;
+                    await client.query("UPDATE users SET points = $1 WHERE id = $2", [newPoints, order.user_id]);
+                    const notifyMessage = { type: 'text', text: `✅ 您的點數購買已核准！\n\n已為您帳戶加入 ${order.points} 點，您目前的總點數為 ${newPoints} 點。` };
+                    await enqueuePushTask(order.user_id, notifyMessage);
+                    await client.query('COMMIT');
+                    return `✅ 已核准 ${order.user_name} 的訂單，並已通知對方。`;
+                } catch (err) { await client.query('ROLLBACK'); console.error('❌ 核准訂單時發生錯誤:', err); return '處理訂單時發生錯誤，操作已取消。';
+                }
+            });
+        }
+        case 'reject_order': {
+            const order_id = data.get('order_id');
+            return executeDbQuery(async (client) => {
+                const orderRes = await client.query("SELECT * FROM orders WHERE order_id = $1", [order_id]);
+                if (orderRes.rows.length === 0) return '找不到此訂單，可能已被其他老師處理。';
+                const order = orderRes.rows[0];
+                if (order.status !== 'pending_confirmation') return `此訂單狀態為「${order.status}」，無法退回。`;
+                await client.query("UPDATE orders SET status = 'rejected' WHERE order_id = $1", [order_id]);
+                const notifyMessage = { type: 'text', text: `❗️ 您的點數購買申請被退回。\n\n請檢查您的匯款金額或後五碼是否有誤，並至「點數查詢」選單中重新提交資訊。如有疑問請聯絡我們，謝謝。` };
+                await enqueuePushTask(order.user_id, notifyMessage).catch(e => console.error(e));
+                return `✅ 已退回 ${order.user_name} 的訂單，並已通知對方。`;
+            });
+        }
+        case 'execute_product_purchase': {
+            const productId = data.get('product_id');
+            const paymentMethod = data.get('method');
+            const quantity = parseInt(data.get('qty') || '1', 10);
+            const existingOrderRes = await executeDbQuery(client =>
+                client.query(
+                    "SELECT * FROM product_orders WHERE user_id = $1 AND product_id = $2 AND status IN ('pending_payment', 'pending_confirmation')",
+                    [userId, productId]
+                )
+            );
+            if (existingOrderRes.rows.length > 0) {
+                return '您已經有此商品的待付款訂單，請至「我的購買紀錄」查看或完成付款。';
+            }
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [productId]);
+                    const studentRes = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [user.id]);
+                    
+                    const product = productRes.rows[0];
+                    const student = studentRes.rows[0];
+
+                    if (!product || product.status !== 'available') {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '購買失敗，找不到此商品或已下架。' };
+                    }
+                    if (product.inventory < quantity) {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: `抱歉，您慢了一步！商品庫存僅剩 ${product.inventory} 個。` };
+                    }
+                    
+                    const totalAmount = product.price * quantity;
+                    await client.query('UPDATE products SET inventory = inventory - $1 WHERE id = $2', [quantity, productId]);
+                    
+                    const orderUID = `PROD-${Date.now()}-${userId.slice(-4)}`;
+                    await client.query(
+                        `INSERT INTO product_orders (
+                            order_uid, user_id, user_name, product_id, product_name, 
+                            points_spent, status, amount, payment_method
+                        ) VALUES ($1, $2, $3, $4, $5, $6, 'pending_payment', $7, $8)`,
+                        [
+                            orderUID, userId, student.name, productId, `${product.name} x${quantity}`,
+                            0, totalAmount, paymentMethod
+                        ]
+                    );
+                    const notifyMessage = { type: 'text', text: `🔔 商城新訂單通知\n學員 ${student.name} 購買了「${product.name} x${quantity}」。\n總金額：${totalAmount} 元\n付款方式：${paymentMethod === 'transfer' ? '轉帳' : '現金'}\n請至「訂單管理」查看。` };
+                    await notifyAllTeachers(notifyMessage);
+                    await client.query('COMMIT');
+                    
+                    if (paymentMethod === 'transfer') {
+                        const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${totalAmount} 元\n\n匯款完成後，請至「商城」->「我的購買紀錄」回報後五碼。`;
+                        return { success: true, message: replyText };
+                    } else {
+                        const replyText = `✅ 訂單已成立！\n您購買了「${product.name} x${quantity}」，總金額 ${totalAmount} 元。\n您選擇了現金付款，請直接與老師聯繫並完成支付。`;
+                        return { success: true, message: replyText };
+                    }
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('❌ 商品購買執行失敗:', err);
+                    return { success: false, message: '抱歉，購買過程中發生錯誤，您的訂單未成立，請稍後再試。' };
+                }
+            });
+            delete pendingBookingConfirmation[userId];
+            return result.message;
+        }
+        case 'confirm_shop_order': {
+            return executeDbQuery(async (client) => {
+                const orderRes = await client.query("SELECT * FROM product_orders WHERE order_uid = $1", [data.get('orderUID')]);
+                if (orderRes.rows.length === 0) return '找不到該筆訂單，可能已被處理。';
+                const order = orderRes.rows[0];
+
+                if (!['pending_payment', 'pending_confirmation'].includes(order.status)) {
+                    return `此訂單狀態為「${order.status}」，無法再次確認。`;
+                }
+                
+                await client.query("UPDATE product_orders SET status = 'completed', updated_at = NOW() WHERE order_uid = $1", [data.get('orderUID')]);
+                const notifyMessage = { type: 'text', text: `🛍️ 訂單更新通知\n您購買的「${order.product_name}」訂單已確認收款！\n後續請與我們聯繫領取商品，謝謝。` };
+                await enqueuePushTask(order.user_id, notifyMessage).catch(e => console.error(e));
+          
+                return `✅ 已成功確認訂單 (ID: ...${data.get('orderUID').slice(-6)})。\n系統已發送通知給學員 ${order.user_name}。`;
+            });
+        }
+        case 'cancel_shop_order_start': {
+            const orderUID = data.get('orderUID');
+            const order = await getProductOrder(orderUID);
+            if (!order) return '找不到該訂單。';
+            return { type: 'text', text: `您確定要取消學員 ${order.user_name} 的訂單「${order.product_name}」嗎？\n\n⚠️ 此操作會將商品庫存加回系統，且無法復原。`, quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_shop_order_execute&orderUID=${orderUID}` } }, { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT } } ] } };
+        }
+        case 'reject_shop_order': {
+            const orderUID = data.get('orderUID');
+            return executeDbQuery(async (client) => {
+                const res = await client.query(
+                    "UPDATE product_orders SET status = 'pending_payment', last_5_digits = NULL, updated_at = NOW() WHERE order_uid = $1 AND status = 'pending_confirmation' RETURNING user_id, user_name, product_name",
+                    [orderUID]
+                );
+                if (res.rowCount > 0) {
+                    const order = res.rows[0];
+                    const notifyMessage = { type: 'text', text: `❗️ 訂單退回通知\n您購買「${order.product_name}」的回報資訊已被退回。\n請檢查後五碼或金額是否有誤，並重新回報。` };
+                    await enqueuePushTask(order.user_id, notifyMessage);
+                    return `✅ 已退回學員 ${order.user_name} 的訂單，並通知對方重新提交資訊。`;
+                }
+                return '找不到該筆待確認訂單，或已被處理。';
+            });
+        }
+        case 'cancel_shop_order_execute': {
+            const orderUID = data.get('orderUID');
+            return executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const orderRes = await client.query("SELECT * FROM product_orders WHERE order_uid = $1 FOR UPDATE", [orderUID]);
+                    if (orderRes.rows.length === 0) { await client.query('ROLLBACK'); return '找不到該訂單，可能已被處理。'; }
+                    const order = orderRes.rows[0];
+                    if (order.status !== 'pending') { await client.query('ROLLBACK'); return `此訂單狀態為「${order.status}」，無法取消。`; }
+                    await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [order.points_spent, order.user_id]);
+                    await client.query("UPDATE products SET inventory = inventory + 1 WHERE id = $1", [order.product_id]);
+                    await client.query("UPDATE product_orders SET status = 'cancelled', updated_at = NOW() WHERE order_uid = $1", [orderUID]);
+                    const notifyMessage = { type: 'text', text: `❗️ 訂單取消通知\n您購買的「${order.product_name}」訂單已被老師取消。\n已將花費的 ${order.points_spent} 點歸還至您的帳戶。` };
+                    await enqueuePushTask(order.user_id, notifyMessage);
+                    await client.query('COMMIT');
+                    return `✅ 已成功取消訂單 (ID: ...${orderUID.slice(-6)}) 並歸還點數及庫存。`;
+                } catch (err) { await client.query('ROLLBACK'); console.error('❌ 取消商城訂單失敗:', err);
+                    return '取消訂單時發生錯誤，操作已復原。'; }
+            });
+        }
+        case 'report_shop_last5': {
+            const orderUID = data.get('orderUID');
+            if (!orderUID) return '操作無效，缺少訂單資訊。';
+            pendingShopPayment[userId] = { orderUID };
+            setupConversationTimeout(userId, pendingShopPayment, 'pendingShopPayment', (u) => {
+                enqueuePushTask(u, { type: 'text', text: '輸入後五碼操作已逾時，自動取消。' });
+            });
+            return {
+                type: 'text',
+                text: '請輸入您的匯款帳號後五碼 (5位數字)：',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+    }
+    return null;
+}
+/**
+ * 處理與「學員留言」相關的操作
+ */
 async function handleFeedbackActions(action, data, user) {
-    // 這個函式將處理與「學員留言」相關的操作
+    const userId = user.id;
+    switch (action) {
+        case 'mark_feedback_read': {
+            const msgId = data.get('msgId');
+            if (!msgId) return '操作失敗，缺少訊息 ID。';
+            await executeDbQuery(client => client.query("UPDATE feedback_messages SET status = 'read' WHERE id = $1 AND status = 'new'", [msgId]) );
+            return '✅ 已將此留言標示為已讀。';
+        }
+        case 'reply_feedback': {
+            const msgId = data.get('msgId');
+            const studentId = data.get('userId');
+            if (!msgId || !studentId) return '操作失敗，缺少必要資訊。';
+            const msgRes = await executeDbQuery(client => client.query("SELECT message FROM feedback_messages WHERE id = $1", [msgId]) );
+            if (msgRes.rows.length === 0) return '找不到這則留言，可能已被其他老師處理。';
+            const originalMessage = msgRes.rows[0].message;
+            pendingReply[userId] = { msgId, studentId, originalMessage };
+            setupConversationTimeout(userId, pendingReply, 'pendingReply', (u) => enqueuePushTask(u, { type: 'text', text: '回覆留言操作逾時，自動取消。' }));
+            return { type: 'text', text: `正在回覆學員的留言：\n「${originalMessage.substring(0, 80)}...」\n\n請直接輸入您要回覆的內容：`, quickReply: { items: getCancelMenu() } };
+        }
+    }
+    return null;
+}
+/**
+ * 處理「統計報表」相關的操作
+ */
+async function handleReportActions(action, data, user) {
+    const userId = user.id;
+    switch (action) {
+        case 'generate_report': {
+            const reportType = data.get('type');
+            const period = data.get('period');
+            const periodMap = { week: '本週', month: '本月', quarter: '本季', year: '今年' };
+            const periodText = periodMap[period] || period;
+            const generateReportTask = async () => {
+                const { start, end } = getDateRange(period);
+                return executeDbQuery(async (client) => {
+                    if (reportType === 'course') {
+                        const res = await client.query("SELECT capacity, students FROM courses WHERE time BETWEEN $1 AND $2", [start, end]);
+                        if (res.rows.length === 0) return `📊 ${periodText}課程報表 📊\n\n此期間內沒有任何課程。`;
+                        let totalStudents = 0, totalCapacity = 0;
+                        res.rows.forEach(c => { totalCapacity += c.capacity; totalStudents += (c.students || []).length; });
+                        const attendanceRate = totalCapacity > 0 ? (totalStudents / totalCapacity * 100).toFixed(1) : 0;
+                        return `📊 ${periodText} 課程報表 📊\n\n- 課程總數：${res.rows.length} 堂\n- 總計名額：${totalCapacity} 人\n- 預約人次：${totalStudents} 人\n- **整體出席率：${attendanceRate}%**`.trim();
+                    } else if (reportType === 'order') {
+                        const pointsOrderRes = await client.query("SELECT COUNT(*), SUM(amount) FROM orders WHERE status = 'completed' AND amount > 0 AND timestamp BETWEEN $1 AND $2", [start, end]);
+                        const productOrderRes = await client.query("SELECT COUNT(*), SUM(amount) FROM product_orders WHERE status = 'completed' AND created_at BETWEEN $1 AND $2", [start, end]);
+                        const pointsOrderCount = parseInt(pointsOrderRes.rows[0].count, 10) || 0;
+                        const pointsOrderSum = parseInt(pointsOrderRes.rows[0].sum, 10) || 0;
+                        const productOrderCount = parseInt(productOrderRes.rows[0].count, 10) || 0;
+                        const productOrderSum = parseInt(productOrderRes.rows[0].sum, 10) || 0;
+                        const totalCount = pointsOrderCount + productOrderCount;
+                        const totalSum = pointsOrderSum + productOrderSum;
+                        return `💰 ${periodText} 營收總報表 💰\n\n- 點數銷售：${pointsOrderSum} 元 (${pointsOrderCount} 筆)\n- 商品銷售：${productOrderSum} 元 (${productOrderCount} 筆)\n--------------------\n- **總計收入：${totalSum} 元**\n- **總計訂單：${totalCount} 筆**`.trim();
+                    }
+                });
+            };
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 8000));
+            try {
+                const result = await Promise.race([generateReportTask(), timeoutPromise]);
+                if (result === 'timeout') {
+                    (async () => {
+                        try {
+                            const reportText = await generateReportTask();
+                            await enqueuePushTask(userId, { type: 'text', text: reportText });
+                        } catch (bgErr) {
+                            console.error('❌ 背景生成報表失敗:', bgErr);
+                            await enqueuePushTask(userId, { type: 'text', text: `抱歉，產生 ${periodText} 報表時發生錯誤。` });
+                        }
+                    })();
+                    return '📊 報表生成中，資料量較大，請稍候... 完成後將會推播通知您。';
+                } else { return result; }
+            } catch (err) { console.error(`❌ 即時生成 ${reportType} 報表失敗:`, err);
+                return `❌ 產生 ${periodText} 報表時發生錯誤，請稍後再試。`; }
+        }
+    }
+    return null;
 }
 
 
+// ########################
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
