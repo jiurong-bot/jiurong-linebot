@@ -7544,13 +7544,33 @@ async function handleReportActions(action, data, user) {
     return null;
 }
 /**
- * [重構後] 處理 Postback 事件的總路由器
+ * [重構修正後] 處理 Postback 事件的總路由器
  */
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
+    const userId = user.id;
 
-    // 路由分派
+    // 步驟一：優先處理特殊的「元指令」(Meta Actions)
+    if (action === 'run_command') {
+        const commandText = decodeURIComponent(data.get('text'));
+        if (!commandText) return null;
+
+        // 建立一個模擬的「文字訊息事件」物件
+        const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
+        
+        // 根據使用者角色，呼叫對應的「文字指令處理器」，並傳入正確的參數 (event, userId)
+        if (user.role === 'admin') return handleAdminCommands(simulatedEvent, userId);
+        if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, userId);
+        return handleStudentCommands(simulatedEvent, userId);
+    }
+
+    if (action === 'do_nothing') {
+        return null;
+    }
+
+    // 步驟二：將常規的按鈕點擊事件，分派到對應的子處理函式
+    // 注意：這裡我們不再需要判斷 'run_command'
     if (action.startsWith('view_') || action.startsWith('list_') || action.startsWith('manage_course_group') || action.startsWith('student_search_results')) {
         return handleViewActions(action, data, user);
     }
@@ -7576,26 +7596,9 @@ async function handlePostback(event, user) {
         return handleReportActions(action, data, user);
     }
 
-    // 處理剩餘的通用型 action
-    switch (action) {
-        case 'do_nothing':
-            return null;
-
-        case 'run_command': {
-            const commandText = decodeURIComponent(data.get('text'));
-            if (commandText) {
-                const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
-                if (user.role === 'admin') return handleAdminActions(simulatedEvent, user);
-                if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, user);
-                return handleStudentCommands(simulatedEvent, user);
-            }
-            break;
-        }
-
-        default:
-            console.log(`[INFO] 未處理的 Postback Action: ${action}`);
-            return null;
-    }
+    // 如果以上規則都沒匹配到，則為未處理的 action
+    console.log(`[INFO] 未處理的 Postback Action: ${action}`);
+    return null;
 }
 
 async function handleEvent(event) {
