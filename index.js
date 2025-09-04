@@ -8,8 +8,6 @@ const axios = require('axios');
 const ImageKit = require("imagekit");
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET,
@@ -2833,10 +2831,7 @@ async function handleTeacherCommands(event, userId) {
         }
         break;
     }
-  /*
-  } else if (pendingManualAdjust[userId]) {
-    // ... pendingManualAdjust 的程式碼 ...
-  */
+  
   } else if (pendingManualAdjustSearch[userId]) {
     const searchQuery = text;
     delete pendingManualAdjustSearch[userId];
@@ -5912,6 +5907,37 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
+// =======================================================
+// [優化建議] Postback 子處理函式區塊
+// =======================================================
+
+async function handleViewActions(action, data, user) {
+    // 這個函式將處理所有「瀏覽分頁」的邏輯
+}
+
+async function handleAdminActions(action, data, user) {
+    // 這個函式將處理「管理員專用」的指令
+}
+
+async function handleTeacherActions(action, data, user) {
+    // 這個函式將處理「老師」相關的操作
+}
+
+async function handleCourseActions(action, data, user) {
+    // 這個函式將處理所有與「課程」相關的操作
+}
+
+async function handleProductActions(action, data, user) {
+    // 這個函式將處理所有與「商品」相關的操作
+}
+
+async function handleOrderActions(action, data, user) {
+    // 這個函式將處理所有與「訂單」相關的操作
+}
+
+async function handleFeedbackActions(action, data, user) {
+    // 這個函式將處理與「學員留言」相關的操作
+}
 
 
 async function handlePostback(event, user) {
