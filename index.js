@@ -1389,7 +1389,7 @@ async function showManageOpenCourses(event, user) {
 async function showCourseInquiry(event, user) {
     return showCourseRosterSummary(1);
 }
-
+}
 
     async function showPointManagementMenu(event, user) {
     const pendingCount = await executeDbQuery(client => 
