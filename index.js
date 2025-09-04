@@ -1,4 +1,4 @@
-// index.js - V40.7 (簡化handlePostback結構）
+// index.js - V40.8 (優化商品管理介面）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
