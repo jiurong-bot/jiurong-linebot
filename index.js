@@ -961,13 +961,14 @@ function buildAttributeSelectionFlex(selectedKeys = []) {
     };
 }
 /**
- * [V42.4 修正] 當新增完一組規格後，顯示的確認與繼續操作卡片 (修正 whiteSpace 屬性)
+ * [V42.5 修正] 當新增完一組規格後，顯示的確認與繼續操作卡片 (使用最安全的單行文字除錯)
  * @param {object} baseProduct - 商品基本資訊
  * @param {Array<object>} variants - 已新增的所有規格
  * @returns {object} Flex Message
  */
 function buildVariantAddedConfirmationFlex(baseProduct, variants) {
-    const variantList = variants.map(v => `• ${v.name} (售價: ${v.price}, 庫存: ${v.inventory})`).join('\n');
+    // [修改] 不再使用 \n 換行，改用最安全的逗號 + 空格
+    const variantList = variants.map(v => `• ${v.name} (售價: ${v.price}, 庫存: ${v.inventory})`).join(', ');
 
     return {
         type: 'flex',
@@ -988,9 +989,8 @@ function buildVariantAddedConfirmationFlex(baseProduct, variants) {
                         type: 'text', 
                         text: variantList, 
                         wrap: true, 
-                        size: 'sm', 
-                        // [修正] 將 'pre-wrap' 改為 LINE API 支援的 'pre'
-                        whiteSpace: 'pre' 
+                        size: 'sm'
+                        // [修改] 移除有潛在問題的 whiteSpace 屬性
                     }
                 ]
             },
