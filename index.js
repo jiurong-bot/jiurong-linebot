@@ -1618,14 +1618,7 @@ async function showShopManagementMenu(event, user) {
         contents: { 
             type: 'bubble', 
             size: 'giga', 
-            header: { 
-                type: 'box', 
-                layout: 'vertical', 
-                contents: [ { type: 'text', text: '🛍️ 商城管理', weight: 'bold', size: 'lg', color: '#FFFFFF' } ], 
-                backgroundColor: '#343A40', 
-                paddingTop: 'lg', 
-                paddingBottom: 'lg' 
-            }, 
+            header: createStandardHeader('🛍️ 商城管理'),
             body: { 
                 type: 'box', 
                 layout: 'vertical', 
