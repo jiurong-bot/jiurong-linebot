@@ -960,9 +960,8 @@ function buildAttributeSelectionFlex(selectedKeys = []) {
         }
     };
 }
-
 /**
- * [V42.0 新增] 當新增完一組規格後，顯示的確認與繼續操作卡片
+ * [V42.4 修正] 當新增完一組規格後，顯示的確認與繼續操作卡片 (修正 whiteSpace 屬性)
  * @param {object} baseProduct - 商品基本資訊
  * @param {Array<object>} variants - 已新增的所有規格
  * @returns {object} Flex Message
@@ -985,7 +984,14 @@ function buildVariantAddedConfirmationFlex(baseProduct, variants) {
                     { type: 'text', text: baseProduct.name, weight: 'bold', size: 'lg' },
                     { type: 'separator', margin: 'md' },
                     { type: 'text', text: '目前已新增的規格：', size: 'sm', weight: 'bold', margin: 'md' },
-                    { type: 'text', text: variantList, wrap: true, size: 'sm', whiteSpace: 'pre-wrap' }
+                    { 
+                        type: 'text', 
+                        text: variantList, 
+                        wrap: true, 
+                        size: 'sm', 
+                        // [修正] 將 'pre-wrap' 改為 LINE API 支援的 'pre'
+                        whiteSpace: 'pre' 
+                    }
                 ]
             },
             footer: {
