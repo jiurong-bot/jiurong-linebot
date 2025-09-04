@@ -893,6 +893,124 @@ function createStandardHeader(title, backgroundColor = '#343A40') {
     paddingBottom: 'lg'
   };
 }
+/**
+ * [V42.0 新增] 建立一個讓老師選擇「規格類型」的 Flex Message
+ * @param {Array<string>} selectedKeys - 老師當前已經選擇的規格類型
+ * @returns {object} Flex Message
+ */
+function buildAttributeSelectionFlex(selectedKeys = []) {
+    const buttons = COMMON_ATTRIBUTES.map(attr => {
+        const isSelected = selectedKeys.includes(attr);
+        return {
+            type: 'button',
+            style: isSelected ? 'primary' : 'secondary',
+            color: isSelected ? '#343A40' : undefined,
+            action: {
+                type: 'postback',
+                label: attr,
+                data: `action=product_creation_select_attr&attr=${encodeURIComponent(attr)}`
+            }
+        };
+    });
+
+    // 將按鈕分組，每行最多3個
+    const buttonRows = [];
+    for (let i = 0; i < buttons.length; i += 3) {
+        buttonRows.push({
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'sm',
+            contents: buttons.slice(i, i + 3)
+        });
+    }
+
+    return {
+        type: 'flex',
+        altText: '請選擇商品規格',
+        contents: {
+            type: 'bubble',
+            header: createStandardHeader('請選擇商品規格 (可複選)'),
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: buttonRows
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'primary',
+                    color: '#28a745',
+                    // 只有在至少選擇一個規格後才能點擊完成
+                    disabled: selectedKeys.length === 0,
+                    action: {
+                        type: 'postback',
+                        label: '✅ 完成選擇',
+                        data: 'action=product_creation_finish_attr_select'
+                    }
+                }]
+            }
+        }
+    };
+}
+/**
+ * [V42.0 新增] 當新增完一組規格後，顯示的確認與繼續操作卡片
+ * @param {object} baseProduct - 商品基本資訊
+ * @param {Array<object>} variants - 已新增的所有規格
+ * @returns {object} Flex Message
+ */
+function buildVariantAddedConfirmationFlex(baseProduct, variants) {
+    const variantList = variants.map(v => `• ${v.name} (售價: ${v.price}, 庫存: ${v.inventory})`).join('\n');
+
+    return {
+        type: 'flex',
+        altText: '規格新增完畢',
+        contents: {
+            type: 'bubble',
+            size: 'giga',
+            header: createStandardHeader('✅ 規格新增完畢'),
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                    { type: 'text', text: baseProduct.name, weight: 'bold', size: 'lg' },
+                    { type: 'separator', margin: 'md' },
+                    { type: 'text', text: '目前已新增的規格：', size: 'sm', weight: 'bold', margin: 'md' },
+                    { type: 'text', text: variantList, wrap: true, size: 'sm', whiteSpace: 'pre-wrap' }
+                ]
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: [
+                    {
+                        type: 'button',
+                        style: 'secondary',
+                        action: {
+                            type: 'postback',
+                            label: '➕ 新增下一組規格',
+                            data: 'action=product_creation_add_another_variant'
+                        }
+                    },
+                    {
+                        type: 'button',
+                        style: 'primary',
+                        color: '#28a745',
+                        action: {
+                            type: 'postback',
+                            label: `👍 完成並上架 (${variants.length} 種規格)`,
+                            data: 'action=confirm_add_product_with_variants' // 這是最終確認上架的動作
+                        }
+                    }
+                ]
+            }
+        }
+    };
+}
 
 
 function formatDateTime(isoString) {
