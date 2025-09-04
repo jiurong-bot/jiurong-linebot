@@ -1343,7 +1343,7 @@ async function showCourseManagementMenu(event, user) {
         contents: { 
             type: 'bubble', 
             size: 'giga', 
-            createStandardHeader('🗓️ 課程與師資管理'),
+            header:createStandardHeader('🗓️ 課程與師資管理'),
             body: { 
                 type: 'box', 
                 layout: 'vertical', 
