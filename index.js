@@ -8121,19 +8121,31 @@ async function handleEvent(event) {
     try {
         const text = (event.type === 'message' && event.message.type === 'text') ? event.message.text.trim() : '';
 
-
         let shouldClear = true;
         if (event.type === 'postback') {
             const postbackData = new URLSearchParams(event.postback.data);
             const action = postbackData.get('action');
-            const continuationActions = [ 'set_course_weekday', 'select_teacher_for_course', 'confirm_add_product', 'edit_product_field', 'start_booking_confirmation', 'execute_booking',
-                                          'execute_product_purchase',  'confirm_teacher_profile_update', 'start_purchase_history_search', 'start_exchange_history_search', 'start_message_history_search',
-                                          'select_student_for_purchase_history', 'select_student_for_exchange_history', 'select_student_for_message_history','publish_prefilled_announcement','edit_prefilled_announcement'];
+            
+            // [V42.3 修正] 將商品建立過程中的所有 postback action 加入白名單
+            const continuationActions = [
+                'set_course_weekday', 'select_teacher_for_course',
+                'confirm_add_product', 'edit_product_field',
+                'start_booking_confirmation', 'execute_booking',
+                'execute_product_purchase',  'confirm_teacher_profile_update',
+                'start_purchase_history_search', 'start_exchange_history_search', 'start_message_history_search',
+                'select_student_for_purchase_history', 'select_student_for_exchange_history', 'select_student_for_message_history',
+                'publish_prefilled_announcement','edit_prefilled_announcement',
+                // [新增] 以下是本次修正的重點
+                'product_creation_select_attr',
+                'product_creation_finish_attr_select',
+                'product_creation_add_another_variant',
+                'confirm_add_product_with_variants'
+            ];
+
             if (continuationActions.includes(action)) {
                 shouldClear = false;
             }
         }
-
 
         if (shouldClear && (text && text.startsWith('@') || event.type === 'postback')) {
             const wasCleared = clearPendingConversations(userId);
@@ -8191,12 +8203,3 @@ async function handleEvent(event) {
     }
 
 }
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
