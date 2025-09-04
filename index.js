@@ -3343,13 +3343,10 @@ await saveUser(user);
     }
   }
 }
-
-
 async function handleStudentCommands(event, userId) {
-  const text = event.message.text ?
-event.message.text.trim().normalize() : '';
-  const user = await getUser(userId);
-  const currentState = userConversationState.get(userId);
+  [span_0](start_span)const text = event.message.text ? event.message.text.trim().normalize() : '';[span_0](end_span)
+  [span_1](start_span)const user = await getUser(userId);[span_1](end_span)
+  [span_2](start_span)const currentState = userConversationState.get(userId);[span_2](end_span)
 
   if (currentState) {
     switch(currentState.type) {
@@ -3359,368 +3356,327 @@ event.message.text.trim().normalize() : '';
                     type: 'text',
                     text: '格式錯誤，請輸入5位數字的匯款帳號後五碼。',
                     quickReply: { items: getCancelMenu() }
-                };
-}
+                [span_3](start_span)};[span_3](end_span)
+            }
 
             const wasSuccessful = await executeDbQuery(async (client) => {
                 const res = await client.query(
                     "UPDATE product_orders SET last_5_digits = $1, status = 'pending_confirmation', updated_at = NOW() WHERE order_uid = $2 AND user_id = $3 AND status = 'pending_payment' RETURNING product_name",
                     [text, currentState.data.orderUID, userId]
-              
-  );
+                [span_4](start_span));[span_4](end_span)
                 return res.rowCount > 0 ? res.rows[0].product_name : null;
             });
-userConversationState.delete(userId);
+            [span_5](start_span)userConversationState.delete(userId);[span_5](end_span)
 
             if (wasSuccessful) {
                 const productName = wasSuccessful;
-const notifyMessage = { type: 'text', text: `🔔 付款回報通知\n學員 ${user.name} 已回報「${productName}」訂單的匯款資訊。\n後五碼: ${text}\n請至「訂單管理」審核。`};
+                [span_6](start_span)const notifyMessage = { type: 'text', text: `🔔 付款回報通知\n學員 ${user.name} 已回報「${productName}」訂單的匯款資訊。\n後五碼: ${text}\n請至「訂單管理」審核。`};[span_6](end_span)
                 await notifyAllTeachers(notifyMessage);
-                return `感謝您！已收到您的匯款後五碼「${text}」。\n我們將盡快為您審核，審核通過後您會收到通知。`;
-} else {
-                return '找不到您的待付款訂單，或訂單狀態已變更，請重新操作。';
-}
+                [span_7](start_span)return `感謝您！已收到您的匯款後五碼「${text}」。\n我們將盡快為您審核，審核通過後您會收到通知。`;[span_7](end_span)
+            } else {
+                [span_8](start_span)return '找不到您的待付款訂單，或訂單狀態已變更，請重新操作。';[span_8](end_span)
+            }
         }
         case 'pointPurchase': {
-            const purchaseFlowResult = await handlePurchaseFlow(event, userId, currentState);
-if (purchaseFlowResult.handled) {
-                return purchaseFlowResult.reply;
-}
-            return;
+            [span_9](start_span)const purchaseFlowResult = await handlePurchaseFlow(event, userId, currentState);[span_9](end_span)
+            if (purchaseFlowResult.handled) {
+                [span_10](start_span)return purchaseFlowResult.reply;[span_10](end_span)
+            }
+            [span_11](start_span)return;[span_11](end_span)
         }
         case 'bookingConfirmation': {
-            const course = await getCourse(currentState.data.course_id);
-if (!course && currentState.data.type !== 'product_purchase') {
-                userConversationState.delete(userId);
+            [span_12](start_span)const course = await getCourse(currentState.data.course_id);[span_12](end_span)
+            if (!course && currentState.data.type !== 'product_purchase') {
+                [span_13](start_span)userConversationState.delete(userId);[span_13](end_span)
                 return '抱歉，找不到該課程，可能已被老師取消。';
-}
+            }
 
             switch (currentState.data.type) {
                 case 'cancel_book':
                     if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING) {
-                        
-                        const courseForCheck = await getCourse(currentState.data.course_id);
-if (!courseForCheck) {
-                            userConversationState.delete(userId);
-return '取消失敗，找不到此課程。';
+                        [span_14](start_span)const courseForCheck = await getCourse(currentState.data.course_id);[span_14](end_span)
+                        if (!courseForCheck) {
+                            [span_15](start_span)userConversationState.delete(userId);[span_15](end_span)
+                            return '取消失敗，找不到此課程。';
                         }
 
                         if (new Date(courseForCheck.time).getTime() - Date.now() < CONSTANTS.TIME.EIGHT_HOURS_IN_MS) {
-                            userConversationState.delete(userId);
-return `抱歉，課程即將在 8 小時內開始，現在已無法取消預約。`;
+                            [span_16](start_span)userConversationState.delete(userId);[span_16](end_span)
+                            return `抱歉，課程即將在 8 小時內開始，現在已無法取消預約。`;
                         }
                         
                         return executeDbQuery(async (client) => {
-                            await client.query('BEGIN');
+                            [span_17](start_span)await client.query('BEGIN');[span_17](end_span)
                             try {
-                          
-      const userForUpdateRes = await client.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
-                                const courseForUpdateRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [currentState.data.course_id]);
-                                
-                         
-       const currentCourse = courseForUpdateRes.rows[0];
-                                const newStudents = [...currentCourse.students];
+                                const userForUpdateRes = await client.query('SELECT points, history FROM users WHERE id = $1 FOR UPDATE', [userId]);
+                                [span_18](start_span)const courseForUpdateRes = await client.query('SELECT * FROM courses WHERE id = $1 FOR UPDATE', [currentState.data.course_id]);[span_18](end_span)
+                                const currentCourse = courseForUpdateRes.rows[0];
+                                [span_19](start_span)const newStudents = [...currentCourse.students];[span_19](end_span)
                                 const indexToRemove = newStudents.indexOf(userId);
 
                                 if (indexToRemove === -1) { 
-               
-                     await client.query('ROLLBACK');
+                                    [span_20](start_span)await client.query('ROLLBACK');[span_20](end_span)
                                     userConversationState.delete(userId); 
-                                    return '您尚未預約此課程。'; 
-                          
-      }
-                                newStudents.splice(indexToRemove, 1);
-const newPoints = userForUpdateRes.rows[0].points + currentCourse.points_cost;
-                                const historyEntry = { action: `取消預約 (1位)：${getCourseMainTitle(currentCourse.title)}`, pointsChange: +currentCourse.points_cost, time: new Date().toISOString() };
-const userHistory = userForUpdateRes.rows[0].history || [];
+                                    [span_21](start_span)return '您尚未預約此課程。';[span_21](end_span)
+                                }
+                                [span_22](start_span)newStudents.splice(indexToRemove, 1);[span_22](end_span)
+                                const newPoints = userForUpdateRes.rows[0].points + currentCourse.points_cost;
+                                [span_23](start_span)const historyEntry = { action: `取消預約 (1位)：${getCourseMainTitle(currentCourse.title)}`, pointsChange: +currentCourse.points_cost, time: new Date().toISOString() };[span_23](end_span)
+                                const userHistory = userForUpdateRes.rows[0].history || [];
                                 const newHistory = [...userHistory, historyEntry];
-await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
-// [V38.5 修改] 智慧候補遞補邏輯
-                                let newWaiting = currentCourse.waiting ||
-[];
+                                [span_24](start_span)await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);[span_24](end_span)
+                                let newWaiting = currentCourse.waiting || [span_25](start_span)[];[span_25](end_span)
                                 if (newWaiting.length > 0) {
                                     const isWithinTwoHours = new Date(currentCourse.time).getTime() - Date.now() < CONSTANTS.TIME.TWO_HOURS_IN_MS;
-const promotedUserId = newWaiting.shift(); // 先取出第一位候補者
+                                    [span_26](start_span)const promotedUserId = newWaiting.shift();[span_26](end_span)
 
                                     if (isWithinTwoHours) {
-                                        // **新邏輯：發送限時邀請**
-                                        
-const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-// 15 分鐘後過期
+                                        [span_27](start_span)const expiresAt = new Date(Date.now() + 15 * 60 * 1000);[span_27](end_span)
                                         await client.query(
                                             `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
-                          
-                  [currentCourse.id, promotedUserId, expiresAt]
-                                        );
-const invitationMessage = {
+                                            [currentCourse.id, promotedUserId, expiresAt]
+                                        [span_28](start_span));[span_28](end_span)
+                                        const invitationMessage = {
                                             type: 'flex',
                                             altText: '候補課程邀請',
-                               
-             contents: {
+                                            contents: {
                                                 type: 'bubble',
-                                                header: { type: 'box', layout: 
-'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },
+                                                [span_29](start_span)header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },[span_29](end_span)
                                                 body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-                                            
-        { type: 'text', text: `您好！您候補的課程「${getCourseMainTitle(currentCourse.title)}」現在有名額了！`, wrap: true },
+                                                    [span_30](start_span){ type: 'text', text: `您好！您候補的課程「${getCourseMainTitle(currentCourse.title)}」現在有名額了！`, wrap: true },[span_30](end_span)
                                                     { type: 'text', text: '請在 15 分鐘內確認是否要預約，逾時將自動放棄資格喔。', size: 'sm', color: '#666666', wrap: true }
-                                    
-            ]},
+                                                [span_31](start_span)]},[span_31](end_span)
                                                 footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-                                               
-     { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${currentCourse.id}` } },
+                                                    [span_32](start_span){ type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${currentCourse.id}` } },[span_32](end_span)
                                                     { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認', data: `action=waitlist_confirm&course_id=${currentCourse.id}` } }
-                           
-                     ]}
+                                                [span_33](start_span)]}[span_33](end_span)
                                             }
-                                        };
-await enqueuePushTask(promotedUserId, invitationMessage);
+                                        [span_34](start_span)};[span_34](end_span)
+                                        [span_35](start_span)await enqueuePushTask(promotedUserId, invitationMessage);[span_35](end_span)
                                     } else {
-                                        // **舊邏輯：直接遞補**
                                         newStudents.push(promotedUserId);
-const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(currentCourse.title)}」已有空位，已為您自動預約成功！`};
-                                        await enqueuePushTask(promotedUserId, notifyMessage);
-}
+                                        [span_36](start_span)const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(currentCourse.title)}」已有空位，已為您自動預約成功！`};[span_36](end_span)
+                                        [span_37](start_span)await enqueuePushTask(promotedUserId, notifyMessage);[span_37](end_span)
+                                    }
                                 }
                                 
-                                await client.query('UPDATE courses SET students = $1, waiting = $2 WHERE id = $3', [newStudents, newWaiting, currentState.data.course_id]);
-await client.query('COMMIT');
-                                userConversationState.delete(userId);
-
+                                [span_38](start_span)await client.query('UPDATE courses SET students = $1, waiting = $2 WHERE id = $3', [newStudents, newWaiting, currentState.data.course_id]);[span_38](end_span)
+                                await client.query('COMMIT');
+                                [span_39](start_span)userConversationState.delete(userId);[span_39](end_span)
                                 let replyMsg = `✅ 已為您取消 1 位「${getCourseMainTitle(currentCourse.title)}」的預約，並歸還 ${currentCourse.points_cost} 點。`;
                                 return replyMsg;
-} catch (e) {
-                                await client.query('ROLLBACK');
-console.error('取消預約失敗:', e); 
+                            } catch (e) {
+                                [span_40](start_span)await client.query('ROLLBACK');[span_40](end_span)
+                                console.error('取消預約失敗:', e); 
                                 userConversationState.delete(userId);
                                 return '取消預約時發生錯誤，請稍後再試。';
                             }
                         });
-} else if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
-                        userConversationState.delete(userId);
-return '已放棄取消操作。';
+                    } else if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
+                        [span_41](start_span)userConversationState.delete(userId);[span_41](end_span)
+                        return '已放棄取消操作。';
                     }
                     break;
-            case 'cancel_wait':
+                case 'cancel_wait':
                     if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_WAITING) {
                         const newWaitingList = course.waiting.filter(id => id !== userId);
-await saveCourse({ ...course, waiting: newWaitingList });
-                        userConversationState.delete(userId);
+                        [span_42](start_span)await saveCourse({ ...course, waiting: newWaitingList });[span_42](end_span)
+                        [span_43](start_span)userConversationState.delete(userId);[span_43](end_span)
                         return `✅ 已為您取消「${course.title}」的候補。`;
-} else if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
-                        userConversationState.delete(userId);
-return '已放棄取消操作。';
+                    } else if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
+                        [span_44](start_span)userConversationState.delete(userId);[span_44](end_span)
+                        return '已放棄取消操作。';
                     }
                     break;
-            case 'product_purchase':
+                case 'product_purchase':
                     if (text === CONSTANTS.COMMANDS.GENERAL.CANCEL) {
-                        userConversationState.delete(userId);
-return '已取消購買。';
+                        [span_45](start_span)userConversationState.delete(userId);[span_45](end_span)
+                        return '已取消購買。';
                     }
                     break;
-}
-            return;
+            }
+            [span_46](start_span)return;[span_46](end_span)
         }
         case 'addFeedback': {
             if (currentState.step === 'await_message') {
                 await executeDbQuery(client => 
                     client.query('INSERT INTO feedback_messages (id, user_id, user_name, message, timestamp) VALUES ($1, $2, $3, $4, NOW())', [`F${Date.now()}`, userId, user.name, text])
                 );
-userConversationState.delete(userId);
+                [span_47](start_span)userConversationState.delete(userId);[span_47](end_span)
                 if (TEACHER_ID) { 
-                    const notifyMessage = { type: 'text', text: `🔔 新留言通知\n來自: ${user.name}\n內容: ${text}\n\n請至「學員管理」->「查看學員留言」回覆。`};
-await notifyAllTeachers(notifyMessage);
+                    [span_48](start_span)const notifyMessage = { type: 'text', text: `🔔 新留言通知\n來自: ${user.name}\n內容: ${text}\n\n請至「學員管理」->「查看學員留言」回覆。`};[span_48](end_span)
+                    await notifyAllTeachers(notifyMessage);
                 }
-                return '感謝您的留言，我們已收到您的訊息，老師會盡快查看！';
-}
+                [span_49](start_span)return '感謝您的留言，我們已收到您的訊息，老師會盡快查看！';[span_49](end_span)
+            }
         }
     }
-  }
-
+  } else {
     // --- 處理一般指令 ---
     if (text === CONSTANTS.COMMANDS.STUDENT.BOOK_COURSE) {
-        return showAvailableCourses(userId, new URLSearchParams());
-} else if (text === CONSTANTS.COMMANDS.STUDENT.MY_COURSES) {
-        return showMyCourses(userId, 1);
-} else if (text === CONSTANTS.COMMANDS.STUDENT.LATEST_ANNOUNCEMENT) {
+        [span_50](start_span)return showAvailableCourses(userId, new URLSearchParams());[span_50](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.MY_COURSES) {
+        [span_51](start_span)return showMyCourses(userId, 1);[span_51](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.LATEST_ANNOUNCEMENT) {
         return executeDbQuery(async (client) => {
             const res = await client.query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 6');
             
             if (res.rows.length === 0) { 
-                return '目前沒有任何公告。'; 
-          
-  }
+                [span_52](start_span)return '目前沒有任何公告。';[span_52](end_span)
+            }
             
-            // 更新學員的 last_seen_announcement_id
             const latestAnnId = res.rows[0].id;
             if (user.last_seen_announcement_id !== latestAnnId) {
                 user.last_seen_announcement_id = latestAnnId;
-                await saveUser(user, client);
-     
-       }
+                [span_53](start_span)await saveUser(user, client);[span_53](end_span)
+            }
             
             const announcementBubbles = res.rows.map(announcement => ({
                 type: 'bubble',
                 size: 'giga',
                 header: { 
-            
-        type: 'box', 
+                    type: 'box', 
                     layout: 'vertical', 
                     backgroundColor: '#de5246', 
                     contents: [ 
-                        
-{ type: 'text', text: '📢 近期公告', color: '#ffffff', weight: 'bold', size: 'lg' } 
+                        [span_54](start_span){ type: 'text', text: '📢 近期公告', color: '#ffffff', weight: 'bold', size: 'lg' }[span_54](end_span)
                     ]
                 }, 
                 body: { 
                     type: 'box', 
-          
-          layout: 'vertical', 
+                    layout: 'vertical', 
                     paddingAll: 'lg',
                     spacing: 'md',
                     contents: [ 
-                        
-{ type: 'text', text: announcement.content, wrap: true } 
+                        [span_55](start_span){ type: 'text', text: announcement.content, wrap: true }[span_55](end_span)
                     ]
                 }, 
                 footer: { 
                     type: 'box', 
-               
-     layout: 'vertical', 
+                    layout: 'vertical', 
                     contents: [ 
                         { 
                             type: 'text', 
-                
-            text: `由 ${announcement.creator_name} 於 ${formatDateTime(announcement.created_at)} 發佈`, 
+                            [span_56](start_span)text: `由 ${announcement.creator_name} 於 ${formatDateTime(announcement.created_at)} 發佈`,[span_56](end_span)
                             size: 'xs', 
                             color: '#aaaaaa', 
-                      
-      align: 'center' 
+                            [span_57](start_span)align: 'center'[span_57](end_span)
                         } 
                     ]
                 } 
             }));
-return {
+            return {
                 type: 'flex',
                 altText: '近期公告列表',
                 contents: {
                     type: 'carousel',
                     contents: announcementBubbles
-      
-          }
+                [span_58](start_span)}
             };
-});       
+        });[span_58](end_span)
     } else if (text === CONSTANTS.COMMANDS.STUDENT.ADD_NEW_MESSAGE) {
-        const stateData = { type: 'addFeedback', step: 'await_message' };
-setupConversationTimeout(userId, stateData, (u) => {
+        [span_59](start_span)const stateData = { type: 'addFeedback', step: 'await_message' };[span_59](end_span)
+        setupConversationTimeout(userId, stateData, (u) => {
             const timeoutMessage = { type: 'text', text: '留言逾時，自動取消。'};
             enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
         });
-return { type: 'text', text: '請輸入您想對老師說的話，或點選「取消」。', quickReply: { items: getCancelMenu() } };
-} else if (text === CONSTANTS.COMMANDS.STUDENT.CONTACT_US) {
+        [span_60](start_span)return { type: 'text', text: '請輸入您想對老師說的話，或點選「取消」。', quickReply: { items: getCancelMenu() } };[span_60](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.CONTACT_US) {
       const unreadCount = await executeDbQuery(client => 
         client.query("SELECT COUNT(*) FROM feedback_messages WHERE user_id = $1 AND status = 'replied' AND is_student_read = false", [userId])
       ).then(res => parseInt(res.rows[0].count, 10));
-let historyLabel = '📜 查詢歷史留言';
+      [span_61](start_span)let historyLabel = '📜 查詢歷史留言';[span_61](end_span)
       if (unreadCount > 0) {
-        historyLabel += ` (${unreadCount})`;
-}
+        [span_62](start_span)historyLabel += ` (${unreadCount})`;[span_62](end_span)
+      }
       
       return {
         type: 'flex', altText: '聯絡我們',
         contents: {
           type: 'bubble', size: 'giga',
           header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '📞 聯絡我們', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#34A0A4', paddingTop: 'lg', paddingBottom: 'lg' },
-          body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 
-'lg',
+          [span_63](start_span)body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',[span_63](end_span)
               contents: [
                   { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📝 新增留言', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.ADD_NEW_MESSAGE)}` } },
                   { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: historyLabel, data: `action=view_my_messages&page=1` } }
               ]
-  
-        }
+        [span_64](start_span)}
         }
       };
-} else if (text === CONSTANTS.COMMANDS.STUDENT.POINTS || text === CONSTANTS.COMMANDS.STUDENT.CHECK_POINTS) {
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.POINTS || text === CONSTANTS.COMMANDS.STUDENT.CHECK_POINTS) {
         const currentState = userConversationState.get(userId);
-        if (currentState && currentState.type === 'pointPurchase' && (currentState.step === 'input_last5' || currentState.step === 'edit_last5')) {
-            // Do not clear if in the middle of a purchase flow
+        if (currentState && currentState.type === 'pointPurchase' && (currentState.step === 'input_last5' || currentState.step === 'edit_last5')) {[span_64](end_span)
         } else {
-            clearPendingConversations(userId);
+            [span_65](start_span)clearPendingConversations(userId);[span_65](end_span)
         }
-return buildPointsMenuFlex(userId);
+        return buildPointsMenuFlex(userId);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.BUY_POINTS) {
         const hasPendingOrder = await executeDbQuery(async (client) => {
             const existingOrderRes = await client.query(`SELECT 1 FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') LIMIT 1`, [userId]);
             return existingOrderRes.rows.length > 0;
         });
-if (hasPendingOrder) {
-            const flexMenu = await buildPointsMenuFlex(userId);
-return [{type: 'text', text: '您目前尚有未完成的訂單，請先處理該筆訂單。'}, flexMenu];
+        [span_66](start_span)if (hasPendingOrder) {[span_66](end_span)
+            [span_67](start_span)const flexMenu = await buildPointsMenuFlex(userId);[span_67](end_span)
+            return [{type: 'text', text: '您目前尚有未完成的訂單，請先處理該筆訂單。'}, flexMenu];
         }
       
-        return buildBuyPointsFlex();
-} else if (text === CONSTANTS.COMMANDS.STUDENT.PURCHASE_HISTORY) {
-        return showPurchaseHistory(userId, 1);
-} else if (text === CONSTANTS.COMMANDS.STUDENT.SHOP) {
+        [span_68](start_span)return buildBuyPointsFlex();[span_68](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.PURCHASE_HISTORY) {
+        [span_69](start_span)return showPurchaseHistory(userId, 1);[span_69](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.SHOP) {
         return {
             type: 'flex', altText: '活動商城',
             contents: {
                 type: 'bubble', size: 'giga',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🛍️ 活動商城', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#34A0A4', paddingTop: 
-'lg', paddingBottom: 'lg' },
+                [span_70](start_span)header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🛍️ 活動商城', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#34A0A4', paddingTop: 'lg', paddingBottom: 'lg' },[span_70](end_span)
                 body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
                     contents: [
                         { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 瀏覽商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}` } },
-          
-              { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的購買紀錄', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY)}` } }
+                        [span_71](start_span){ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的購買紀錄', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY)}` } }[span_71](end_span)
                     ]
                 }
             }
-        };
-} else if (text === CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS) {
-        return showShopProducts(1);
-} else if (text === CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY) {
-        return showStudentExchangeHistory(userId, 1);
-} else if (text === CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER || text === CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER) {
+        [span_72](start_span)};[span_72](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS) {
+        [span_73](start_span)return showShopProducts(1);[span_73](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY) {
+        [span_74](start_span)return showStudentExchangeHistory(userId, 1);[span_74](end_span)
+    } else if (text === CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER || text === CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER) {
         const orderId = await executeDbQuery(async (client) => {
             const statusFilter = text === CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER ? "'pending_confirmation', 'rejected'" : "'pending_payment'";
             const orderRes = await client.query(`SELECT order_id FROM orders WHERE user_id = $1 AND status IN (${statusFilter}) ORDER BY timestamp DESC LIMIT 1`, [userId]);
-            return orderRes.rows.length > 0 ? orderRes.rows[0].order_id : 
-null;
+            [span_75](start_span)return orderRes.rows.length > 0 ? orderRes.rows[0].order_id : null;[span_75](end_span)
         });
 
-
         if (orderId) {
-            const step = text === CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER ?
-'input_last5' : 'edit_last5';
+            const step = text === CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER ? [span_76](start_span)'input_last5' : 'edit_last5';[span_76](end_span)
             const stateData = { 
                 type: 'pointPurchase', 
                 step: step, 
                 data: { order_id: orderId } 
-            };
-setupConversationTimeout(userId, stateData, (u) => {
+            [span_77](start_span)};[span_77](end_span)
+            setupConversationTimeout(userId, stateData, (u) => {
                 const timeoutMessage = { type: 'text', text: '輸入後五碼逾時，自動取消。'};
                 enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
             });
-return { type: 'text', text: '請輸入您的匯款帳號後五碼 (5位數字)：', quickReply: { items: getCancelMenu() } };
-} else {
-            return '您目前沒有需要執行此操作的訂單。';
-}
+            [span_78](start_span)return { type: 'text', text: '請輸入您的匯款帳號後五碼 (5位數字)：', quickReply: { items: getCancelMenu() } };[span_78](end_span)
+        } else {
+            [span_79](start_span)return '您目前沒有需要執行此操作的訂單。';[span_79](end_span)
+        }
     } else {
-      let studentSuggestion = '我不懂您的意思耶😕\n您可以試試點擊下方的選單按鈕。';
-if (text.startsWith('@')) {
-          const closestCommand = findClosestCommand(text, 'student');
-if (closestCommand) {
-              studentSuggestion = `找不到指令 "${text}"，您是不是想輸入「${closestCommand}」？`;
-} else {
-              studentSuggestion = `哎呀，找不到指令 "${text}"。\n請檢查一下是不是打錯字了，或直接點擊選單按鈕最準確喔！`;
-}
+      [span_80](start_span)let studentSuggestion = '我不懂您的意思耶😕\n您可以試試點擊下方的選單按鈕。';[span_80](end_span)
+      if (text.startsWith('@')) {
+          [span_81](start_span)const closestCommand = findClosestCommand(text, 'student');[span_81](end_span)
+          if (closestCommand) {
+              [span_82](start_span)studentSuggestion = `找不到指令 "${text}"，您是不是想輸入「${closestCommand}」？`;[span_82](end_span)
+          } else {
+              [span_83](start_span)studentSuggestion = `哎呀，找不到指令 "${text}"。\n請檢查一下是不是打錯字了，或直接點擊選單按鈕最準確喔！`;[span_83](end_span)
+          }
       }
-      return studentSuggestion;
+      [span_84](start_span)return studentSuggestion;[span_84](end_span)
+    }
+  }
 }
-}
-
 
 async function showStudentSearchResults(query, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
