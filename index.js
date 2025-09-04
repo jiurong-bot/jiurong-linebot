@@ -893,6 +893,7 @@ function createStandardHeader(title, backgroundColor = '#343A40') {
     paddingBottom: 'lg'
   };
 }
+
 /**
  * [V42.0 新增] 建立一個讓老師選擇「規格類型」的 Flex Message
  * @param {Array<string>} selectedKeys - 老師當前已經選擇的規格類型
@@ -943,7 +944,6 @@ function buildAttributeSelectionFlex(selectedKeys = []) {
                     type: 'button',
                     style: 'primary',
                     color: '#28a745',
-                    // 只有在至少選擇一個規格後才能點擊完成
                     disabled: selectedKeys.length === 0,
                     action: {
                         type: 'postback',
@@ -955,6 +955,7 @@ function buildAttributeSelectionFlex(selectedKeys = []) {
         }
     };
 }
+
 /**
  * [V42.0 新增] 當新增完一組規格後，顯示的確認與繼續操作卡片
  * @param {object} baseProduct - 商品基本資訊
@@ -1003,7 +1004,7 @@ function buildVariantAddedConfirmationFlex(baseProduct, variants) {
                         action: {
                             type: 'postback',
                             label: `👍 完成並上架 (${variants.length} 種規格)`,
-                            data: 'action=confirm_add_product_with_variants' // 這是最終確認上架的動作
+                            data: 'action=confirm_add_product_with_variants'
                         }
                     }
                 ]
@@ -1011,7 +1012,6 @@ function buildVariantAddedConfirmationFlex(baseProduct, variants) {
         }
     };
 }
-
 
 function formatDateTime(isoString) {
     if (!isoString) return '無效時間';
