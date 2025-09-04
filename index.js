@@ -6579,6 +6579,68 @@ async function handleProductActions(action, data, user) {
                 }
             };
         }
+        case 'cancel_preorder_start': {
+            const productId = data.get('product_id');
+            const product = await getProduct(productId);
+            if (!product) return '找不到商品。';
+            
+            const count = await executeDbQuery(client => 
+                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
+            ).then(res => parseInt(res.rows[0].count, 10));
+            if (count === 0) {
+                return `「${product.name}」沒有需要取消的預購。`;
+            }
+
+            return {
+                type: 'text',
+                text: `⚠️ 您確定要因為缺貨而取消 ${count} 位學員的「${product.name}」預購嗎？\n\n系統將會發送通知告知學員，此操作無法復原。`,
+                quickReply: { items: [
+                    { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_cancel_preorder&product_id=${productId}` } },
+                    { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.MANAGE_FULFILLMENT } }
+                ]}
+            };
+        }
+        case 'execute_cancel_preorder': {
+            const productId = data.get('product_id');
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
+                    if (productRes.rows.length === 0) {
+                         await client.query('ROLLBACK');
+                        return { status: 'error', message: '找不到對應的商品。' };
+                    }
+                    const product = productRes.rows[0];
+
+                    const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
+                    if (preorders.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { status: 'processed' };
+                    }
+
+                    const notificationTasks = preorders.map(preorder => ({
+                        recipientId: preorder.user_id,
+                        message: { type: 'text', text: `❗️ 預購取消通知\n很抱歉，由於廠商供貨問題，您預購的商品「${product.name}」無法到貨，本次預購已為您取消。造成不便，敬請見諒。` }
+                    }));
+                    await client.query("UPDATE product_preorders SET status = 'canceled' WHERE product_id = $1 AND status = 'active'", [productId]);
+                    await client.query('COMMIT');
+                    return { success: true, tasks: notificationTasks, count: preorders.length, productName: product.name };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('執行取消預購時失敗:', err);
+                    return { status: 'error', message: `處理失敗：${err.message}` };
+                }
+            });
+            if (result.success) {
+                if (result.tasks.length > 0) {
+                    await enqueueBatchPushTasks(result.tasks);
+                }
+                return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
+            } else if (result.status === 'error') {
+                return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
+            }
+            return null;
+        }
         case 'execute_stop_preorder': {
             const productId = data.get('product_id');
             const result = await executeDbQuery(async (client) => {
@@ -7134,68 +7196,6 @@ async function handleOrderActions(action, data, user) {
             } else {
                 return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
             }
-        }
-        case 'cancel_preorder_start': {
-            const productId = data.get('product_id');
-            const product = await getProduct(productId);
-            if (!product) return '找不到商品。';
-            
-            const count = await executeDbQuery(client => 
-                client.query("SELECT COUNT(*) FROM product_preorders WHERE product_id = $1 AND status = 'active'", [productId])
-            ).then(res => parseInt(res.rows[0].count, 10));
-            if (count === 0) {
-                return `「${product.name}」沒有需要取消的預購。`;
-            }
-
-            return {
-                type: 'text',
-                text: `⚠️ 您確定要因為缺貨而取消 ${count} 位學員的「${product.name}」預購嗎？\n\n系統將會發送通知告知學員，此操作無法復原。`,
-                quickReply: { items: [
-                    { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_cancel_preorder&product_id=${productId}` } },
-                    { type: 'action', action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.TEACHER.MANAGE_FULFILLMENT } }
-                ]}
-            };
-        }
-        case 'execute_cancel_preorder': {
-            const productId = data.get('product_id');
-            const result = await executeDbQuery(async (client) => {
-                await client.query('BEGIN');
-                try {
-                    const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
-                    if (productRes.rows.length === 0) {
-                         await client.query('ROLLBACK');
-                        return { status: 'error', message: '找不到對應的商品。' };
-                    }
-                    const product = productRes.rows[0];
-
-                    const preorders = (await client.query("SELECT * FROM product_preorders WHERE product_id = $1 AND status = 'active' FOR UPDATE", [productId])).rows;
-                    if (preorders.length === 0) {
-                        await client.query('ROLLBACK');
-                        return { status: 'processed' };
-                    }
-
-                    const notificationTasks = preorders.map(preorder => ({
-                        recipientId: preorder.user_id,
-                        message: { type: 'text', text: `❗️ 預購取消通知\n很抱歉，由於廠商供貨問題，您預購的商品「${product.name}」無法到貨，本次預購已為您取消。造成不便，敬請見諒。` }
-                    }));
-                    await client.query("UPDATE product_preorders SET status = 'canceled' WHERE product_id = $1 AND status = 'active'", [productId]);
-                    await client.query('COMMIT');
-                    return { success: true, tasks: notificationTasks, count: preorders.length, productName: product.name };
-                } catch (err) {
-                    await client.query('ROLLBACK');
-                    console.error('執行取消預購時失敗:', err);
-                    return { status: 'error', message: `處理失敗：${err.message}` };
-                }
-            });
-            if (result.success) {
-                if (result.tasks.length > 0) {
-                    await enqueueBatchPushTasks(result.tasks);
-                }
-                return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
-            } else if (result.status === 'error') {
-                return `❌ 操作失敗，資料庫發生錯誤，請稍後再試。`;
-            }
-            return null;
         }
         case 'select_purchase_plan': {
             const points = parseInt(data.get('plan'), 10);
