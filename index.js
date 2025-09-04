@@ -2585,10 +2585,8 @@ async function handleStudentSearchFlow(searchQuery, pendingState, userId, showSe
 async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
   const user = await getUser(userId);
-  // [V42.0 最終版] 處理商品建立的完整狀態機 (選擇規格 -> 輸入組合 -> 確認)
-  // [V42.2 修正] 處理商品建立的完整狀態機 (在每一步都重設超時)
-  // [V42.6 最終修正] 處理商品建立的完整狀態機 (強化狀態管理)
-if (pendingProductCreation[userId]) {
+  // [V42.8 最終版] 處理商品建立的完整狀態機 (配合新的重置邏輯)
+  if (pendingProductCreation[userId]) {
     const state = pendingProductCreation[userId];
     let reply;
 
@@ -2656,11 +2654,11 @@ if (pendingProductCreation[userId]) {
                 nameParts.push(combinationValues[index]);
             });
 
-            // [修正] 不論是第幾次，都在這裡建立全新的 currentVariant
-            state.currentVariant = {
-                name: nameParts.join(' / '),
-                attributes: attributes
-            };
+            // 如果 currentVariant 不存在，就建立一個新的
+            if (!state.currentVariant) state.currentVariant = {};
+
+            state.currentVariant.name = nameParts.join(' / ');
+            state.currentVariant.attributes = attributes;
             state.step = 'await_variant_price';
             setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
             reply = { type: 'text', text: `請輸入規格「${state.currentVariant.name}」的售價 (元)：`, quickReply: { items: getCancelMenu() } };
@@ -2691,10 +2689,9 @@ if (pendingProductCreation[userId]) {
             break;
 
         case 'await_variant_image':
-            // [修正] 增加一道防禦性檢查，確保 currentVariant 存在
             if (!state.currentVariant) {
                 console.error('[FATAL LOGIC ERROR] Reached await_variant_image without a currentVariant in state.');
-                delete pendingProductCreation[userId]; // 清理狀態避免卡死
+                delete pendingProductCreation[userId];
                 reply = '抱歉，內部狀態發生錯誤，請重新開始上架流程。';
                 break;
             }
@@ -2706,20 +2703,16 @@ if (pendingProductCreation[userId]) {
                 state.currentVariant.image_url = imageUrlResult;
                 state.variants.push(state.currentVariant);
                 
-                // [修正] 改為設置為 null，而不是 delete，這樣更安全
-                state.currentVariant = null; 
+                // [修正] 改回使用 delete，因為我們已在 postback 處理中確保了重置
+                delete state.currentVariant;
                 
-                // 將 step 更新為一個等待 postback 的狀態，使流程更明確
-                state.step = 'await_variant_confirmation'; 
-                
+                state.step = 'await_variant_confirmation';
                 setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
                 reply = buildVariantAddedConfirmationFlex(state.baseProduct, state.variants);
             }
             break;
             
         case 'await_variant_confirmation':
-            // 這個狀態等待使用者點擊「新增下一組」或「完成上架」的 postback
-            // 因此在這邊不需要處理文字或圖片訊息
             reply = "請點擊下方按鈕來繼續操作喔！";
             break;
     }
