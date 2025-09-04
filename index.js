@@ -1550,17 +1550,30 @@ async function showAnnouncementsForDeletionList(event, user) {
     return showAnnouncementsForDeletion(1);
 }
 
-
 async function showShopManagementMenu(event, user) {
-    // [V35.5 修正] 更新查詢條件以計數所有待處理的現金/轉帳訂單
+    // [優化] 將 4 個產品相關的計數查詢合併為 1 個，以提升效能
+    const productCounts = await executeDbQuery(client =>
+        client.query(`
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'preorder') AS preorder_count,
+                COUNT(*) FILTER (WHERE inventory <= 0 AND status = 'available') AS sold_out_count,
+                COUNT(*) FILTER (WHERE status = 'available') AS available_count,
+                COUNT(*) FILTER (WHERE status = 'unavailable') AS unavailable_count
+            FROM products
+        `)
+    ).then(res => ({
+        preorderCount: parseInt(res.rows[0].preorder_count, 10),
+        soldOutCount: parseInt(res.rows[0].sold_out_count, 10),
+        availableCount: parseInt(res.rows[0].available_count, 10),
+        unavailableCount: parseInt(res.rows[0].unavailable_count, 10)
+    }));
+
+    // 查詢待處理的「商品訂單」數量
     const pendingShopOrdersCount = await executeDbQuery(client => 
         client.query("SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')")
     ).then(res => parseInt(res.rows[0].count, 10));
-       // 查詢正在預購中的商品數量
-    const preorderCount = await executeDbQuery(client =>
-        client.query("SELECT COUNT(*) FROM products WHERE status = 'preorder'")
-    ).then(res => parseInt(res.rows[0].count, 10)); 
-      // 查詢有多少商品系列已停止預購，但待通知出貨
+
+    // 查詢有多少商品系列已停止預購，但「待通知出貨」
     const fulfillmentCount = await executeDbQuery(client =>
         client.query(`
             SELECT COUNT(DISTINCT p.id) 
@@ -1569,33 +1582,55 @@ async function showShopManagementMenu(event, user) {
             WHERE p.status = 'unavailable' AND pp.status = 'active'
         `)
     ).then(res => parseInt(res.rows[0].count, 10));
-    // 查詢零庫存、且仍在架上的商品數量
-    const soldOutCount = await executeDbQuery(client =>
-        client.query("SELECT COUNT(*) FROM products WHERE inventory <= 0 AND status = 'available'")
-    ).then(res => parseInt(res.rows[0].count, 10));
-    let pendingShopOrdersLabel = '📋 查看待處理訂單';
-    if (pendingShopOrdersCount > 0) { 
-        pendingShopOrdersLabel += ` (${pendingShopOrdersCount})`;
+
+    // --- 動態產生所有按鈕的標籤 ---
+    
+    // [新] 管理販售中商品
+    let availableLabel = '🛒 管理販售中商品';
+    if (productCounts.availableCount > 0) {
+        availableLabel += ` (${productCounts.availableCount})`;
     }
-    let soldOutLabel = '📦 管理零庫存商品';
-    if (soldOutCount > 0) {
-        soldOutLabel += ` (${soldOutCount})`;
+
+    // [新] 管理已下架商品
+    let unavailableLabel = '📦 管理已下架商品';
+    if (productCounts.unavailableCount > 0) {
+        unavailableLabel += ` (${productCounts.unavailableCount})`;
     }
+    
     let preorderLabel = '🚀 管理預購中商品';
-    if (preorderCount > 0) {
-        preorderLabel += ` (${preorderCount})`;
+    if (productCounts.preorderCount > 0) {
+        preorderLabel += ` (${productCounts.preorderCount})`;
     }
+
     let fulfillmentLabel = '🚚 待出貨預購管理';
     if (fulfillmentCount > 0) {
         fulfillmentLabel += ` (${fulfillmentCount})`;
     }
+
+    let soldOutLabel = '📦 管理零庫存商品';
+    if (productCounts.soldOutCount > 0) {
+        soldOutLabel += ` (${productCounts.soldOutCount})`;
+    }
+
+    let pendingShopOrdersLabel = '📋 查看待處理訂單';
+    if (pendingShopOrdersCount > 0) { 
+        pendingShopOrdersLabel += ` (${pendingShopOrdersCount})`;
+    }
+    
     return { 
         type: 'flex', 
         altText: '商城管理', 
         contents: { 
             type: 'bubble', 
             size: 'giga', 
-            header: createStandardHeader('🛍️ 商城管理'),
+            header: { 
+                type: 'box', 
+                layout: 'vertical', 
+                contents: [ { type: 'text', text: '🛍️ 商城管理', weight: 'bold', size: 'lg', color: '#FFFFFF' } ], 
+                backgroundColor: '#343A40', 
+                paddingTop: 'lg', 
+                paddingBottom: 'lg' 
+            }, 
             body: { 
                 type: 'box', 
                 layout: 'vertical', 
@@ -1603,11 +1638,13 @@ async function showShopManagementMenu(event, user) {
                 paddingAll: 'lg', 
                 contents: [ 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '➕ 上架新商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.ADD_PRODUCT)}` } }, 
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 管理販售中商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_AVAILABLE_PRODUCTS)}` } }, 
+                    // [修改] 使用動態標籤
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: availableLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_AVAILABLE_PRODUCTS)}` } }, 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: preorderLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_PREORDER_PRODUCTS)}` } },
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: fulfillmentLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_FULFILLMENT)}` } },
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: soldOutLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_SOLD_OUT_PRODUCTS)}` } },
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📦 管理已下架商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_UNAVAILABLE_PRODUCTS)}` } }, 
+                    // [修改] 使用動態標籤
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: unavailableLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.MANAGE_UNAVAILABLE_PRODUCTS)}` } }, 
                     { type: 'separator', margin: 'md'}, 
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: pendingShopOrdersLabel, data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.TEACHER.SHOP_ORDER_MANAGEMENT)}` } },
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 查詢購買紀錄', data: `action=select_exchange_history_view_type` } } 
@@ -1616,6 +1653,7 @@ async function showShopManagementMenu(event, user) {
         } 
     };
 }
+
 
 
 
