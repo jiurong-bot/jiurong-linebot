@@ -869,6 +869,28 @@ function formatIdForDisplay(id) {
     const zws = '\u200B'; // Zero-width space
     return id.match(/.{1,8}/g)?.join(zws) || id;
 }
+/**
+ * [新增] 建立一個標準化的 Flex Message 標頭
+ * @param {string} title - 標頭要顯示的文字
+ * @param {string} [backgroundColor='#343A40'] - 標頭的背景顏色 (可選)
+ * @returns {object} - Flex Message 的 header 物件
+ */
+function createStandardHeader(title, backgroundColor = '#343A40') {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    contents: [{ 
+      type: 'text', 
+      text: title, 
+      color: '#ffffff', 
+      weight: 'bold', 
+      size: 'lg' 
+    }],
+    backgroundColor: backgroundColor,
+    paddingTop: 'lg',
+    paddingBottom: 'lg'
+  };
+}
 
 
 function formatDateTime(isoString) {
