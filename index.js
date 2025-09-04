@@ -893,9 +893,8 @@ function createStandardHeader(title, backgroundColor = '#343A40') {
     paddingBottom: 'lg'
   };
 }
-
 /**
- * [V42.0 新增] 建立一個讓老師選擇「規格類型」的 Flex Message
+ * [V42.1 修正] 建立一個讓老師選擇「規格類型」的 Flex Message (修正 disabled 屬性問題)
  * @param {Array<string>} selectedKeys - 老師當前已經選擇的規格類型
  * @returns {object} Flex Message
  */
@@ -925,6 +924,22 @@ function buildAttributeSelectionFlex(selectedKeys = []) {
         });
     }
 
+    // [修改] 根據是否有選擇規格，來決定 footer 按鈕的外觀與行為
+    const isSelectionMade = selectedKeys.length > 0;
+    const footerButton = {
+        type: 'button',
+        style: 'primary',
+        // 如果有選擇，按鈕為綠色；否則為灰色
+        color: isSelectionMade ? '#28a745' : '#AAAAAA',
+        action: {
+            type: 'postback',
+            // 如果有選擇，文字為「完成選擇」；否則提示使用者
+            label: isSelectionMade ? '✅ 完成選擇' : '請先選擇至少一項規格',
+            // 如果沒有選擇，這個按鈕其實不會觸發下一步，但我們還是把它指向正確的 action
+            data: 'action=product_creation_finish_attr_select'
+        }
+    };
+
     return {
         type: 'flex',
         altText: '請選擇商品規格',
@@ -940,17 +955,7 @@ function buildAttributeSelectionFlex(selectedKeys = []) {
             footer: {
                 type: 'box',
                 layout: 'vertical',
-                contents: [{
-                    type: 'button',
-                    style: 'primary',
-                    color: '#28a745',
-                    disabled: selectedKeys.length === 0,
-                    action: {
-                        type: 'postback',
-                        label: '✅ 完成選擇',
-                        data: 'action=product_creation_finish_attr_select'
-                    }
-                }]
+                contents: [footerButton] // 使用我們動態產生的 footer 按鈕
             }
         }
     };
