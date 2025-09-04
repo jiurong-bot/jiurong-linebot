@@ -1,4 +1,4 @@
-// index.js - V40.6 (整合重複的搜尋流程）
+// index.js - V40.7 (簡化handlePostback結構）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -5905,7 +5905,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V40.6 (整合重複的搜尋流程）`);
+    console.log(`Bot 版本 V40.7 (簡化handlePostback結構）`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
