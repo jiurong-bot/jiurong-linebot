@@ -7938,7 +7938,7 @@ async function handleReportActions(action, data, user) {
     return null;
 }
 /**
- * [重構修正後] 處理 Postback 事件的總路由器
+ * [V42.0 重構] 處理 Postback 事件的總路由器
  */
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
@@ -7952,8 +7952,7 @@ async function handlePostback(event, user) {
 
         // 建立一個模擬的「文字訊息事件」物件
         const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
-        
-        // 根據使用者角色，呼叫對應的「文字指令處理器」，並傳入正確的參數 (event, userId)
+        // 根據使用者角色，呼叫對應的「文字指令處理器」
         if (user.role === 'admin') return handleAdminCommands(simulatedEvent, userId);
         if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, userId);
         return handleStudentCommands(simulatedEvent, userId);
@@ -7964,7 +7963,6 @@ async function handlePostback(event, user) {
     }
 
     // 步驟二：將常規的按鈕點擊事件，分派到對應的子處理函式
-    // 注意：這裡我們不再需要判斷 'run_command'
     if (action.startsWith('view_') || action.startsWith('list_') || action.startsWith('manage_course_group') || action.startsWith('student_search_results')) {
         return handleViewActions(action, data, user);
     }
@@ -7975,8 +7973,12 @@ async function handlePostback(event, user) {
         return handleTeacherActions(action, data, user);
     }
     if (action.includes('course') || action.includes('booking') || action.includes('waitlist') || action.includes('announcement')) {
+         if (action.includes('publish_prefilled') || action.includes('edit_prefilled') || action.includes('cancel_announcement')) {
+             return handleCourseActions(action, data, user);
+         }
         return handleCourseActions(action, data, user);
     }
+    // [修改] 增加判斷式，呼叫 handleProductActions 來處理所有商品相關 postback
     if (action.includes('product') || action.includes('preorder') || action.includes('inventory')) {
         return handleProductActions(action, data, user);
     }
@@ -7994,7 +7996,6 @@ async function handlePostback(event, user) {
     console.log(`[INFO] 未處理的 Postback Action: ${action}`);
     return null;
 }
-
 async function handleEvent(event) {
     if (event.type === 'unfollow' || event.type === 'leave') {
         console.log(`用戶 ${event.source.userId} 已封鎖或離開`);
