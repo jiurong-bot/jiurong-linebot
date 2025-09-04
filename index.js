@@ -2387,6 +2387,31 @@ async function showPurchaseHistoryList(event, user) {
   };
 }
 
+/**
+ * [優化建議] 處理搜尋學員並顯示結果的通用流程
+ * @param {string} searchQuery - 使用者輸入的搜尋關鍵字
+ * @param {object} pendingState - 要清除的對話狀態物件 (例如 pendingPurchaseHistorySearch)
+ * @param {string} userId - 當前操作的老師 User ID
+ * @param {function(Array<object>): Promise<object>} showSelectionFunction - 找到學員後，要用來顯示選項畫面的函式
+ * @returns {Promise<object|string>} Flex Message 或提示文字
+ */
+async function handleStudentSearchFlow(searchQuery, pendingState, userId, showSelectionFunction) {
+    // 1. 清除對話狀態，避免重複觸發
+    delete pendingState[userId];
+
+    // 2. 執行資料庫查詢
+    const res = await executeDbQuery(client =>
+        client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
+    );
+
+    // 3. 如果找不到結果，回傳提示訊息
+    if (res.rows.length === 0) {
+        return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
+    }
+    
+    // 4. 呼叫指定的函式來顯示結果輪播
+    return showSelectionFunction(res.rows);
+}
 
 async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
