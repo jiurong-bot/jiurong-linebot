@@ -2833,72 +2833,32 @@ async function handleTeacherCommands(event, userId) {
         }
         break;
     }
+  /*
   } else if (pendingManualAdjust[userId]) {
     // ... pendingManualAdjust 的程式碼 ...
+  */
   } else if (pendingManualAdjustSearch[userId]) {
     const searchQuery = text;
     delete pendingManualAdjustSearch[userId];
-
-
     const res = await executeDbQuery(client => 
         client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
     );
     if (res.rows.length === 0) {
         return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
     }
-    
     return showStudentSelectionForAdjustHistory(res.rows, searchQuery);
   }
 
-
-  // [新增] 購點歷史查詢的處理
+  // 使用新函式來簡化查詢流程
   else if (pendingPurchaseHistorySearch[userId]) {
-    const searchQuery = text;
-    delete pendingPurchaseHistorySearch[userId];
-
-
-    const res = await executeDbQuery(client => 
-        client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
-    );
-    if (res.rows.length === 0) {
-        return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
-    }
-    
-    return showStudentSelectionForPurchaseHistory(res.rows);
+    return handleStudentSearchFlow(text, pendingPurchaseHistorySearch, userId, showStudentSelectionForPurchaseHistory);
   }
-  
-  // [新增] 購買歷史查詢的處理
   else if (pendingExchangeHistorySearch[userId]) {
-      const searchQuery = text;
-      delete pendingExchangeHistorySearch[userId];
-
-
-      const res = await executeDbQuery(client => 
-          client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
-      );
-      if (res.rows.length === 0) {
-          return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
-      }
-      
-      return showStudentSelectionForExchangeHistory(res.rows);
+    return handleStudentSearchFlow(text, pendingExchangeHistorySearch, userId, showStudentSelectionForExchangeHistory);
   }
-    // [新增] 歷史留言查詢的處理
   else if (pendingMessageHistorySearch[userId]) {
-      const searchQuery = text;
-      delete pendingMessageHistorySearch[userId];
-
-
-      const res = await executeDbQuery(client => 
-          client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
-      );
-      if (res.rows.length === 0) {
-          return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
-      }
-      
-      return showStudentSelectionForMessageHistory(res.rows);
+    return handleStudentSearchFlow(text, pendingMessageHistorySearch, userId, showStudentSelectionForMessageHistory);
   }
-
-
   else if (pendingStudentSearchQuery[userId]) {
     const searchQuery = text;
     delete pendingStudentSearchQuery[userId];
