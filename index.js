@@ -2456,68 +2456,135 @@ async function handleStudentSearchFlow(searchQuery, pendingState, userId, showSe
 async function handleTeacherCommands(event, userId) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
   const user = await getUser(userId);
-  // 優先處理有延續性的對話 (Pending States)
-  if (pendingProductCreation[userId]) {
+  // [V42.0 最終版] 處理商品建立的完整狀態機 (選擇規格 -> 輸入組合 -> 確認)
+if (pendingProductCreation[userId]) {
     const state = pendingProductCreation[userId];
-    let proceed = true;
-    let errorMessage = '';
+    let reply;
+
+    // 輔助函式：處理使用者上傳的圖片，並上傳至圖床
+    const handleImageUpload = async (message) => {
+        // 如果使用者輸入「無」，表示不提供圖片
+        if (message.type === 'text' && message.text.trim().toLowerCase() === '無') {
+            return null;
+        }
+        // 如果訊息類型是圖片，則進行處理
+        if (message.type === 'image') {
+            try {
+                // 1. 從 LINE Server 下載圖片
+                const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${message.id}/content`, {
+                    headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` },
+                    responseType: 'arraybuffer'
+                });
+                const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+
+                // 2. 上傳圖片至 ImageKit.io
+                const uploadResponse = await imagekit.upload({
+                    file: imageBuffer,
+                    fileName: `variant_${Date.now()}.jpg`,
+                    useUniqueFileName: true,
+                    folder: "yoga_products_variants" // 您在 ImageKit 上的資料夾名稱
+                });
+                return uploadResponse.url; // 回傳圖片網址
+            } catch (err) {
+                console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err);
+                return 'upload_error'; // 回傳錯誤標記
+            }
+        }
+        return 'invalid_format'; // 如果格式不符，回傳無效格式標記
+    };
+
+    // 使用 switch 根據目前的對話狀態 (state.step) 決定如何回應
     switch (state.step) {
-        case 'await_name': state.name = text;
-        state.step = 'await_description'; return { type: 'text', text: '請輸入商品描述 (可換行)，或輸入「無」：', quickReply: { items: getCancelMenu() } };
-        case 'await_description': state.description = text === '無' ? null : text; state.step = 'await_price';
-            return { type: 'text', text: '請輸入商品售價 (元，純數字)：', quickReply: { items: getCancelMenu() } };
-        case 'await_price':
-            const price = parseInt(text, 10);
-            if (isNaN(price) || price < 0) { proceed = false; errorMessage = '價格格式不正確，請輸入一個非負整數。';
-            } 
-            else { state.price = price;
-            state.step = 'await_inventory'; return { type: 'text', text: '請輸入商品初始庫存 (純數字)：', quickReply: { items: getCancelMenu() } };
-            }
+        case 'await_name':
+            state.baseProduct = { name: text };
+            state.variants = [];
+            state.step = 'await_description';
+            reply = { type: 'text', text: `好的，商品名稱為：「${text}」。\n\n接下來，請輸入此商品的通用描述，或輸入「無」。`, quickReply: { items: getCancelMenu() } };
             break;
-        case 'await_inventory':
-            const inventory = parseInt(text, 10);
-            if (isNaN(inventory) || inventory < 0) { proceed = false; errorMessage = '庫存格式不正確，請輸入一個非負整數。';
-            } 
-            else { state.inventory = inventory;
-            state.isPreorder = (inventory === 0); // 如果庫存為 0，就給一個 true 的標記
-            state.step = 'await_image_url'; return { type: 'text', text: '請直接上傳一張商品圖片，或輸入「無」：', quickReply: { items: getCancelMenu() } };
-            }
+
+        case 'await_description':
+            state.baseProduct.description = text.trim().toLowerCase() === '無' ? null : text;
+            state.step = 'await_attribute_selection';
+            state.selectedAttributes = []; // 初始化一個空陣列來存放老師選擇的規格
+            reply = buildAttributeSelectionFlex(state.selectedAttributes); // 呼叫函式建立規格選擇卡片
             break;
-        case 'await_image_url':
-            let imageUrl = null;
-            let proceedToNextStep = true; let errorImageUrlMessage = '';
-            if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') { imageUrl = null;
-            } 
-            else if (event.message.type === 'image') {
-                try {
-                    const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
-                    const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                    const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `product_${Date.now()}.jpg`, useUniqueFileName: true, folder: "yoga_products" });
-                    imageUrl = uploadResponse.url;
-                } catch (err) { console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err); proceedToNextStep = false; errorImageUrlMessage = '圖片上傳失敗，請稍後再試。';
-                }
-            } else { proceedToNextStep = false;
-            errorImageUrlMessage = '格式錯誤，請直接上傳一張商品圖片，或輸入「無」。'; }
-            if (!proceedToNextStep) { return { type: 'text', text: errorImageUrlMessage, quickReply: { items: getCancelMenu() } };
+
+        case 'await_attribute_selection':
+            // 這個狀態是專門用來等待使用者點擊 Flex Message 按鈕 (Postback event) 的。
+            // 因此，在處理一般文字或圖片訊息的這個區塊中，我們將它留空，不做任何回應。
+            // 相關的邏輯會由 handlePostback 函式處理。
+            break;
+
+        case 'await_variant_combination':
+            // 處理老師輸入的規格組合，例如 "紅色, S"
+            const combinationValues = text.split(/[,，]/).map(v => v.trim());
+            
+            // 驗證輸入的數量是否和選擇的規格數量一致
+            if (combinationValues.length !== state.selectedAttributes.length) {
+                reply = { type: 'text', text: `格式錯誤！您需要輸入 ${state.selectedAttributes.length} 個值，並用逗號分隔。\n請依照【${state.selectedAttributes.join(', ')}】的順序重新輸入：`, quickReply: { items: getCancelMenu() } };
+                break;
             }
-            state.image_url = imageUrl; state.step = 'await_confirmation';
-            const summaryText = `請確認商品資訊：\n\n` +
-                              `名稱：${state.name}\n` +
-                              `描述：${state.description || '無'}\n` +
-                              `價格：${state.price} 元\n` +
-                              `庫存：${state.inventory}\n` +
-                              `狀態：${state.isPreorder ? '開放預購' : '直接上架'}\n` + // 根據標記顯示不同狀態
-                              `圖片：${state.image_url || '無'}\n\n` +
-                              `確認無誤後請點擊「✅ 確認上架」。`;
-            return {
-                type: 'text',
-                text: summaryText,
-                quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}
+
+            const attributes = {};
+            const nameParts = [];
+            // 將輸入的值與規格名稱對應起來
+            state.selectedAttributes.forEach((key, index) => {
+                attributes[key] = combinationValues[index];
+                nameParts.push(combinationValues[index]);
+            });
+
+            // 暫存這組即將建立的規格資訊
+            state.currentVariant = {
+                name: nameParts.join(' / '),
+                attributes: attributes
             };
+            state.step = 'await_variant_price';
+            reply = { type: 'text', text: `請輸入規格「${state.currentVariant.name}」的售價 (元)：`, quickReply: { items: getCancelMenu() } };
+            break;
+
+        case 'await_variant_price':
+            const price = parseInt(text, 10);
+            if (isNaN(price) || price < 0) {
+                reply = { type: 'text', text: '價格格式不正確，請輸入一個非負整數。', quickReply: { items: getCancelMenu() } };
+            } else {
+                state.currentVariant.price = price;
+                state.step = 'await_variant_inventory';
+                reply = { type: 'text', text: '請輸入此規格的庫存 (純數字)：', quickReply: { items: getCancelMenu() } };
+            }
+            break;
+
+        case 'await_variant_inventory':
+            const inventory = parseInt(text, 10);
+            if (isNaN(inventory) || inventory < 0) {
+                reply = { type: 'text', text: '庫存格式不正確，請輸入一個非負整數。', quickReply: { items: getCancelMenu() } };
+            } else {
+                state.currentVariant.inventory = inventory;
+                state.step = 'await_variant_image';
+                reply = { type: 'text', text: '請為此規格上傳專屬圖片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
+            }
+            break;
+
+        case 'await_variant_image':
+            const imageUrlResult = await handleImageUpload(event.message);
+            if (imageUrlResult === 'upload_error' || imageUrlResult === 'invalid_format') {
+                reply = { type: 'text', text: '圖片處理失敗，請重新上傳圖片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
+            } else {
+                state.currentVariant.image_url = imageUrlResult;
+                // 將完整建立的規格組合，存入 state.variants 陣列中
+                state.variants.push(state.currentVariant);
+                delete state.currentVariant; // 清除暫存資料
+                
+                // 顯示確認卡片，讓老師可以選擇「繼續新增」或「完成上架」
+                reply = buildVariantAddedConfirmationFlex(state.baseProduct, state.variants);
+            }
+            break;
     }
-    if (!proceed && state.step !== 'await_image_url') { return { type: 'text', text: errorMessage, quickReply: { items: getCancelMenu() } };
-    }
-  } else if (pendingProductEdit[userId]) {
+    
+    // 將上面 switch 判斷後產生的 reply 物件回傳
+    return reply;
+}
+
+    else if (pendingProductEdit[userId]) {
     const state = pendingProductEdit[userId];
     const product = state.product;
     const field = state.field;
