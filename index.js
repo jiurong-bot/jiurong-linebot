@@ -1519,14 +1519,7 @@ async function showAnnouncementManagementMenu(event, user) {
         contents: { 
             type: 'bubble', 
             size: 'giga', 
-            header: { 
-                type: 'box', 
-                layout: 'vertical', 
-                contents: [{ type: 'text', text: '📢 公告管理', color: '#ffffff', weight: 'bold', size: 'lg' }], 
-                backgroundColor: '#343A40', 
-                paddingTop: 'lg', 
-                paddingBottom: 'lg' 
-            }, 
+            header: createStandardHeader('📢 公告管理'),
             body: { 
                 type: 'box', 
                 layout: 'vertical', 
