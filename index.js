@@ -2587,21 +2587,18 @@ async function handleTeacherCommands(event, userId) {
   const user = await getUser(userId);
   // [V42.0 最終版] 處理商品建立的完整狀態機 (選擇規格 -> 輸入組合 -> 確認)
   // [V42.2 修正] 處理商品建立的完整狀態機 (在每一步都重設超時)
-  if (pendingProductCreation[userId]) {
+  // [V42.6 最終修正] 處理商品建立的完整狀態機 (強化狀態管理)
+if (pendingProductCreation[userId]) {
     const state = pendingProductCreation[userId];
     let reply;
 
-    // 定義統一的超時回呼函式
     const onTimeout = (u) => {
         const timeoutMessage = { type: 'text', text: '上架商品操作逾時，自動取消。' };
         enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
     };
 
-    // 輔助函式：處理使用者上傳的圖片
     const handleImageUpload = async (message) => {
-        if (message.type === 'text' && message.text.trim().toLowerCase() === '無') {
-            return null;
-        }
+        if (message.type === 'text' && message.text.trim().toLowerCase() === '無') { return null; }
         if (message.type === 'image') {
             try {
                 const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${message.id}/content`, {
@@ -2629,7 +2626,6 @@ async function handleTeacherCommands(event, userId) {
             state.baseProduct = { name: text };
             state.variants = [];
             state.step = 'await_description';
-            // [新增] 在這一步重設計時器
             setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
             reply = { type: 'text', text: `好的，商品名稱為：「${text}」。\n\n接下來，請輸入此商品的通用描述，或輸入「無」。`, quickReply: { items: getCancelMenu() } };
             break;
@@ -2638,13 +2634,11 @@ async function handleTeacherCommands(event, userId) {
             state.baseProduct.description = text.trim().toLowerCase() === '無' ? null : text;
             state.step = 'await_attribute_selection';
             state.selectedAttributes = [];
-            // [新增] 在這一步也重設計時器
             setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
             reply = buildAttributeSelectionFlex(state.selectedAttributes);
             break;
 
         case 'await_attribute_selection':
-            // 這個狀態等待 Postback 事件，在文字訊息處理中留空
             break;
 
         case 'await_variant_combination':
@@ -2662,12 +2656,12 @@ async function handleTeacherCommands(event, userId) {
                 nameParts.push(combinationValues[index]);
             });
 
+            // [修正] 不論是第幾次，都在這裡建立全新的 currentVariant
             state.currentVariant = {
                 name: nameParts.join(' / '),
                 attributes: attributes
             };
             state.step = 'await_variant_price';
-            // [新增] 在這一步也重設計時器
             setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
             reply = { type: 'text', text: `請輸入規格「${state.currentVariant.name}」的售價 (元)：`, quickReply: { items: getCancelMenu() } };
             break;
@@ -2679,7 +2673,6 @@ async function handleTeacherCommands(event, userId) {
             } else {
                 state.currentVariant.price = price;
                 state.step = 'await_variant_inventory';
-                // [新增] 在這一步也重設計時器
                 setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
                 reply = { type: 'text', text: '請輸入此規格的庫存 (純數字)：', quickReply: { items: getCancelMenu() } };
             }
@@ -2692,29 +2685,48 @@ async function handleTeacherCommands(event, userId) {
             } else {
                 state.currentVariant.inventory = inventory;
                 state.step = 'await_variant_image';
-                // [新增] 在這一步也重設計時器
                 setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
                 reply = { type: 'text', text: '請為此規格上傳專屬圖片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
             }
             break;
 
         case 'await_variant_image':
+            // [修正] 增加一道防禦性檢查，確保 currentVariant 存在
+            if (!state.currentVariant) {
+                console.error('[FATAL LOGIC ERROR] Reached await_variant_image without a currentVariant in state.');
+                delete pendingProductCreation[userId]; // 清理狀態避免卡死
+                reply = '抱歉，內部狀態發生錯誤，請重新開始上架流程。';
+                break;
+            }
+        
             const imageUrlResult = await handleImageUpload(event.message);
             if (imageUrlResult === 'upload_error' || imageUrlResult === 'invalid_format') {
                 reply = { type: 'text', text: '圖片處理失敗，請重新上傳圖片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
             } else {
                 state.currentVariant.image_url = imageUrlResult;
                 state.variants.push(state.currentVariant);
-                delete state.currentVariant;
-                // [新增] 在這一步也重設計時器，等待使用者點擊按鈕
+                
+                // [修正] 改為設置為 null，而不是 delete，這樣更安全
+                state.currentVariant = null; 
+                
+                // 將 step 更新為一個等待 postback 的狀態，使流程更明確
+                state.step = 'await_variant_confirmation'; 
+                
                 setupConversationTimeout(userId, pendingProductCreation, 'pendingProductCreation', onTimeout);
                 reply = buildVariantAddedConfirmationFlex(state.baseProduct, state.variants);
             }
             break;
+            
+        case 'await_variant_confirmation':
+            // 這個狀態等待使用者點擊「新增下一組」或「完成上架」的 postback
+            // 因此在這邊不需要處理文字或圖片訊息
+            reply = "請點擊下方按鈕來繼續操作喔！";
+            break;
     }
     
     return reply;
-}     
+}
+
     else if (pendingProductEdit[userId]) {
     const state = pendingProductEdit[userId];
     const product = state.product;
