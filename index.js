@@ -1407,14 +1407,7 @@ async function showCourseInquiry(event, user) {
         contents: { 
             type: 'bubble', 
             size: 'giga', 
-            header: { 
-                type: 'box', 
-                layout: 'vertical', 
-                contents: [{ type: 'text', text: '💎 點數管理', color: '#ffffff', weight: 'bold', size: 'lg' }], 
-                backgroundColor: '#343A40', 
-                paddingTop: 'lg', 
-                paddingBottom: 'lg' 
-            }, 
+            createStandardHeader('💎 點數管理'),
             body: { 
                 type: 'box', 
                 layout: 'vertical', 
