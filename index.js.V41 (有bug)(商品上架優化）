@@ -1,4 +1,4 @@
-// index.js - V41 (商品上架優化）
+// index.js - V41 (有bug)(商品上架優化）
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
