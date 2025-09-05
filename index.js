@@ -7975,12 +7975,3 @@ async function handleEvent(event) {
     }
 
 }
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
-handleProductActions
