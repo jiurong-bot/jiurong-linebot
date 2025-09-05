@@ -7769,6 +7769,13 @@ async function handlePostback(event, user) {
     if (action.includes('course') || action.includes('booking') || action.includes('waitlist') || action.includes('announcement')) {
         return handleCourseActions(action, data, user);
     }
+    // [修改] 在此處加入 view_product_group 判斷
+    if (action.includes('product') || action.includes('preorder') || action.includes('inventory') || action === 'view_product_group') {
+        return handleProductActions(action, data, user);
+    }
+    if (action.includes('order') || action.includes('purchase') || action.includes('payment') || action.includes('shop_last5') || action.includes('arrival')) {
+        return handleOrderActions(action, data, user);
+    }
     if (action.includes('product') || action.includes('preorder') || action.includes('inventory')) {
         return handleProductActions(action, data, user);
     }
