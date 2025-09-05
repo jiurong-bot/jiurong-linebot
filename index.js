@@ -3426,15 +3426,6 @@ event.message.text.trim().normalize() : '';
         delete pendingBookingConfirmation[userId];
         return buildPointsMenuFlex(userId);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.BUY_POINTS) {
-        const hasPendingOrder = await executeDbQuery(async (client) => {
-            const existingOrderRes = await client.query(`SELECT 1 FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') LIMIT 1`, [userId]);
-            return existingOrderRes.rows.length > 0;
-        });
-        if (hasPendingOrder) {
-            const flexMenu = await buildPointsMenuFlex(userId);
-            return [{type: 'text', text: '您目前尚有未完成的訂單，請先處理該筆訂單。'}, flexMenu];
-        }
-      
         return buildBuyPointsFlex();
     } else if (text === CONSTANTS.COMMANDS.STUDENT.PURCHASE_HISTORY) {
         return showPurchaseHistory(userId, 1);
