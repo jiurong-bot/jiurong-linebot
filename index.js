@@ -6631,12 +6631,65 @@ async function handleCourseActions(action, data, user) {
     }
     return null;
 }
-/**
+/** 
  * 處理所有與「商品」相關的操作
  */
 async function handleProductActions(action, data, user) {
     const userId = user.id;
     switch (action) {
+        // [修改] 處理點擊商品群組的事件，並在結尾加上返回鍵
+        case 'view_product_group': {
+            const productName = decodeURIComponent(data.get('name'));
+            if (!productName) {
+                return '操作失敗，缺少商品名稱。';
+            }
+
+            const products = await executeDbQuery(client =>
+                client.query("SELECT * FROM products WHERE name = $1 AND status IN ('available', 'preorder') ORDER BY created_at DESC", [productName])
+            ).then(res => res.rows);
+
+            if (products.length === 0) {
+                return '抱歉，找不到這個系列的商品。';
+            }
+
+            // 使用我們建立的輔助函式來為群組中的每個商品建立一個 Bubble
+            const groupBubbles = products.map(p => createSingleProductBubble(p));
+
+            // [新增] 建立並加入一個返回按鈕卡片
+            const backButtonBubble = {
+                type: 'bubble',
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'md',
+                    justifyContent: 'center',
+                    contents: [{
+                        type: 'button',
+                        style: 'secondary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '⬅️ 返回商品總覽',
+                            // 這個 action 會重新觸發顯示所有商品的指令
+                            data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}`,
+                            displayText: '返回商品總覽'
+                        }
+                    }]
+                }
+            };
+            // 將返回按鈕卡片加到輪播的最後
+            groupBubbles.push(backButtonBubble);
+
+            return {
+                type: 'flex',
+                altText: `查看 ${productName} 系列商品`,
+                contents: {
+                    type: 'carousel',
+                    contents: groupBubbles
+                }
+            };
+        }
+
         case 'view_preorder_list': {
             const productId = data.get('product_id');
             return showPreorderRoster(productId);
@@ -6659,7 +6712,7 @@ async function handleProductActions(action, data, user) {
                 text: messageText,
                 quickReply: {
                     items: [
-                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_stop_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_stop_preorder&product_id=${productId}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                     ]
                 }
@@ -6728,7 +6781,7 @@ async function handleProductActions(action, data, user) {
                 try {
                     const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
                     if (productRes.rows.length === 0) {
-                         await client.query('ROLLBACK');
+                        await client.query('ROLLBACK');
                         return { status: 'error', message: '找不到對應的商品。' };
                     }
                     const product = productRes.rows[0];
@@ -6771,7 +6824,7 @@ async function handleProductActions(action, data, user) {
                 text: `您確定要為「${product.name}」開啟預購功能嗎？\n\n開啟後，學員將可以在商品頁看到並預購此商品。`,
                 quickReply: {
                     items: [
-                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_enable_preorder&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_enable_preorder&product_id=${productId}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                     ]
                 }
@@ -6797,7 +6850,7 @@ async function handleProductActions(action, data, user) {
                 text: `您確定要將「${product.name}」直接下架嗎？\n\n下架後，商品將會移至「管理已下架商品」區。`,
                 quickReply: {
                     items: [
-                         { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_disable_product&product_id=${productId}` } },
+                        { type: 'action', action: { type: 'postback', label: '✅ 確認', data: `action=execute_disable_product&product_id=${productId}` } },
                         { type: 'action', action: { type: 'message', label: '❌ 取消', text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }
                     ]
                 }
@@ -6868,7 +6921,6 @@ async function handleProductActions(action, data, user) {
             const productId = data.get('product_id');
             const quantity = parseInt(data.get('qty') || '1', 10);
             const product = await getProduct(productId);
-
             if (!product) {
                 return '抱歉，找不到該商品。';
             }
@@ -7069,7 +7121,7 @@ async function handleProductActions(action, data, user) {
                     quickReply: {
                         items: [
                             { type: 'action', action: { type: 'postback', label: '✅ 直接發佈', data: 'action=publish_prefilled_announcement' } },
-                            { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                             { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
                         ]
                     }
                 };
@@ -7140,7 +7192,6 @@ async function handleProductActions(action, data, user) {
             setupConversationTimeout(userId, pendingBookingConfirmation, 'pendingBookingConfirmation', (u) => {
                 enqueuePushTask(u, { type: 'text', text: '商品購買操作已逾時，自動取消。' });
             });
-
             const flexMessage = {
                 type: 'flex',
                 altText: '請選擇付款方式',
@@ -7246,7 +7297,6 @@ async function handleProductActions(action, data, user) {
             const result = await executeDbQuery(client => 
                 client.query("DELETE FROM products WHERE id = $1 RETURNING name", [productId])
             );
-
             if (result.rowCount > 0) {
                 const productName = result.rows[0].name;
                 return `✅ 已成功刪除商品「${productName}」。`;
@@ -7257,6 +7307,7 @@ async function handleProductActions(action, data, user) {
     }
     return null;
 }
+
 
 /**
  * 處理所有與「訂單」相關的操作
