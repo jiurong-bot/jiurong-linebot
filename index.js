@@ -5033,6 +5033,7 @@ function createSingleProductBubble(p) {
 
     return {
         type: 'bubble',
+        size: 'kilo', // [修改] 在此處指定卡片大小
         hero: (p.image_url && p.image_url.startsWith('https')) ? {
             type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
         } : undefined,
@@ -5065,6 +5066,7 @@ function createSingleProductBubble(p) {
         }
     };
 }
+
 // [修改] V39.10 預購功能整合，並新增商品堆疊功能
 async function showShopProducts(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
