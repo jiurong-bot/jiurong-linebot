@@ -1,4 +1,4 @@
-// index.js - V40.10〔測試版〕 (商品瀏覽優化）
+// index.js - T1〔測試版〕 
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
