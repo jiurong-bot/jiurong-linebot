@@ -6003,7 +6003,6 @@ async function handleViewActions(action, data, user) {
     const userId = user.id;
 
     switch (action) {
-        // [新增] 處理點擊商品群組的 case
         case 'view_product_group': {
             const productName = decodeURIComponent(data.get('name'));
             if (!productName) {
@@ -6022,6 +6021,7 @@ async function handleViewActions(action, data, user) {
 
             const backButtonBubble = {
                 type: 'bubble',
+                size: 'kilo', // [修改] 在此處指定卡片大小
                 body: {
                     type: 'box',
                     layout: 'vertical',
