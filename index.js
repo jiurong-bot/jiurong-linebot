@@ -3858,8 +3858,8 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
             queryParams.push(userId);
         }
 
-        // [修改] 排序方式改為 ASC (由舊到新)
-        query += ` ORDER BY timestamp ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        // [修改] 排序方式改為 DESC (由新到舊)
+        query += ` ORDER BY timestamp DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
         
         const res = await client.query(query, queryParams);
@@ -3945,8 +3945,8 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
             query += ` WHERE user_id = $${paramIndex++}`;
             queryParams.push(userId);
         }
-        // [修改] 排序方式改為 ASC (由舊到新)
-        query += ` ORDER BY created_at ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        // // [修改] 排序方式改為 DESC (由新到舊)
+        query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
         
         const res = await client.query(query, queryParams);
@@ -4045,8 +4045,8 @@ async function showHistoricalMessagesAsTeacher(page, userId = null) {
             queryParams.push(userId);
         }
         
-        // [修改] 排序方式改為 ASC (由舊到新)
-        query += ` ORDER BY timestamp ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        // [修改] 排序方式改為 DESC (由新到舊)
+        query += ` ORDER BY timestamp DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
         
         const res = await client.query(query, queryParams);
