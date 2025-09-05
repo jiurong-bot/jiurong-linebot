@@ -44,7 +44,6 @@ const CONSTANTS = {
   },
   PAGINATION_SIZE: 9,
   PURCHASE_PLANS: [
-    { points: 5, amount: 500, label: '5 點 (500元)' },
     { points: 10, amount: 1000, label: '10 點 (1000元)' },
     { points: 20, amount: 2000, label: '20 點 (2000元)' },
     { points: 30, amount: 3000, label: '30 點 (3000元)' },
