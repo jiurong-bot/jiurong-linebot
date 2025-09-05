@@ -49,6 +49,7 @@ const CONSTANTS = {
     { points: 20, amount: 2000, label: '20 點 (2000元)' },
     { points: 30, amount: 3000, label: '30 點 (3000元)' },
     { points: 50, amount: 5000, label: '50 點 (5000元)' },
+    { points: 110, amount: 10000, label: '110 點 (10000元）' }, // 優惠方案
   ],
   BANK_INFO: {
     accountName: process.env.BANK_ACCOUNT_NAME,
