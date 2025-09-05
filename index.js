@@ -5006,81 +5006,131 @@ async function showSingleCoursesForCancellation(prefix, page) {
 // =======================================================
 // [V39.10 預購功能整合] 顯示可預約/預購商品
 // =======================================================
+// [新增] 產生單一商品 Bubble 的輔助函式
+function createSingleProductBubble(p) {
+    // ---- 按鈕外觀邏輯 ----
+    const isSoldOut = p.inventory <= 0 && p.status !== 'preorder';
+    const isPreorder = p.status === 'preorder';
+
+    let buttonLabel = '我要購買';
+    let buttonActionData = `action=select_product_quantity&product_id=${p.id}`;
+    let buttonStyle = 'primary';
+    let buttonColor = '#52B69A'; // 預設為綠色
+
+    if (isSoldOut) {
+        buttonLabel = '已售完';
+        buttonActionData = 'action=do_nothing';
+        buttonStyle = 'secondary';
+        buttonColor = '#AAAAAA';
+    } else if (isPreorder) {
+        buttonLabel = '我要預購';
+        buttonActionData = `action=select_preorder_quantity&product_id=${p.id}`;
+        buttonColor = '#FF9E00'; // 預購按鈕為橘色
+    }
+
+    const buttonAction = { type: 'postback', label: buttonLabel, data: buttonActionData };
+    // ---- 按鈕邏輯結束 ----
+
+    return {
+        type: 'bubble',
+        hero: (p.image_url && p.image_url.startsWith('https')) ? {
+            type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
+        } : undefined,
+        body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+                { type: 'text', text: p.name, weight: 'bold', size: 'xl' },
+                {
+                    type: 'box',
+                    layout: 'horizontal',
+                    margin: 'md',
+                    contents: [
+                        { type: 'text', text: `${p.price} 元`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
+                        { type: 'text', text: isPreorder ? '開放預購中' : `庫存: ${p.inventory}`, size: 'sm', color: isPreorder ? '#FF9E00' : '#666666', align: 'end', flex: 1, gravity: 'bottom' }
+                    ]
+                },
+                { type: 'text', text: p.description || ' ', wrap: true, size: 'sm', margin: 'md', color: '#666666' },
+            ]
+        },
+        footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [{
+                type: 'button',
+                style: buttonStyle,
+                action: buttonAction,
+                color: buttonColor,
+            }]
+        }
+    };
+}
+// [修改] V39.10 預購功能整合，並新增商品堆疊功能
 async function showShopProducts(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
-        // 修正：查詢條件應包含 'available' 和 'preorder' 兩種狀態
-        const productsRes = await client.query("SELECT * FROM products WHERE status IN ('available', 'preorder') ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
+        const productsRes = await client.query("SELECT * FROM products WHERE status IN ('available', 'preorder') ORDER BY name ASC, created_at DESC");
 
-        const hasNextPage = productsRes.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageProducts = hasNextPage ? productsRes.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : productsRes.rows;
-
-        if (pageProducts.length === 0 && page === 1) {
+        if (productsRes.rows.length === 0 && page === 1) {
             return '目前商城沒有任何商品，敬請期待！';
         }
-        if (pageProducts.length === 0) {
+
+        // [新增] 商品分組邏輯
+        const productGroups = {};
+        productsRes.rows.forEach(p => {
+            if (!productGroups[p.name]) {
+                productGroups[p.name] = [];
+            }
+            productGroups[p.name].push(p);
+        });
+
+        const allItems = Object.values(productGroups);
+        
+        const hasNextPage = allItems.length > offset + CONSTANTS.PAGINATION_SIZE;
+        const pageItems = hasNextPage ? allItems.slice(offset, CONSTANTS.PAGINATION_SIZE) : allItems.slice(offset);
+
+        if (pageItems.length === 0) {
             return '沒有更多商品了。';
         }
-
-        const productBubbles = pageProducts.map(p => {
-            // ---- 按鈕外觀邏輯 ----
-            const isSoldOut = p.inventory <= 0 && p.status !== 'preorder';
-            const isPreorder = p.status === 'preorder';
-
-            let buttonLabel = '我要購買';
-            let buttonActionData = `action=select_product_quantity&product_id=${p.id}`;
-            let buttonStyle = 'primary';
-            let buttonColor = '#52B69A'; // 預設為綠色
-
-            if (isSoldOut) {
-                buttonLabel = '已售完';
-                buttonActionData = 'action=do_nothing';
-                buttonStyle = 'secondary';
-                buttonColor = '#AAAAAA';
-            } else if (isPreorder) {
-                buttonLabel = '我要預購';
-                buttonActionData = `action=select_preorder_quantity&product_id=${p.id}`;
-                // *** 關鍵點：設定預購按鈕顏色為橘色 ***
-                buttonColor = '#FF9E00';
+        
+        const productBubbles = pageItems.map(group => {
+            if (group.length === 1) {
+                // 如果群組只有一個商品，直接用輔助函式建立 Bubble
+                return createSingleProductBubble(group[0]);
+            } else {
+                // 如果群組有多個商品，建立一個「群組」Bubble
+                const representativeProduct = group[0]; // 以第一個商品作為代表
+                return {
+                    type: 'bubble',
+                    hero: (representativeProduct.image_url && representativeProduct.image_url.startsWith('https')) ? {
+                        type: 'image', url: representativeProduct.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
+                    } : undefined,
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: representativeProduct.name, weight: 'bold', size: 'xl' },
+                            { type: 'text', text: `共 ${group.length} 種選項可選`, size: 'sm', color: '#666666', margin: 'md' },
+                            { type: 'text', text: representativeProduct.description || ' ', wrap: true, size: 'sm', margin: 'md', color: '#666666' },
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [{
+                            type: 'button',
+                            style: 'primary',
+                            color: '#1A759F',
+                            action: {
+                                type: 'postback',
+                                label: '查看所有選項',
+                                // [新增] 使用新的 postback action，並傳遞商品名稱
+                                data: `action=view_product_group&name=${encodeURIComponent(representativeProduct.name)}`
+                            }
+                        }]
+                    }
+                };
             }
-
-            const buttonAction = { type: 'postback', label: buttonLabel, data: buttonActionData };
-            // ---- 按鈕邏輯結束 ----
-
-            return {
-                type: 'bubble',
-                hero: (p.image_url && p.image_url.startsWith('https')) ? {
-                    type: 'image', url: p.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
-                } : undefined,
-                body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [
-                        { type: 'text', text: p.name, weight: 'bold', size: 'xl' },
-                        {
-                            type: 'box',
-                            layout: 'horizontal',
-                            margin: 'md',
-                            contents: [
-                                { type: 'text', text: `${p.price} 元`, size: 'lg', color: '#1A759F', weight: 'bold', flex: 2 },
-                                { type: 'text', text: isPreorder ? '開放預購中' : `庫存: ${p.inventory}`, size: 'sm', color: isPreorder ? '#FF9E00' : '#666666', align: 'end', flex: 1, gravity: 'bottom' }
-                            ]
-                        },
-                        { type: 'text', text: p.description || ' ', wrap: true, size: 'sm', margin: 'md', color: '#666666' },
-                    ]
-                },
-                footer: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [{
-                        type: 'button',
-                        style: buttonStyle,
-                        action: buttonAction,
-                        // *** 關鍵點：將設定好的顏色應用到按鈕上 ***
-                        color: buttonColor,
-                    }]
-                }
-            };
         });
 
         const paginationBubble = createPaginationBubble('action=view_shop_products', page, hasNextPage);
@@ -5091,6 +5141,7 @@ async function showShopProducts(page) {
         return { type: 'flex', altText: '活動商城', contents: { type: 'carousel', contents: productBubbles } };
     });
 }
+
 async function showProductManagementList(page = 1, filter = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
