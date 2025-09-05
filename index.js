@@ -5077,7 +5077,6 @@ async function showShopProducts(page) {
             return '目前商城沒有任何商品，敬請期待！';
         }
 
-        // [新增] 商品分組邏輯
         const productGroups = {};
         productsRes.rows.forEach(p => {
             if (!productGroups[p.name]) {
@@ -5097,13 +5096,12 @@ async function showShopProducts(page) {
         
         const productBubbles = pageItems.map(group => {
             if (group.length === 1) {
-                // 如果群組只有一個商品，直接用輔助函式建立 Bubble
                 return createSingleProductBubble(group[0]);
             } else {
-                // 如果群組有多個商品，建立一個「群組」Bubble
-                const representativeProduct = group[0]; // 以第一個商品作為代表
+                const representativeProduct = group[0];
                 return {
                     type: 'bubble',
+                    size: 'kilo', // [修改] 在此處指定卡片大小
                     hero: (representativeProduct.image_url && representativeProduct.image_url.startsWith('https')) ? {
                         type: 'image', url: representativeProduct.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
                     } : undefined,
@@ -5126,7 +5124,6 @@ async function showShopProducts(page) {
                             action: {
                                 type: 'postback',
                                 label: '查看所有選項',
-                                // [新增] 使用新的 postback action，並傳遞商品名稱
                                 data: `action=view_product_group&name=${encodeURIComponent(representativeProduct.name)}`
                             }
                         }]
