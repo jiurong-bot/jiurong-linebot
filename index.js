@@ -1,4 +1,4 @@
-// index.js - T1〔測試版〕 
+// index.js - 〔測試版.V1〕 
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
