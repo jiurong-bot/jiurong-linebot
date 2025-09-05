@@ -4414,6 +4414,7 @@ async function showCourseSeries(page) {
         };
     });
 }
+// [程式夥伴修改] V40.10.1 - 修正單一按鈕時的 Flex Message 排版問題
 async function showPendingOrders(page) {
     const mapOrderToBubble = (order) => {
         const bodyContents = [
@@ -4422,6 +4423,7 @@ async function showPendingOrders(page) {
             { type: 'separator', margin: 'lg' }
         ];
         const footerContents = [];
+        let footerLayout = 'vertical'; // 預設版面為垂直
 
         // 根據付款方式決定顯示內容
         if (order.payment_method === 'cash') {
@@ -4432,15 +4434,18 @@ async function showPendingOrders(page) {
                     { type: 'text', text: `建立時間: ${formatDateTime(order.timestamp)}`, size: 'sm', color: '#666666'}
                 ]
             });
+            // 現金訂單只有一個按鈕，維持垂直排列
             footerContents.push({
                 type: 'button', style: 'primary', color: '#28a745',
                 action: { type: 'postback', label: '✅ 確認收款並加點', data: `action=confirm_order&order_id=${order.order_id}` }
             });
         } else { // 預設為 transfer (轉帳)
+            footerLayout = 'horizontal'; // 有兩個按鈕，改為水平排列
             bodyContents.push({
                 type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
                 contents: [
-                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '後五碼', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: order.last_5_digits, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '後五碼', color: '#aaaaaa', size: 'sm', flex: 2 }, { 
+                        type: 'text', text: order.last_5_digits, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
                     { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '回報時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(order.timestamp), color: '#666666', size: 'sm', flex: 5, wrap: true } ] }
                 ]
             });
@@ -4449,11 +4454,12 @@ async function showPendingOrders(page) {
                 { type: 'button', style: 'primary', color: '#28a745', flex: 1, action: { type: 'postback', label: '核准', data: `action=confirm_order&order_id=${order.order_id}` } }
             );
         }
-
+        
         return {
             type: 'bubble',
             body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents },
-            footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: footerContents }
+            // 使用動態決定的 footerLayout 變數
+            footer: { type: 'box', layout: footerLayout, spacing: 'sm', contents: footerContents }
         };
     };
 
