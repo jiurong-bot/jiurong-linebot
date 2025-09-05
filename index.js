@@ -3845,7 +3845,6 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
-// #########
 // [修正] 老師用來查看購點紀錄的函式 (修正版)
 // 確保 mapRowToBubble 回傳的是一個完整的 "bubble" 物件
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
