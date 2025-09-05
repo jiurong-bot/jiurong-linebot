@@ -3845,39 +3845,57 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
-
-// [優化建議] 使用 createPaginatedCarousel 重構 showPurchaseHistoryAsTeacher
+// #########
+// [修正] 老師用來查看購點紀錄的函式 (修正版)
+// 確保 mapRowToBubble 回傳的是一個完整的 "bubble" 物件
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
-    const mapRowToBubble = (order) => ({
-        type: 'box',
-        layout: 'horizontal',
-        paddingAll: 'md',
-        contents: [
-            {
-                type: 'box',
-                layout: 'vertical',
-                flex: 3,
-                contents: [
-                    { type: 'text', text: order.user_name, weight: 'bold', size: 'sm' },
-                    { type: 'text', text: `購點：${order.points} 點`, size: 'sm' },
-                    { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
-                ]
-            },
-            {
-                type: 'text',
-                text: `$${order.amount}`,
-                gravity: 'center',
-                align: 'end',
-                flex: 2,
-                weight: 'bold',
-                size: 'md',
-                color: '#28A745',
-            }
-        ]
-    });
+    // 步驟 1：定義如何將一筆訂單紀錄，轉換成一個完整的 Flex Bubble
+    const mapRowToBubble = (order) => {
+        // 先定義泡泡 Body 內的 Box 內容
+        const purchaseBodyBox = {
+            type: 'box',
+            layout: 'horizontal',
+            paddingAll: 'md',
+            contents: [
+                {
+                    type: 'box',
+                    layout: 'vertical',
+                    flex: 3,
+                    contents: [
+                        { type: 'text', text: order.user_name, weight: 'bold', size: 'sm' },
+                        { type: 'text', text: `購點：${order.points} 點`, size: 'sm' },
+                        { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
+                    ]
+                },
+                {
+                    type: 'text',
+                    text: `$${order.amount}`,
+                    gravity: 'center',
+                    align: 'end',
+                    flex: 2,
+                    weight: 'bold',
+                    size: 'md',
+                    color: '#28A745',
+                }
+            ]
+        };
 
-    const headerText = userId ? `${(await getUser(userId))?.name || '學員'} 的購點紀錄` : '所有學員購點紀錄';
+        // **** 關鍵修改：將上面的 Box 包裝在一個 Bubble 物件中回傳 ****
+        return {
+            type: 'bubble',
+            body: purchaseBodyBox // 直接將 Box 設為 body
+        };
+    };
 
+    // 步驟 2：獲取標題文字
+    let headerText = '所有學員購點紀錄';
+    if (userId) {
+        const user = await getUser(userId);
+        headerText = user ? `${user.name} 的購點紀錄` : '學員購點紀錄';
+    }
+
+    // 步驟 3：使用 createPaginatedCarousel 產生最終訊息
+    // 這裡的邏輯與我上次提供的優化建議一致
     return createPaginatedCarousel({
         altText: headerText,
         baseAction: 'action=view_purchase_history_as_teacher',
@@ -3886,7 +3904,6 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
         queryParams: userId ? [userId] : [],
         mapRowToBubble: mapRowToBubble,
         noDataMessage: userId ? '這位學員沒有任何購點紀錄。' : '目前沒有任何學員的購點紀錄。',
-        // [新增] 加上這個才能讓分頁按鈕正確地傳遞 userId
         customParams: userId ? `&user_id=${userId}` : ''
     });
 }
