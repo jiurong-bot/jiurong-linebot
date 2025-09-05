@@ -3845,13 +3845,36 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
-// [修正] 老師用來查看購點紀錄的函式 (修正版)
-// 確保 mapRowToBubble 回傳的是一個完整的 "bubble" 物件
+// [修改] 老師用來查看購點紀錄的函式 (改為條列式清單, 時間由舊到新)
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
-    // 步驟 1：定義如何將一筆訂單紀錄，轉換成一個完整的 Flex Bubble
-    const mapRowToBubble = (order) => {
-        // 先定義泡泡 Body 內的 Box 內容
-        const purchaseBodyBox = {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return executeDbQuery(async (client) => {
+        let query = `SELECT * FROM orders WHERE amount > 0 AND status = 'completed'`;
+        const queryParams = [];
+        let paramIndex = 1;
+
+        if (userId) {
+            query += ` AND user_id = $${paramIndex++}`;
+            queryParams.push(userId);
+        }
+
+        // [修改] 排序方式改為 ASC (由舊到新)
+        query += ` ORDER BY timestamp ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
+        
+        const res = await client.query(query, queryParams);
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageRows.length === 0 && page === 1) {
+            return userId ? '這位學員沒有任何購點紀錄。' : '目前沒有任何學員的購點紀錄。';
+        }
+        if (pageRows.length === 0) {
+            return '沒有更多紀錄了。';
+        }
+
+        const listItems = pageRows.map(order => ({
             type: 'box',
             layout: 'horizontal',
             paddingAll: 'md',
@@ -3877,156 +3900,230 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
                     color: '#28A745',
                 }
             ]
-        };
+        }));
 
-        // **** 關鍵修改：將上面的 Box 包裝在一個 Bubble 物件中回傳 ****
+        const customParams = userId ? `&user_id=${userId}` : '';
+        const paginationBubble = createPaginationBubble('action=view_purchase_history_as_teacher', page, hasNextPage, customParams);
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+        
+        const headerText = userId ? `${pageRows[0].user_name} 的購點紀錄` : '所有學員購點紀錄';
+
+        // [修改] 返回單一 Bubble 的 Flex Message
         return {
-            type: 'bubble',
-            body: purchaseBodyBox // 直接將 Box 設為 body
+            type: 'flex',
+            altText: headerText,
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: createStandardHeader(headerText),
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'none',
+                    contents: listItems.flatMap((item, index) => 
+                        index === 0 ? [item] : [{ type: 'separator' }, item]
+                    )
+                },
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: footerContents
+                }
+            }
         };
-    };
-
-    // 步驟 2：獲取標題文字
-    let headerText = '所有學員購點紀錄';
-    if (userId) {
-        const user = await getUser(userId);
-        headerText = user ? `${user.name} 的購點紀錄` : '學員購點紀錄';
-    }
-
-    // 步驟 3：使用 createPaginatedCarousel 產生最終訊息
-    // 這裡的邏輯與我上次提供的優化建議一致
-    return createPaginatedCarousel({
-        altText: headerText,
-        baseAction: 'action=view_purchase_history_as_teacher',
-        page: page,
-        dataQuery: `SELECT * FROM orders WHERE amount > 0 AND status = 'completed' ${userId ? 'AND user_id = $1' : ''} ORDER BY timestamp DESC LIMIT $${userId ? 2 : 1} OFFSET $${userId ? 3 : 2}`,
-        queryParams: userId ? [userId] : [],
-        mapRowToBubble: mapRowToBubble,
-        noDataMessage: userId ? '這位學員沒有任何購點紀錄。' : '目前沒有任何學員的購點紀錄。',
-        customParams: userId ? `&user_id=${userId}` : ''
     });
 }
-
-
-// [優化建議] 使用 createPaginatedCarousel 重構 showExchangeHistoryAsTeacher
+// [修改] 老師用來查看購買紀錄的函式 (改為條列式清單, 時間由舊到新)
 async function showExchangeHistoryAsTeacher(page, userId = null) {
-    const statusMap = {
-        'completed': { text: '✅ 已完成', color: '#52b69a' },
-        'pending_payment': { text: '❗ 待付款', color: '#f28482' },
-        'pending_confirmation': { text: '🕒 款項確認中', color: '#ff9e00' },
-        'cancelled': { text: '❌ 已取消', color: '#d90429' }
-    };
-    
-    const mapRowToBubble = (order) => {
-        const statusInfo = statusMap[order.status] || { text: order.status, color: '#6c757d' };
-        const titleText = userId ? order.product_name : `${order.user_name} 購買了 ${order.product_name}`;
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return executeDbQuery(async (client) => {
+        let query = `SELECT * FROM product_orders`;
+        const queryParams = [];
+        let paramIndex = 1;
 
-        return {
-             type: 'box',
-             layout: 'horizontal',
-             paddingAll: 'md',
-             contents: [
-                 {
-                     type: 'box',
-                     layout: 'vertical',
-                     flex: 3,
-                     contents: [
-                         { type: 'text', text: titleText, weight: 'bold', size: 'sm', wrap: true },
-                         { type: 'text', text: statusInfo.text, size: 'xs', color: statusInfo.color, weight: 'bold' },
-                         { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' }
-                     ]
-                 },
-                 {
-                     type: 'text',
-                     text: `$${order.amount} 元`,
-                     gravity: 'center',
-                     align: 'end',
-                     flex: 2,
-                     weight: 'bold',
-                     size: 'sm',
-                     color: '#28A745',
-                 }
-             ]
+        if (userId) {
+            query += ` WHERE user_id = $${paramIndex++}`;
+            queryParams.push(userId);
+        }
+        // [修改] 排序方式改為 ASC (由舊到新)
+        query += ` ORDER BY created_at ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
+        
+        const res = await client.query(query, queryParams);
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageRows.length === 0 && page === 1) {
+            return userId ? '這位學員沒有任何購買紀錄。' : '目前沒有任何學員的購買紀錄。';
+        }
+        if (pageRows.length === 0) {
+            return '沒有更多紀錄了。';
+        }
+
+        const statusMap = {
+            'completed': { text: '✅ 已完成', color: '#52b69a' },
+            'pending_payment': { text: '❗ 待付款', color: '#f28482' },
+            'pending_confirmation': { text: '🕒 款項確認中', color: '#ff9e00' },
+            'cancelled': { text: '❌ 已取消', color: '#d90429' }
         };
-    };
 
-    const headerText = userId ? `${(await getUser(userId))?.name || '學員'} 的購買紀錄` : '所有學員購買紀錄';
+        const listItems = pageRows.map(order => {
+            const statusInfo = statusMap[order.status] || { text: order.status, color: '#6c757d' };
+            const titleText = userId ? order.product_name : `${order.user_name} 購買了 ${order.product_name}`;
 
-    return createPaginatedCarousel({
-        altText: headerText,
-        baseAction: 'action=view_exchange_history_as_teacher',
-        page: page,
-        dataQuery: `SELECT * FROM product_orders ${userId ? 'WHERE user_id = $1' : ''} ORDER BY created_at DESC LIMIT $${userId ? 2 : 1} OFFSET $${userId ? 3 : 2}`,
-        queryParams: userId ? [userId] : [],
-        mapRowToBubble: mapRowToBubble,
-        noDataMessage: userId ? '這位學員沒有任何購買紀錄。' : '目前沒有任何學員的購買紀錄。',
-        customParams: userId ? `&user_id=${userId}` : ''
+            return {
+                type: 'box',
+                layout: 'horizontal',
+                paddingAll: 'md',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        flex: 3,
+                        contents: [
+                            { type: 'text', text: titleText, weight: 'bold', size: 'sm', wrap: true },
+                            { type: 'text', text: statusInfo.text, size: 'xs', color: statusInfo.color, weight: 'bold' },
+                            { type: 'text', text: formatDateTime(order.created_at), size: 'xxs', color: '#AAAAAA' }
+                        ]
+                    },
+                    {
+                        type: 'text',
+                        text: `$${order.amount} 元`,
+                        gravity: 'center',
+                        align: 'end',
+                        flex: 2,
+                        weight: 'bold',
+                        size: 'sm',
+                        color: '#28A745',
+                    }
+                ]
+            };
+        });
+        
+        const customParams = userId ? `&user_id=${userId}` : '';
+        const paginationBubble = createPaginationBubble('action=view_exchange_history_as_teacher', page, hasNextPage, customParams);
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+        
+        const headerText = userId ? `${pageRows[0].user_name} 的購買紀錄` : '所有學員購買紀錄';
+        
+        // [修改] 返回單一 Bubble 的 Flex Message
+        return {
+            type: 'flex',
+            altText: headerText,
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: createStandardHeader(headerText),
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'none',
+                    contents: listItems.flatMap((item, index) => 
+                        index === 0 ? [item] : [{ type: 'separator' }, item]
+                    )
+                },
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: footerContents
+                }
+            }
+        };
     });
 }
-// [修正] 老師用來查看歷史留言的函式 (修正版)
-// 確保 mapRowToBubble 回傳的是一個完整的 "bubble" 物件
+// [修改] 老師用來查看歷史留言的函式 (改為條列式清單, 時間由舊到新)
 async function showHistoricalMessagesAsTeacher(page, userId = null) {
-    // 步驟 1：定義如何將一筆資料庫紀錄，轉換成一個完整的 Flex Bubble
-    const mapRowToBubble = (msg) => {
+    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+    return executeDbQuery(async (client) => {
+        let query = `SELECT * FROM feedback_messages`;
+        const queryParams = [];
+        let paramIndex = 1;
+
+        if (userId) {
+            query += ` WHERE user_id = $${paramIndex++}`;
+            queryParams.push(userId);
+        }
+        
+        // [修改] 排序方式改為 ASC (由舊到新)
+        query += ` ORDER BY timestamp ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
+        
+        const res = await client.query(query, queryParams);
+
+        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
+        const pageMessages = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+
+        if (pageMessages.length === 0 && page === 1) {
+            return userId ? '這位學員沒有任何留言紀錄。' : '目前沒有任何學員的留言紀錄。';
+        }
+        if (pageMessages.length === 0) {
+            return '沒有更多紀錄了。';
+        }
+
         const statusMap = {
             new: { text: '🟡 新留言', color: '#ffb703' },
             read: { text: '⚪️ 已讀', color: '#adb5bd' },
             replied: { text: '🟢 已回覆', color: '#2a9d8f' },
         };
-        const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
-        const replyContent = msg.teacher_reply
-            ? [{ type: 'separator' }, { type: 'text', text: `回覆：${msg.teacher_reply}`, wrap: true, size: 'xs', color: '#495057' }]
-            : [];
 
-        // 這是原本的 Box 內容，現在我們把它放在 bubble 的 body 裡
-        const messageBodyBox = {
-            type: 'box',
-            layout: 'vertical',
-            paddingAll: 'md',
-            spacing: 'sm',
-            contents: [
-                {
-                    type: 'box',
-                    layout: 'horizontal',
-                    contents: [
-                        { type: 'text', text: msg.user_name, weight: 'bold', size: 'sm', flex: 3 },
-                        { type: 'text', text: statusInfo.text, size: 'xs', color: statusInfo.color, align: 'end', flex: 2 }
-                    ]
-                },
-                { type: 'text', text: `留言：${msg.message}`, wrap: true, size: 'sm' },
-                ...replyContent,
-                { type: 'text', text: formatDateTime(msg.timestamp), size: 'xxs', color: '#AAAAAA', margin: 'md' }
-            ]
-        };
+        const listItems = pageMessages.map(msg => {
+            const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
+            const replyContent = msg.teacher_reply 
+                ? [{ type: 'separator' }, { type: 'text', text: `回覆：${msg.teacher_reply}`, wrap: true, size: 'xs', color: '#495057' }]
+                : [];
 
-        // **** 關鍵修改：將上面的 Box 包裝在一個 Bubble 物件中回傳 ****
+            return {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'md',
+                spacing: 'sm',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'horizontal',
+                        contents: [
+                            { type: 'text', text: msg.user_name, weight: 'bold', size: 'sm', flex: 3 },
+                            { type: 'text', text: statusInfo.text, size: 'xs', color: statusInfo.color, align: 'end', flex: 2 }
+                        ]
+                    },
+                    { type: 'text', text: `留言：${msg.message}`, wrap: true, size: 'sm' },
+                    ...replyContent,
+                    { type: 'text', text: formatDateTime(msg.timestamp), size: 'xxs', color: '#AAAAAA', margin: 'md' }
+                ]
+            };
+        });
+
+        const customParams = userId ? `&user_id=${userId}` : '';
+        const paginationBubble = createPaginationBubble('action=view_historical_messages_as_teacher', page, hasNextPage, customParams);
+        const footerContents = paginationBubble ? paginationBubble.body.contents : [];
+        
+        const headerText = userId ? `${pageMessages[0].user_name} 的歷史留言` : '所有學員歷史留言';
+        
+        // [修改] 返回單一 Bubble 的 Flex Message
         return {
-            type: 'bubble',
-            size: 'giga',
-            body: messageBodyBox
+            type: 'flex',
+            altText: headerText,
+            contents: {
+                type: 'bubble',
+                size: 'giga',
+                header: createStandardHeader(headerText),
+                body: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    paddingAll: 'none', 
+                    contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item]) 
+                },
+                footer: { 
+                    type: 'box', 
+                    layout: 'vertical', 
+                    contents: footerContents 
+                }
+            }
         };
-    };
-
-    // 步驟 2：從資料庫獲取使用者名稱，用於標題顯示
-    let headerText = '所有學員歷史留言';
-    if (userId) {
-        const user = await getUser(userId);
-        headerText = user ? `${user.name} 的歷史留言` : '學員歷史留言';
-    }
-
-    // 步驟 3：使用通用的 createPaginatedCarousel 函式來產生最終訊息
-    return createPaginatedCarousel({
-        altText: headerText,
-        baseAction: 'action=view_historical_messages_as_teacher',
-        page: page,
-        dataQuery: `SELECT * FROM feedback_messages ${userId ? 'WHERE user_id = $1' : ''} ORDER BY timestamp DESC LIMIT $${userId ? 2 : 1} OFFSET $${userId ? 3 : 2}`,
-        queryParams: userId ? [userId] : [],
-        mapRowToBubble: mapRowToBubble,
-        noDataMessage: userId ? '這位學員沒有任何留言紀錄。' : '目前沒有任何學員的留言紀錄。',
-        customParams: userId ? `&user_id=${userId}` : ''
     });
 }
-
+  
 async function showUnreadMessages(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
