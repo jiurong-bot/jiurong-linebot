@@ -6004,6 +6004,55 @@ async function handleViewActions(action, data, user) {
     const userId = user.id;
 
     switch (action) {
+        // [新增] 處理點擊商品群組的 case
+        case 'view_product_group': {
+            const productName = decodeURIComponent(data.get('name'));
+            if (!productName) {
+                return '操作失敗，缺少商品名稱。';
+            }
+
+            const products = await executeDbQuery(client =>
+                client.query("SELECT * FROM products WHERE name = $1 AND status IN ('available', 'preorder') ORDER BY created_at DESC", [productName])
+            ).then(res => res.rows);
+
+            if (products.length === 0) {
+                return '抱歉，找不到這個系列的商品。';
+            }
+
+            const groupBubbles = products.map(p => createSingleProductBubble(p));
+
+            const backButtonBubble = {
+                type: 'bubble',
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'md',
+                    justifyContent: 'center',
+                    contents: [{
+                        type: 'button',
+                        style: 'secondary',
+                        height: 'sm',
+                        action: {
+                            type: 'postback',
+                            label: '⬅️ 返回商品總覽',
+                            data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}`,
+                            displayText: '返回商品總覽'
+                        }
+                    }]
+                }
+            };
+            groupBubbles.push(backButtonBubble);
+
+            return {
+                type: 'flex',
+                altText: `查看 ${productName} 系列商品`,
+                contents: {
+                    type: 'carousel',
+                    contents: groupBubbles
+                }
+            };
+        }
+        
         case 'view_sold_out_products':
             return showSoldOutProducts(page);
         case 'view_preorder_products':
@@ -6072,6 +6121,7 @@ async function handleViewActions(action, data, user) {
     }
     return null;
 }
+
 /**
  * 處理「管理員專用」的指令
  */
