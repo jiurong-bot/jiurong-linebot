@@ -3947,23 +3947,23 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
         customParams: userId ? `&user_id=${userId}` : ''
     });
 }
-
-
-// [優化建議] 使用 createPaginatedCarousel 重構 showHistoricalMessagesAsTeacher
+// [修正] 老師用來查看歷史留言的函式 (修正版)
+// 確保 mapRowToBubble 回傳的是一個完整的 "bubble" 物件
 async function showHistoricalMessagesAsTeacher(page, userId = null) {
-    const statusMap = {
-        new: { text: '🟡 新留言', color: '#ffb703' },
-        read: { text: '⚪️ 已讀', color: '#adb5bd' },
-        replied: { text: '🟢 已回覆', color: '#2a9d8f' },
-    };
-
+    // 步驟 1：定義如何將一筆資料庫紀錄，轉換成一個完整的 Flex Bubble
     const mapRowToBubble = (msg) => {
+        const statusMap = {
+            new: { text: '🟡 新留言', color: '#ffb703' },
+            read: { text: '⚪️ 已讀', color: '#adb5bd' },
+            replied: { text: '🟢 已回覆', color: '#2a9d8f' },
+        };
         const statusInfo = statusMap[msg.status] || { text: msg.status, color: '#6c757d' };
-        const replyContent = msg.teacher_reply 
+        const replyContent = msg.teacher_reply
             ? [{ type: 'separator' }, { type: 'text', text: `回覆：${msg.teacher_reply}`, wrap: true, size: 'xs', color: '#495057' }]
             : [];
 
-        return {
+        // 這是原本的 Box 內容，現在我們把它放在 bubble 的 body 裡
+        const messageBodyBox = {
             type: 'box',
             layout: 'vertical',
             paddingAll: 'md',
@@ -3982,10 +3982,23 @@ async function showHistoricalMessagesAsTeacher(page, userId = null) {
                 { type: 'text', text: formatDateTime(msg.timestamp), size: 'xxs', color: '#AAAAAA', margin: 'md' }
             ]
         };
+
+        // **** 關鍵修改：將上面的 Box 包裝在一個 Bubble 物件中回傳 ****
+        return {
+            type: 'bubble',
+            size: 'giga',
+            body: messageBodyBox
+        };
     };
 
-    const headerText = userId ? `${(await getUser(userId))?.name || '學員'} 的歷史留言` : '所有學員歷史留言';
+    // 步驟 2：從資料庫獲取使用者名稱，用於標題顯示
+    let headerText = '所有學員歷史留言';
+    if (userId) {
+        const user = await getUser(userId);
+        headerText = user ? `${user.name} 的歷史留言` : '學員歷史留言';
+    }
 
+    // 步驟 3：使用通用的 createPaginatedCarousel 函式來產生最終訊息
     return createPaginatedCarousel({
         altText: headerText,
         baseAction: 'action=view_historical_messages_as_teacher',
