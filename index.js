@@ -4414,7 +4414,7 @@ async function showCourseSeries(page) {
         };
     });
 }
-// [程式夥伴修改] V40.10.1 - 修正單一按鈕時的 Flex Message 排版問題
+// [程式夥伴二次修正] V40.10.2 - 處理 last_5_digits 為 null 的情況
 async function showPendingOrders(page) {
     const mapOrderToBubble = (order) => {
         const bodyContents = [
@@ -4423,9 +4423,8 @@ async function showPendingOrders(page) {
             { type: 'separator', margin: 'lg' }
         ];
         const footerContents = [];
-        let footerLayout = 'vertical'; // 預設版面為垂直
+        let footerLayout = 'vertical'; 
 
-        // 根據付款方式決定顯示內容
         if (order.payment_method === 'cash') {
             bodyContents.push({
                 type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
@@ -4434,18 +4433,20 @@ async function showPendingOrders(page) {
                     { type: 'text', text: `建立時間: ${formatDateTime(order.timestamp)}`, size: 'sm', color: '#666666'}
                 ]
             });
-            // 現金訂單只有一個按鈕，維持垂直排列
             footerContents.push({
                 type: 'button', style: 'primary', color: '#28a745',
                 action: { type: 'postback', label: '✅ 確認收款並加點', data: `action=confirm_order&order_id=${order.order_id}` }
             });
-        } else { // 預設為 transfer (轉帳)
-            footerLayout = 'horizontal'; // 有兩個按鈕，改為水平排列
+        } else { 
+            footerLayout = 'horizontal'; 
             bodyContents.push({
                 type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
                 contents: [
+                    // ====================== [修改開始] ======================
+                    // 檢查 order.last_5_digits 是否為 null，如果是，就顯示 '尚未提供'
                     { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '後五碼', color: '#aaaaaa', size: 'sm', flex: 2 }, { 
-                        type: 'text', text: order.last_5_digits, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                        type: 'text', text: order.last_5_digits || '尚未提供', color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                    // ====================== [修改結束] ======================
                     { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '回報時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(order.timestamp), color: '#666666', size: 'sm', flex: 5, wrap: true } ] }
                 ]
             });
@@ -4458,7 +4459,6 @@ async function showPendingOrders(page) {
         return {
             type: 'bubble',
             body: { type: 'box', layout: 'vertical', spacing: 'md', contents: bodyContents },
-            // 使用動態決定的 footerLayout 變數
             footer: { type: 'box', layout: footerLayout, spacing: 'sm', contents: footerContents }
         };
     };
@@ -4467,7 +4467,6 @@ async function showPendingOrders(page) {
         altText: '待確認點數訂單',
         baseAction: 'action=view_pending_orders',
         page: page,
-        // 查詢條件要包含所有待處理的訂單
         dataQuery: "SELECT * FROM orders WHERE status IN ('pending_confirmation', 'pending_payment') ORDER BY timestamp ASC LIMIT $1 OFFSET $2",
         queryParams: [],
         mapRowToBubble: mapOrderToBubble,
