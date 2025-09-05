@@ -6637,58 +6637,7 @@ async function handleCourseActions(action, data, user) {
 async function handleProductActions(action, data, user) {
     const userId = user.id;
     switch (action) {
-        // [修改] 處理點擊商品群組的事件，並在結尾加上返回鍵
-        case 'view_product_group': {
-            const productName = decodeURIComponent(data.get('name'));
-            if (!productName) {
-                return '操作失敗，缺少商品名稱。';
-            }
-
-            const products = await executeDbQuery(client =>
-                client.query("SELECT * FROM products WHERE name = $1 AND status IN ('available', 'preorder') ORDER BY created_at DESC", [productName])
-            ).then(res => res.rows);
-
-            if (products.length === 0) {
-                return '抱歉，找不到這個系列的商品。';
-            }
-
-            // 使用我們建立的輔助函式來為群組中的每個商品建立一個 Bubble
-            const groupBubbles = products.map(p => createSingleProductBubble(p));
-
-            // [新增] 建立並加入一個返回按鈕卡片
-            const backButtonBubble = {
-                type: 'bubble',
-                body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    paddingAll: 'md',
-                    justifyContent: 'center',
-                    contents: [{
-                        type: 'button',
-                        style: 'secondary',
-                        height: 'sm',
-                        action: {
-                            type: 'postback',
-                            label: '⬅️ 返回商品總覽',
-                            // 這個 action 會重新觸發顯示所有商品的指令
-                            data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}`,
-                            displayText: '返回商品總覽'
-                        }
-                    }]
-                }
-            };
-            // 將返回按鈕卡片加到輪播的最後
-            groupBubbles.push(backButtonBubble);
-
-            return {
-                type: 'flex',
-                altText: `查看 ${productName} 系列商品`,
-                contents: {
-                    type: 'carousel',
-                    contents: groupBubbles
-                }
-            };
-        }
+        // [移除] 'view_product_group' 的 case 已被移至 handleViewActions
 
         case 'view_preorder_list': {
             const productId = data.get('product_id');
