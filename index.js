@@ -2235,9 +2235,7 @@ async function showTeacherListForRemoval(page) {
         };
     });
 }
-
-
-// [V35.6 重構] 將購點紀錄改為條列式，並整合待處理訂單
+// [程式夥伴修改] V40.10.4 - 調整購點紀錄中「待處理訂單」的顯示順序
 async function showPurchaseHistory(userId, page) { // page 參數暫時保留
     return executeDbQuery(async (client) => {
         // 抓取最近 20 筆相關紀錄
@@ -2246,16 +2244,13 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
             [userId]
         );
 
-
         if (res.rows.length === 0) {
-            return '您沒有任何購點紀錄。';
+             return '您沒有任何購點紀錄。';
         }
-
 
         // 步驟 1: 將訂單分組
         const pendingPointOrders = [];
         const historyPointOrders = [];
-
 
         res.rows.forEach(order => {
             if (['pending_payment', 'pending_confirmation', 'rejected'].includes(order.status)) {
@@ -2265,17 +2260,49 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
             }
         });
 
-
         const bodyContents = [];
         const separator = { type: 'separator', margin: 'md' };
 
+        // ====================== [修改開始] ======================
+        // 步驟 2: (優先顯示) 產生「歷史紀錄」列表
+        if (historyPointOrders.length > 0) {
+            bodyContents.push({ type: 'text', text: '歷史紀錄', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
+            historyPointOrders.forEach(order => {
+                let typeText, pointsText, pointsColor;
+                if (order.amount === 0) { // 手動調整
+                    if (order.points > 0) { typeText = '✨ 手動加點'; pointsText = `+${order.points}`; pointsColor = '#1A759F'; } 
+                    else { typeText = '⚠️ 手動扣點'; pointsText = `${order.points}`; pointsColor = '#D9534F'; }
+                } else { // 一般購點
+                    typeText = '✅ 購點成功'; pointsText = `+${order.points}`; pointsColor = '#28A745';
+                }
 
-        // 步驟 2: 產生「待處理訂單」列表
+                bodyContents.push({
+                    type: 'box',
+                    layout: 'horizontal',
+                    margin: 'lg',
+                    contents: [
+                        {
+                            type: 'box', layout: 'vertical', flex: 3,
+                            contents: [
+                                { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
+                                { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
+                            ]
+                        },
+                        { type: 'text', text: `${pointsText} 點`, gravity: 'center', align: 'end', flex: 2, weight: 'bold', size: 'sm', color: pointsColor }
+                    ]
+                });
+                bodyContents.push(separator);
+            });
+        }
+
+        // 步驟 3: (顯示在後) 產生「待處理訂單」列表
         if (pendingPointOrders.length > 0) {
+            // 如果前面已經有歷史紀錄，加一個比較大的分隔，讓視覺更清晰
+            if (historyPointOrders.length > 0) {
+                bodyContents.push({ type: 'separator', margin: 'xxl' });
+            }
             bodyContents.push({ type: 'text', text: '待處理訂單', weight: 'bold', size: 'lg', margin: 'md', color: '#1A759F' });
-            
             pendingPointOrders.forEach(order => {
-                // 這段邏輯是從舊的 buildPointsMenuFlex 搬過來的
                 let actionButtonLabel, cardColor, statusText, actionCmd, additionalInfo = '';
                 if (order.status === 'pending_confirmation') {
                     actionButtonLabel = '修改匯款後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardColor = '#ff9e00'; statusText = '已提交，等待老師確認';
@@ -2284,7 +2311,6 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
                 } else { // pending_payment
                     actionButtonLabel = '輸入匯款後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER; cardColor = '#f28482'; statusText = '待付款';
                 }
-
 
                 bodyContents.push({
                     type: 'box',
@@ -2305,46 +2331,11 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
                 bodyContents.push(separator);
             });
         }
-
-
-        // 步驟 3: 產生「歷史紀錄」列表
-        if (historyPointOrders.length > 0) {
-            bodyContents.push({ type: 'text', text: '歷史紀錄', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
-
-
-            historyPointOrders.forEach(order => {
-                let typeText, pointsText, pointsColor;
-                if (order.amount === 0) { // 手動調整
-                    if (order.points > 0) { typeText = '✨ 手動加點'; pointsText = `+${order.points}`; pointsColor = '#1A759F'; } 
-                    else { typeText = '⚠️ 手動扣點'; pointsText = `${order.points}`; pointsColor = '#D9534F'; }
-                } else { // 一般購點
-                    typeText = '✅ 購點成功'; pointsText = `+${order.points}`; pointsColor = '#28A745';
-                }
-
-
-                bodyContents.push({
-                    type: 'box',
-                    layout: 'horizontal',
-                    margin: 'lg',
-                    contents: [
-                        {
-                            type: 'box', layout: 'vertical', flex: 3,
-                            contents: [
-                                { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
-                                { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
-                            ]
-                        },
-                        { type: 'text', text: `${pointsText} 點`, gravity: 'center', align: 'end', flex: 2, weight: 'bold', size: 'sm', color: pointsColor }
-                    ]
-                });
-                bodyContents.push(separator);
-            });
-        }
+        // ====================== [修改結束] ======================
         
         if (bodyContents.length > 0 && bodyContents[bodyContents.length - 1].type === 'separator') {
             bodyContents.pop();
         }
-
 
         return {
             type: 'flex',
@@ -2370,7 +2361,6 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
         };
     });
 }
-
 
 // [新增] 處理顯示購買歷史的功能
 async function showExchangeHistoryList(event, user) {
