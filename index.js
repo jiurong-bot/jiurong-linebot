@@ -1355,7 +1355,7 @@ async function showCourseManagementMenu(event, user) {
                     { type: 'separator', margin: 'xl' },
                     { type: 'text', text: '師資功能', size: 'sm', color: '#888888', weight: 'bold', margin: 'lg' },
                     { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📋 師資團隊', data: 'action=list_all_teachers&page=1' } },
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '👤 個人資訊', data: 'action=manage_personal_profile' } },
+                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '👤 個人資訊', data: 'action=manage_personal_profile' } }
                 ] 
             } 
         } 
