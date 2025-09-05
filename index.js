@@ -7711,67 +7711,46 @@ async function handleReportActions(action, data, user) {
     }
     return null;
 }
-/**
- * [重構修正後] 處理 Postback 事件的總路由器
- */
+
+// [優化建議] 使用路由表重構 handlePostback，使其更清晰且易於擴充
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
-    const userId = user.id;
 
-    // 步驟一：優先處理特殊的「元指令」(Meta Actions)
+    // 特殊的「元指令」優先處理
     if (action === 'run_command') {
         const commandText = decodeURIComponent(data.get('text'));
         if (!commandText) return null;
-
-        // 建立一個模擬的「文字訊息事件」物件
         const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
         
-        // 根據使用者角色，呼叫對應的「文字指令處理器」，並傳入正確的參數 (event, userId)
-        if (user.role === 'admin') return handleAdminCommands(simulatedEvent, userId);
-        if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, userId);
-        return handleStudentCommands(simulatedEvent, userId);
+        if (user.role === 'admin') return handleAdminCommands(simulatedEvent, user.id);
+        if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, user.id);
+        return handleStudentCommands(simulatedEvent, user.id);
     }
 
     if (action === 'do_nothing') {
         return null;
     }
 
-    // 步驟二：將常規的按鈕點擊事件，分派到對應的子處理函式
-    // 注意：這裡我們不再需要判斷 'run_command'
-    if (action.startsWith('view_') || action.startsWith('list_') || action.startsWith('manage_course_group') || action.startsWith('student_search_results')) {
-        return handleViewActions(action, data, user);
-    }
-    if (action.includes('toggle_global_setting') || action.includes('error_log') || action.includes('_auth') || action.includes('_removal') || action.includes('failed_task')) {
-        return handleAdminActions(action, data, user);
-    }
-    if (action.includes('teacher_profile') || action.includes('_adjust') || action.includes('_search') || action.includes('view_type') || action.includes('announcement_for_deletion')) {
-        return handleTeacherActions(action, data, user);
-    }
-    if (action.includes('course') || action.includes('booking') || action.includes('waitlist') || action.includes('announcement')) {
-        return handleCourseActions(action, data, user);
-    }
-    // [修改] 在此處加入 view_product_group 判斷
-    if (action.includes('product') || action.includes('preorder') || action.includes('inventory') || action === 'view_product_group') {
-        return handleProductActions(action, data, user);
-    }
-    if (action.includes('order') || action.includes('purchase') || action.includes('payment') || action.includes('shop_last5') || action.includes('arrival')) {
-        return handleOrderActions(action, data, user);
-    }
-    if (action.includes('product') || action.includes('preorder') || action.includes('inventory')) {
-        return handleProductActions(action, data, user);
-    }
-    if (action.includes('order') || action.includes('purchase') || action.includes('payment') || action.includes('shop_last5') || action.includes('arrival')) {
-        return handleOrderActions(action, data, user);
-    }
-    if (action.includes('feedback')) {
-        return handleFeedbackActions(action, data, user);
-    }
-    if (action.includes('report')) {
-        return handleReportActions(action, data, user);
-    }
+    // 建立 Action 關鍵字與處理函式的對應表
+    const actionRouter = [
+        { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
+        { keywords: ['toggle_global_setting', 'error_log', '_auth', '_removal', 'failed_task'], handler: handleAdminActions },
+        { keywords: ['teacher_profile', '_adjust', '_search', 'view_type', 'announcement_for_deletion'], handler: handleTeacherActions },
+        { keywords: ['course', 'booking', 'waitlist', 'announcement'], handler: handleCourseActions },
+        { keywords: ['product', 'preorder', 'inventory'], handler: handleProductActions },
+        { keywords: ['order', 'purchase', 'payment', 'shop_last5', 'arrival'], handler: handleOrderActions },
+        { keywords: ['feedback'], handler: handleFeedbackActions },
+        { keywords: ['report'], handler: handleReportActions },
+    ];
 
-    // 如果以上規則都沒匹配到，則為未處理的 action
+    // 遍歷路由表，找到對應的處理函式並執行
+    for (const route of actionRouter) {
+        if (route.keywords.some(keyword => action.includes(keyword))) {
+            return route.handler(action, data, user);
+        }
+    }
+    
     console.log(`[INFO] 未處理的 Postback Action: ${action}`);
     return null;
 }
