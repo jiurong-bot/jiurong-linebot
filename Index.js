@@ -3267,7 +3267,7 @@ event.message.text.trim().normalize() : '';
 
                             if (isWithinTwoHours) {
                                 // **新邏輯：發送限時邀請**
-                                const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 分鐘後過期
+                                const expiresAt = new Date(Date.now() + CONSTANTS.INTERVALS.WAITLIST_INVITATION_TIMEOUT_MS); // 15 分鐘後過期
                                 await client.query(
                                     `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
                                     [currentCourse.id, promotedUserId, expiresAt]
