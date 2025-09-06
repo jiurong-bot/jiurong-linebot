@@ -7742,7 +7742,6 @@ async function handleReportActions(action, data, user) {
     }
     return null;
 }
-
 // [優化建議] 使用路由表重構 handlePostback，使其更清晰且易於擴充
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
@@ -7753,7 +7752,6 @@ async function handlePostback(event, user) {
         const commandText = decodeURIComponent(data.get('text'));
         if (!commandText) return null;
         const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
-        
         if (user.role === 'admin') return handleAdminCommands(simulatedEvent, user.id);
         if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, user.id);
         return handleStudentCommands(simulatedEvent, user.id);
@@ -7767,7 +7765,8 @@ async function handlePostback(event, user) {
     const actionRouter = [
         { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
         { keywords: ['toggle_global_setting', 'error_log', '_auth', '_removal', 'failed_task'], handler: handleAdminActions },
-        { keywords: ['teacher_profile', '_adjust', '_search', 'view_type', 'announcement_for_deletion'], handler: handleTeacherActions },
+        // [修正] 在關鍵字清單中加入 'personal_profile'，使其能正確匹配
+        { keywords: ['teacher_profile', 'personal_profile', '_adjust', '_search', 'view_type', 'announcement_for_deletion'], handler: handleTeacherActions },
         { keywords: ['course', 'booking', 'waitlist', 'announcement'], handler: handleCourseActions },
         { keywords: ['product', 'preorder', 'inventory'], handler: handleProductActions },
         { keywords: ['order', 'purchase', 'payment', 'shop_last5', 'arrival'], handler: handleOrderActions },
