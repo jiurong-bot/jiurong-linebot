@@ -2977,68 +2977,76 @@ async function handleTeacherCommands(event, userId) {
     return handleUnknownTeacherCommand(text);
   }
 }
-
 async function handleAdminCommands(event, userId) {
   // [V38.6 修正] 增加對全形 @ 符號的處理，提升指令辨識的彈性
-  const rawText = event.message.text ? event.message.text.trim() : '';
+  const rawText = event.message.text ?
+event.message.text.trim() : '';
   const text = rawText.replace(/＠/g, '@').normalize(); // 將全形＠自動換成半形@
 
   const user = await getUser(userId);
-  if (pendingTeacherAddition[userId]) {
+if (pendingTeacherAddition[userId]) {
     const state = pendingTeacherAddition[userId];
-    switch (state.step) {
+switch (state.step) {
       case 'await_student_info':
         const studentSearchRes = await executeDbQuery(client => 
             client.query(`SELECT id, name, role, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 25`, [`%${text.toLowerCase()}%`, text])
         );
-        if (studentSearchRes.rows.length === 0) {
+if (studentSearchRes.rows.length === 0) {
           return { type: 'text', text: `找不到與「${text}」相關的學員。請重新輸入或取消操作。`, quickReply: { items: getCancelMenu() } };
-        }
+}
 
         const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
-        const userBubbles = studentSearchRes.rows.map(s => ({
+const userBubbles = studentSearchRes.rows.map(s => ({
             type: 'bubble',
             body: {
                 type: 'box',
                 layout: 'horizontal',
                 spacing: 'md',
                 contents: [
-                    {
+ 
+                   {
                         type: 'image',
                         url: s.picture_url || placeholder_avatar,
                         size: 'md',
-                        aspectRatio: '1:1',
+    
+                    aspectRatio: '1:1',
                         aspectMode: 'cover'
                     },
                     {
-                        type: 'box',
+              
+          type: 'box',
                         layout: 'vertical',
                         flex: 3,
                         justifyContent: 'center',
-                        contents: [
+              
+          contents: [
                             { type: 'text', text: s.name, weight: 'bold', size: 'lg', wrap: true },
                             { type: 'text', text: `ID: ${formatIdForDisplay(s.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm', wrap: true }
-                        ]
+        
+                ]
                     }
                 ]
             },
             footer: {
                 type: 'box',
-                layout: 'vertical',
+      
+          layout: 'vertical',
                 contents: [{
                     type: 'button',
                     style: 'primary',
                     color: '#52B69A',
-                    height: 'sm',
+         
+           height: 'sm',
                     action: {
                         type: 'postback',
                         label: '選擇此學員',
-                        data: `action=select_student_for_auth&targetId=${s.id}&targetName=${encodeURIComponent(s.name)}`
+                 
+       data: `action=select_student_for_auth&targetId=${s.id}&targetName=${encodeURIComponent(s.name)}`
                     }
                 }]
             }
         }));
-        delete pendingTeacherAddition[userId];
+delete pendingTeacherAddition[userId];
 
         return {
             type: 'flex',
@@ -3051,111 +3059,111 @@ async function handleAdminCommands(event, userId) {
       case 'await_confirmation':
         if (text === CONSTANTS.COMMANDS.ADMIN.CONFIRM_ADD_TEACHER) {
           const targetUser = await getUser(state.targetUser.id);
-          targetUser.role = 'teacher';
+targetUser.role = 'teacher';
           targetUser.approved_by = userId;
           await saveUser(targetUser);
-          // 在授權的同時，為老師建立或更新公開資訊檔案
-          await executeDbQuery(async (client) => {
-    // 步驟 1: 先檢查老師的資料是否存在
-    const existingTeacher = await client.query(
-        `SELECT * FROM teachers WHERE line_user_id = $1`,
-        [targetUser.id]
-    );
 
-    // 步驟 2: 根據是否存在，決定要新增(INSERT)還是更新(UPDATE)
-    if (existingTeacher.rows.length > 0) {
-        // 如果已存在，就更新他的名字
-        await client.query(
-            `UPDATE teachers SET name = $1, updated_at = NOW() WHERE line_user_id = $2`,
-            [targetUser.name, targetUser.id]
-        );
-    } else {
-        // 如果不存在，就新增一筆預設資料
-        await client.query(
-            `INSERT INTO teachers (line_user_id, name, bio) VALUES ($1, $2, $3)`,
-            [targetUser.id, targetUser.name, '這位老師尚未留下簡介。']
-        );
-    }
-});
-          delete pendingTeacherAddition[userId];
+          // [修正] 確保這段新增老師個人資訊的 SQL 語法正確無誤
+          await executeDbQuery(async (client) => {
+            const existingTeacher = await client.query(
+              'SELECT line_user_id FROM teachers WHERE line_user_id = $1',
+              [targetUser.id]
+            );
+
+            if (existingTeacher.rows.length > 0) {
+              // 如果老師資料已存在，則更新姓名以防使用者變更 LINE 名稱
+              await client.query(
+                'UPDATE teachers SET name = $1, updated_at = NOW() WHERE line_user_id = $2',
+                [targetUser.name, targetUser.id]
+              );
+            } else {
+              // 如果不存在，則新增一筆新的老師個人資訊
+              await client.query(
+                'INSERT INTO teachers (line_user_id, name, bio) VALUES ($1, $2, $3)',
+                [targetUser.id, targetUser.name, '這位老師尚未留下簡介。']
+              );
+            }
+          });
+          
+delete pendingTeacherAddition[userId];
           
           const notifyMessage = { type: 'text', text: '恭喜！您的身份已被管理者授權為「老師」。'};
           await enqueuePushTask(targetUser.id, notifyMessage).catch(e => console.error(e));
           if(TEACHER_RICH_MENU_ID) await client.linkRichMenuToUser(targetUser.id, TEACHER_RICH_MENU_ID);
-          return `✅ 已成功授權「${targetUser.name}」為老師。`;
+return `✅ 已成功授權「${targetUser.name}」為老師。`;
         } else {
           return '請點擊確認或取消按鈕。';
-        }
+}
     }
   } else if (pendingTeacherRemoval[userId]) {
     const state = pendingTeacherRemoval[userId];
-    switch (state.step) {
+switch (state.step) {
       case 'await_confirmation':
         if (text === CONSTANTS.COMMANDS.ADMIN.CONFIRM_REMOVE_TEACHER) {
           const targetUser = await getUser(state.targetUser.id);
-          targetUser.role = 'student';
+targetUser.role = 'student';
           targetUser.approved_by = null;
           await saveUser(targetUser);
           delete pendingTeacherRemoval[userId];
           
           const notifyMessage = { type: 'text', text: '通知：您的「老師」身份已被管理者移除，已切換為學員身份。'};
-          await enqueuePushTask(targetUser.id, notifyMessage).catch(e => console.error(e));
+await enqueuePushTask(targetUser.id, notifyMessage).catch(e => console.error(e));
           if(STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(targetUser.id, STUDENT_RICH_MENU_ID);
           return `✅ 已成功將「${targetUser.name}」的身份移除，該用戶已變為學員。`;
-        } else {
+} else {
           return '請點擊確認或取消按鈕。';
-        }
+}
     }
   } else {
     if (text === CONSTANTS.COMMANDS.ADMIN.PANEL) {
       return buildAdminPanelFlex();
-    }
+}
     else if (text === CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS) {
       return showSystemStatus();
-    }   
+}   
     else if (text === CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT) {
       return showFailedTasks(1);
-    } 
+} 
     else if (text === CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS) {
       return showErrorLogs(1);
-    }
+}
     else if (text === CONSTANTS.COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS) {
         const currentStatus = await getNotificationStatus();
-        const newStatus = !currentStatus;
+const newStatus = !currentStatus;
         await executeDbQuery(async (db) => {
             await db.query(
                 `INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ('notifications_enabled', $1, NOW())
                  ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = NOW()`,
                 [newStatus.toString()]
-            );
+          
+  );
         });
         simpleCache.clear('notifications_enabled');
         const statusText = newStatus ? '【開啟】' : '【關閉】';
-      return buildAdminPanelFlex();
+return buildAdminPanelFlex();
     } 
     else if (text === CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER) {
       pendingTeacherAddition[userId] = { step: 'await_student_info' };
-      setupConversationTimeout(userId, pendingTeacherAddition, 'pendingTeacherAddition', (u) => {
+setupConversationTimeout(userId, pendingTeacherAddition, 'pendingTeacherAddition', (u) => {
           const timeoutMessage = { type: 'text', text: '授權老師操作逾時，自動取消。'};
           enqueuePushTask(u, timeoutMessage).catch(e => console.error(e));
       });
-      return { type: 'text', text: '請輸入您想授權為老師的「學員」姓名或 User ID：', quickReply: { items: getCancelMenu() } };
-    } else if (text === CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER) {
+return { type: 'text', text: '請輸入您想授權為老師的「學員」姓名或 User ID：', quickReply: { items: getCancelMenu() } };
+} else if (text === CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER) {
         return showTeacherListForRemoval(1);
-    } else if (text === CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT) {
+} else if (text === CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT) {
       user.role = 'student';
       await saveUser(user);
-      if(STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+if(STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
       return '您已切換為「學員」模擬身份。\n若要返回，請手動輸入「@管理模式」。';
     } else if (text === CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER) {
       user.role = 'teacher';
-      await saveUser(user);
+await saveUser(user);
       if(TEACHER_RICH_MENU_ID) await client.linkRichMenuToUser(userId, TEACHER_RICH_MENU_ID);
       return '您已切換為「老師」模擬身份。\n若要返回，請手動輸入「@管理模式」。';
     }
   }
 }
-
 
 async function handleStudentCommands(event, userId) {
   const text = event.message.text ?
