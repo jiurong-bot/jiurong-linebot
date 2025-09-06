@@ -3817,7 +3817,6 @@ async function buildTeacherSelectionCarousel() {
         };
     });
 }
-
 async function showManualAdjustHistory(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -3841,7 +3840,6 @@ async function showManualAdjustHistory(page, userId = null) {
         if (pageRows.length === 0) {
             if (page > 1) return '沒有更多紀錄了。';
             
-            // [最終修正] 當第一頁沒有資料時，回傳一個包含搜尋按鈕的 Flex Message
             const emptyMsg = userId ? '這位學員沒有任何手動調整紀錄。' : '目前沒有任何手動調整紀錄。';
             return {
                 type: 'flex',
@@ -3876,8 +3874,11 @@ async function showManualAdjustHistory(page, userId = null) {
                         type: 'box',
                         layout: 'vertical',
                         flex: 3,
+                        spacing: 'sm', // 增加一點間距
                         contents: [
                             { type: 'text', text: record.user_name, weight: 'bold', size: 'sm' },
+                            // [新增] 顯示調整原因的 Text 元件
+                            { type: 'text', text: `原因：${record.notes || '未填寫'}`, size: 'xs', color: '#666666', wrap: true },
                             { type: 'text', text: formatDateTime(record.timestamp), size: 'xxs', color: '#AAAAAA' }
                         ]
                     },
@@ -3915,6 +3916,7 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
+
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
