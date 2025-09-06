@@ -1153,16 +1153,59 @@ function buildBuyPointsFlex() {
         }
     };
 }
-
-
-// [V35.6 優化] 簡化點數查詢主頁，移除待處理訂單資訊
+// [V35.6 優化 & V42.3 體驗優化] 整合待付款提示至點數查詢主頁
 async function buildPointsMenuFlex(userId) {
     const user = await getUser(userId);
     if (!user) return { type: 'text', text: '無法獲取您的使用者資料。' };
 
+    // [新增] 檢查使用者是否有一筆待處理的「轉帳」訂單
+    const pendingOrderRes = await executeDbQuery(client =>
+        client.query(
+            "SELECT order_id FROM orders WHERE user_id = $1 AND status = 'pending_payment' AND payment_method = 'transfer' ORDER BY timestamp DESC LIMIT 1",
+            [userId]
+        )
+    );
+    const hasPendingTransferOrder = pendingOrderRes.rows.length > 0;
 
-    // 移除查詢 pendingOrder 的邏輯，直接顯示點數餘額
-    const bodyContents = [{
+    const bodyContents = [];
+
+    // [新增] 如果有待處理的轉帳訂單，就在最上方顯示一個提示框和按鈕
+    if (hasPendingTransferOrder) {
+        bodyContents.push({
+            type: 'box',
+            layout: 'vertical',
+            paddingAll: 'lg',
+            backgroundColor: '#FFF1F0', // 使用淡紅色背景以示提醒
+            cornerRadius: 'md',
+            contents: [
+                {
+                    type: 'text',
+                    text: '❗️ 您有一筆訂單等待付款',
+                    weight: 'bold',
+                    color: '#D9534F',
+                    size: 'md',
+                    align: 'center'
+                },
+                {
+                    type: 'button',
+                    action: {
+                        type: 'postback',
+                        label: '點此輸入匯款後五碼',
+                        displayText: '我要輸入匯款後五碼',
+                        data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER)}`
+                    },
+                    style: 'primary',
+                    color: '#DE5246', // 醒目的紅色系按鈕
+                    margin: 'md',
+                    height: 'sm'
+                }
+            ]
+        });
+        bodyContents.push({ type: 'separator', margin: 'lg' });
+    }
+    
+    // 原有的點數餘額顯示
+    bodyContents.push({
         type: 'box',
         layout: 'vertical',
         margin: 'md',
@@ -1171,8 +1214,7 @@ async function buildPointsMenuFlex(userId) {
             { type: 'text', text: '目前剩餘點數', size: 'sm', color: '#AAAAAA' },
             { type: 'text', text: `${user.points} 點`, weight: 'bold', size: '3xl', margin: 'sm', color: '#1A759F' },
         ]
-    }];
-
+    });
 
     return {
         type: 'flex',
@@ -1195,7 +1237,7 @@ async function buildPointsMenuFlex(userId) {
                 layout: 'vertical',
                 paddingAll: 'xl',
                 spacing: 'md',
-                contents: bodyContents
+                contents: bodyContents // 使用我們動態組合好的內容
             },
             footer: {
                 type: 'box',
@@ -1215,7 +1257,6 @@ async function buildPointsMenuFlex(userId) {
         }
     };
 }
-
 
 /**
  * [V34.1 新增] 建立一個顯示老師個人資訊變更並請求確認的 Flex Message
