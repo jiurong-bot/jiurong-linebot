@@ -3835,16 +3835,13 @@ async function showManualAdjustHistory(page, userId = null) {
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
-        // [修正] 將無資料的判斷提前，避免後續程式碼出錯
+        // [修正] 將無資料的判斷提前，避免後續程式碼因 pageRows[0] 不存在而出錯
         if (pageRows.length === 0) {
             if (page === 1) {
                 return userId ? '這位學員沒有任何手動調整紀錄。' : '目前沒有任何手動調整紀錄。';
             }
             return '沒有更多紀錄了。';
         }
-        
-        // [修正] 確保在 pageRows 有資料後才設定 headerText
-        const headerText = userId ? `${pageRows[0].user_name} 的調整紀錄` : '手動調整紀錄';
 
         const listItems = pageRows.map(record => {
             const isAddition = record.points > 0;
@@ -3884,13 +3881,21 @@ async function showManualAdjustHistory(page, userId = null) {
         const paginationBubble = createPaginationBubble('action=view_manual_adjust_history', page, hasNextPage, customParams);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
         
+        // [修正] 確保在 pageRows 有資料後才設定 headerText
+        const headerText = userId ? `${pageRows[0].user_name} 的調整紀錄` : '手動調整紀錄';
+        
         return {
             type: 'flex',
             altText: '手動調整紀錄',
             contents: {
                 type: 'bubble',
                 size: 'giga',
-                header: createStandardHeader(headerText), // 使用 createStandardHeader 統一樣式
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [{ type: 'text', text: headerText, weight: 'bold', size: 'lg', color: '#FFFFFF' }],
+                    backgroundColor: '#343A40'
+                },
                 body: {
                     type: 'box',
                     layout: 'vertical',
