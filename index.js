@@ -783,6 +783,69 @@ async function handleError(error, replyToken, context = '未知操作', userId =
         console.error(`❌ 連錯誤回覆都失敗了 (ErrorCode: ${errorCode || 'N/A'}):`, replyError.message);
     }
 }
+/**
+ * [V42.2 新增] 建立一個標準的候補邀請 Flex Message
+ * @param {object} course - 課程物件，至少需要包含 id 和 title
+ * @returns {object} - LINE Flex Message 物件
+ */
+function createWaitlistInvitationFlexMessage(course) {
+  const mainTitle = getCourseMainTitle(course.title);
+  return {
+    type: 'flex',
+    altText: '候補課程邀請',
+    contents: {
+      type: 'bubble',
+      header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },
+      body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+        { type: 'text', text: `您好！您候補的課程「${mainTitle}」現在有名額了！`, wrap: true },
+        { type: 'text', text: '請在 15 分鐘內確認是否要預約，逾時將自動放棄資格喔。', size: 'sm', color: '#666666', wrap: true }
+      ]},
+      footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+        { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${course.id}` } },
+        { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認', data: `action=waitlist_confirm&course_id=${course.id}` } }
+      ]}
+    }
+  };
+}
+/**
+ * [V42.2 新增] 處理並通知候補名單中的下一位學員
+ * @param {object} client - 資料庫連線 client
+ * @param {string} courseId - 發生變動的課程 ID
+ */
+async function promoteNextOnWaitlist(client, courseId) {
+  const courseRes = await client.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [courseId]);
+  if (courseRes.rows.length === 0) return; // 找不到課程就直接結束
+
+  const course = courseRes.rows[0];
+  const waiting = course.waiting || [];
+  const students = course.students || [];
+
+  // 只有在「名額已滿」且「還有人在候補」的情況下才需要遞補
+  if (students.length >= course.capacity && waiting.length > 0) {
+    const isWithinTwoHours = new Date(course.time).getTime() - Date.now() < CONSTANTS.TIME.TWO_HOURS_IN_MS;
+    const promotedUserId = waiting.shift(); // 取出第一位候補者
+
+    if (isWithinTwoHours) {
+      // 新邏輯：發送限時邀請
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 分鐘後過期
+      await client.query(
+        `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
+        [course.id, promotedUserId, expiresAt]
+      );
+      // 使用新的輔助函式來建立訊息
+      const invitationMessage = createWaitlistInvitationFlexMessage(course);
+      await enqueuePushTask(promotedUserId, invitationMessage);
+    } else {
+      // 舊邏輯：直接遞補
+      students.push(promotedUserId);
+      const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(course.title)}」已有空位，已為您自動預約成功！`};
+      await enqueuePushTask(promotedUserId, notifyMessage);
+    }
+
+    // 無論是哪種邏輯，最後都要更新課程的候補名單
+    await client.query('UPDATE courses SET students = $1, waiting = $2 WHERE id = $3', [students, waiting, course.id]);
+  }
+}
 
 /**
  * [V31.2 新增] 將不同格式的內容轉換為 LINE 訊息物件陣列。
