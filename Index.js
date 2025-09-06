@@ -6659,7 +6659,7 @@ async function handleCourseActions(action, data, user) {
                         const nextUserId = course.waiting[0];
                         const newWaitingList = course.waiting.slice(1);
                         await client.query("UPDATE courses SET waiting = $1 WHERE id = $2", [newWaitingList, course_id]);
-                        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+                        const expiresAt = new Date(Date.now() + CONSTANTS.INTERVALS.WAITLIST_INVITATION_TIMEOUT_MS);
                         await client.query(
                             `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
                             [course_id, nextUserId, expiresAt]
