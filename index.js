@@ -3913,7 +3913,7 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
-
+// ###################
 // [修改] 老師用來查看購點紀錄的函式 (改為條列式清單, 時間由舊到新)
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
