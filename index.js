@@ -2329,7 +2329,7 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
         const separator = { type: 'separator', margin: 'md' };
 
         // ====================== [修改開始] ======================
-        // [修正] 步驟 2: (優先顯示) 產生「待處理訂單」列表
+        // 步驟 2: (優先顯示) 產生「待處理訂單」列表
         if (pendingPointOrders.length > 0) {
             bodyContents.push({ type: 'text', text: '待處理訂單', weight: 'bold', size: 'lg', margin: 'md', color: '#1A759F' });
             pendingPointOrders.forEach(order => {
@@ -2364,16 +2364,30 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
 
         // 步驟 3: (顯示在後) 產生「歷史紀錄」列表
         if (historyPointOrders.length > 0) {
-            // 如果前面已經有待處理訂單，加一個比較大的分隔，讓視覺更清晰
             if (pendingPointOrders.length > 0) {
                 bodyContents.push({ type: 'separator', margin: 'xxl' });
             }
             bodyContents.push({ type: 'text', text: '歷史紀錄', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
             historyPointOrders.forEach(order => {
                 let typeText, pointsText, pointsColor;
+                // [新增] 建立一個空陣列，用來存放原因元件
+                let reasonComponent = [];
+
                 if (order.amount === 0) { // 手動調整
                     if (order.points > 0) { typeText = '✨ 手動加點'; pointsText = `+${order.points}`; pointsColor = '#1A759F'; } 
                     else { typeText = '⚠️ 手動扣點'; pointsText = `${order.points}`; pointsColor = '#D9534F'; }
+                    
+                    // [新增] 如果是手動調整且有備註，就產生原因元件
+                    if (order.notes) {
+                        reasonComponent.push({
+                            type: 'text',
+                            text: `原因：${order.notes}`,
+                            size: 'xs',
+                            color: '#666666',
+                            wrap: true,
+                            margin: 'sm'
+                        });
+                    }
                 } else { // 一般購點
                     typeText = '✅ 購點成功'; pointsText = `+${order.points}`; pointsColor = '#28A745';
                 }
@@ -2384,9 +2398,11 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
                     margin: 'lg',
                     contents: [
                         {
-                            type: 'box', layout: 'vertical', flex: 3,
+                            type: 'box', layout: 'vertical', flex: 3, spacing: 'sm',
                             contents: [
                                 { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
+                                // [修改] 將原因元件插入此處
+                                ...reasonComponent,
                                 { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
                             ]
                         },
