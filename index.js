@@ -1153,30 +1153,66 @@ function buildBuyPointsFlex() {
         }
     };
 }
-// [V35.6 優化 & V42.3 體驗優化] 整合待付款提示至點數查詢主頁
+// [最終體驗優化] 將所有待付款操作整合至點數查詢主頁
 async function buildPointsMenuFlex(userId) {
     const user = await getUser(userId);
     if (!user) return { type: 'text', text: '無法獲取您的使用者資料。' };
 
-    // [新增] 檢查使用者是否有一筆待處理的「轉帳」訂單
+    // [修改] 檢查使用者是否有一筆任何類型的「待付款」訂單
     const pendingOrderRes = await executeDbQuery(client =>
         client.query(
-            "SELECT order_id FROM orders WHERE user_id = $1 AND status = 'pending_payment' AND payment_method = 'transfer' ORDER BY timestamp DESC LIMIT 1",
+            "SELECT order_id, points, amount, payment_method FROM orders WHERE user_id = $1 AND status = 'pending_payment' ORDER BY timestamp DESC LIMIT 1",
             [userId]
         )
     );
-    const hasPendingTransferOrder = pendingOrderRes.rows.length > 0;
+    const pendingOrder = pendingOrderRes.rows.length > 0 ? pendingOrderRes.rows[0] : null;
 
     const bodyContents = [];
 
-    // [新增] 如果有待處理的轉帳訂單，就在最上方顯示一個提示框和按鈕
-    if (hasPendingTransferOrder) {
+    // [修改] 如果有待付款訂單，就在最上方顯示一個包含所有操作的提示框
+    if (pendingOrder) {
+        const isTransfer = pendingOrder.payment_method === 'transfer';
+        const paymentMethodText = isTransfer ? '轉帳' : '現金';
+        
+        const actionButtons = [];
+
+        // 如果是轉帳訂單，加入「輸入後五碼」按鈕
+        if (isTransfer) {
+            actionButtons.push({
+                type: 'button',
+                action: {
+                    type: 'postback',
+                    label: '點此輸入匯款後五碼',
+                    displayText: '我要輸入匯款後五碼',
+                    data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER)}`
+                },
+                style: 'primary',
+                color: '#DE5246',
+                height: 'sm'
+            });
+        }
+
+        // 為所有待付款訂單都加入「取消訂單」按鈕
+        actionButtons.push({
+            type: 'button',
+            action: {
+                type: 'postback',
+                label: '取消此訂單',
+                data: `action=cancel_pending_order_start&order_id=${pendingOrder.order_id}`
+            },
+            style: isTransfer ? 'link' : 'primary', // 如果是轉帳，取消按鈕樣式為次要
+            color: '#999999',
+            height: 'sm',
+            margin: 'md'
+        });
+
         bodyContents.push({
             type: 'box',
             layout: 'vertical',
             paddingAll: 'lg',
-            backgroundColor: '#FFF1F0', // 使用淡紅色背景以示提醒
+            backgroundColor: '#FFF1F0',
             cornerRadius: 'md',
+            spacing: 'sm',
             contents: [
                 {
                     type: 'text',
@@ -1186,19 +1222,16 @@ async function buildPointsMenuFlex(userId) {
                     size: 'md',
                     align: 'center'
                 },
+                { type: 'separator', margin: 'md' },
                 {
-                    type: 'button',
-                    action: {
-                        type: 'postback',
-                        label: '點此輸入匯款後五碼',
-                        displayText: '我要輸入匯款後五碼',
-                        data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER)}`
-                    },
-                    style: 'primary',
-                    color: '#DE5246', // 醒目的紅色系按鈕
+                    type: 'text',
+                    text: `${pendingOrder.points} 點 / ${pendingOrder.amount} 元 (${paymentMethodText})`,
+                    align: 'center',
+                    size: 'sm',
                     margin: 'md',
-                    height: 'sm'
-                }
+                    wrap: true
+                },
+                ...actionButtons
             ]
         });
         bodyContents.push({ type: 'separator', margin: 'lg' });
@@ -1222,22 +1255,13 @@ async function buildPointsMenuFlex(userId) {
         contents: {
             type: 'bubble',
             size: 'giga',
-            header: {
-                type: 'box',
-                layout: 'vertical',
-                contents: [
-                    { type: 'text', text: '💎 點數查詢', color: '#ffffff', weight: 'bold', size: 'lg' }
-                ],
-                backgroundColor: '#34A0A4',
-                paddingBottom: 'lg',
-                paddingTop: 'lg'
-            },
+            header: createStandardHeader('💎 點數查詢'),
             body: {
                 type: 'box',
                 layout: 'vertical',
                 paddingAll: 'xl',
                 spacing: 'md',
-                contents: bodyContents // 使用我們動態組合好的內容
+                contents: bodyContents
             },
             footer: {
                 type: 'box',
