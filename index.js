@@ -6685,36 +6685,16 @@ async function handleCourseActions(action, data, user) {
                     }
 
                     const courseRes = await client.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [course_id]);
-                    const course = courseRes.rows[0];
-                    if (course && course.waiting?.length > 0) {
-                        const nextUserId = course.waiting[0];
-                        const newWaitingList = course.waiting.slice(1);
-                        await client.query("UPDATE courses SET waiting = $1 WHERE id = $2", [newWaitingList, course_id]);
-                        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-                        await client.query(
-                            `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
-                            [course_id, nextUserId, expiresAt]
-                        );
-                        const mainTitle = getCourseMainTitle(course.title);
-                        const invitationMessage = {
-                            type: 'flex',
-                            altText: '候補課程邀請',
-                            contents: {
-                                type: 'bubble',
-                                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },
-                                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-                                    { type: 'text', text: `您好！您候補的課程「${mainTitle}」現在有名額了！`, wrap: true },
-                                    { type: 'text', text: '請在 15 分鐘內確認是否要預約，逾時將自動放棄資格喔。', size: 'sm', color: '#666666', wrap: true }
-                                ]},
-                                footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-                                    { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${course.id}` } },
-                                    { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認', data: `action=waitlist_confirm&course_id=${course.id}` } }
-                                ]}
-                            }
-                        };
-                        await enqueuePushTask(nextUserId, invitationMessage);
-                    }
-                    await client.query('COMMIT');
+            
+if (updateRes.rowCount === 0) {
+    await client.query('ROLLBACK');
+    return '您的候補邀請已失效。';
+}
+
+// [V42.2 重構] 呼叫集中的遞補函式
+await promoteNextOnWaitlist(client, course_id);
+await client.query('COMMIT');
+
                     return '好的，已為您放棄此次候補資格。';
                 } catch (err) {
                     await client.query('ROLLBACK');
