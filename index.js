@@ -1288,6 +1288,79 @@ async function buildPointsMenuFlex(userId) {
         }
     };
 }
+/**
+ * [程式夥伴新增] 建立商城主選單，動態顯示待處理的商品訂單
+ * @param {string} userId 
+ * @returns {Promise<object>}
+ */
+async function buildShopMenuFlex(userId) {
+    const pendingOrderRes = await executeDbQuery(client =>
+        client.query(
+            "SELECT * FROM product_orders WHERE user_id = $1 AND status IN ('pending_payment', 'pending_confirmation') ORDER BY created_at DESC LIMIT 1",
+            [userId]
+        )
+    );
+    const pendingOrder = pendingOrderRes.rows.length > 0 ? pendingOrderRes.rows[0] : null;
+
+    const bodyContents = [];
+
+    // 如果有待處理的商品訂單，就顯示提示卡
+    if (pendingOrder) {
+        let actionButton = null;
+        let statusText, statusColor;
+        const isTransfer = pendingOrder.payment_method === 'transfer';
+
+        if (pendingOrder.status === 'pending_payment' && isTransfer) {
+            statusText = '❗ 待回報匯款';
+            statusColor = '#f28482';
+            actionButton = {
+                type: 'button', style: 'primary', height: 'sm', color: statusColor, margin: 'md',
+                action: { type: 'postback', label: '輸入匯款後五碼', data: `action=report_shop_last5&orderUID=${pendingOrder.order_uid}` }
+            };
+        } else if (pendingOrder.status === 'pending_payment' && !isTransfer) {
+            statusText = '🤝 待現金付款';
+            statusColor = '#1A759F';
+        } else { // pending_confirmation
+            statusText = '🕒 款項確認中';
+            statusColor = '#ff9e00';
+        }
+
+        const cancelButton = {
+            type: 'button', style: 'link', height: 'sm', margin: 'sm', color: '#999999',
+            action: { type: 'postback', label: '取消此訂單', data: `action=cancel_pending_product_order_start&orderUID=${pendingOrder.order_uid}` }
+        };
+
+        bodyContents.push({
+            type: 'box', layout: 'vertical', paddingAll: 'lg', backgroundColor: '#F0FFF3', cornerRadius: 'md', spacing: 'sm',
+            contents: [
+                { type: 'text', text: `您有一筆商品訂單 - ${statusText}`, weight: 'bold', color: statusColor, size: 'md', align: 'center', wrap: true },
+                { type: 'separator', margin: 'md' },
+                { type: 'text', text: `${pendingOrder.product_name}\n金額：${pendingOrder.amount} 元`, align: 'center', size: 'sm', margin: 'md', wrap: true },
+                ...(actionButton ? [actionButton] : []),
+                cancelButton
+            ]
+        });
+        bodyContents.push({ type: 'separator', margin: 'lg' });
+    }
+
+    // 商城主要按鈕
+    bodyContents.push(
+        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 瀏覽商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}` } },
+        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的購買紀錄', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY)}` } }
+    );
+
+    return {
+        type: 'flex', altText: '活動商城',
+        contents: {
+            type: 'bubble', size: 'giga',
+            header: createStandardHeader('🛍️ 活動商城', '#34A0A4'),
+            body: {
+                type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
+                contents: bodyContents
+            }
+        }
+    };
+}
 
 /**
  * [V34.1 新增] 建立一個顯示老師個人資訊變更並請求確認的 Flex Message
