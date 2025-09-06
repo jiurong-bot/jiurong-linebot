@@ -7819,16 +7819,18 @@ async function handlePostback(event, user) {
 
     // 路由順序至關重要，將容易衝突且意圖更明確的處理器往前放
     const actionRouter = [
-        { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
+        // [修正] 將 TeacherActions 移到 ViewActions 之前
+        // 確保 'view_type' 這類更精確的關鍵字能被優先匹配，避免被 'view_' 攔截
         { keywords: ['toggle_global_setting', 'error_log', '_auth', '_removal', 'failed_task'], handler: handleAdminActions },
         { keywords: ['teacher_profile', 'personal_profile', '_adjust', '_search', 'view_type', 'announcement_for_deletion'], handler: handleTeacherActions },
+        { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
         { keywords: ['course', 'booking', 'waitlist', 'announcement'], handler: handleCourseActions },
         { keywords: ['order', 'purchase', 'payment', 'shop_last5', 'arrival'], handler: handleOrderActions },
         { keywords: ['product', 'preorder', 'inventory'], handler: handleProductActions },
         { keywords: ['feedback'], handler: handleFeedbackActions },
         { keywords: ['report'], handler: handleReportActions },
     ];
-
+    
     // 遍歷路由表，找到對應的處理函式並執行
     for (const route of actionRouter) {
         // [修正] 將匹配邏輯還原為簡單有效的 includes()
