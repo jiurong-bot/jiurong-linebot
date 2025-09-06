@@ -7742,7 +7742,7 @@ async function handleReportActions(action, data, user) {
     }
     return null;
 }
-// [優化建議] 使用路由表重構 handlePostback，使其更清晰且易於擴充
+// [最終修正版] 使用 includes() 進行匹配，並維持正確的路由順序來避免衝突
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
@@ -7761,7 +7761,7 @@ async function handlePostback(event, user) {
         return null;
     }
 
-    // [說明] 關鍵字陣列的順序仍然重要，用來解決 'product' 和 'purchase' 這類衝突
+    // 路由順序至關重要，將容易衝突且意圖更明確的處理器往前放
     const actionRouter = [
         { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
         { keywords: ['toggle_global_setting', 'error_log', '_auth', '_removal', 'failed_task'], handler: handleAdminActions },
@@ -7773,13 +7773,10 @@ async function handlePostback(event, user) {
         { keywords: ['report'], handler: handleReportActions },
     ];
 
-    // [修正] 將匹配邏輯從 action.includes(keyword) 改為更嚴格的詞組匹配
-    const actionParts = action.split('_'); 
-
     // 遍歷路由表，找到對應的處理函式並執行
     for (const route of actionRouter) {
-        // 使用新的匹配邏輯：檢查 action 拆分後的詞組中，是否包含任一關鍵字
-        if (route.keywords.some(keyword => actionParts.includes(keyword))) {
+        // [修正] 將匹配邏輯還原為簡單有效的 includes()
+        if (route.keywords.some(keyword => action.includes(keyword))) {
             return route.handler(action, data, user);
         }
     }
