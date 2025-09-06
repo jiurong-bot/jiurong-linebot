@@ -7761,23 +7761,25 @@ async function handlePostback(event, user) {
         return null;
     }
 
-    // 建立 Action 關鍵字與處理函式的對應表
+    // [說明] 關鍵字陣列的順序仍然重要，用來解決 'product' 和 'purchase' 這類衝突
     const actionRouter = [
         { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
         { keywords: ['toggle_global_setting', 'error_log', '_auth', '_removal', 'failed_task'], handler: handleAdminActions },
         { keywords: ['teacher_profile', 'personal_profile', '_adjust', '_search', 'view_type', 'announcement_for_deletion'], handler: handleTeacherActions },
         { keywords: ['course', 'booking', 'waitlist', 'announcement'], handler: handleCourseActions },
-        // [修正] 調整路由順序，將 Order 處理器移至 Product 處理器之前，避免關鍵字衝突
-        // 這樣 'confirm_product_purchase' 會先被 'purchase' 關鍵字攔截，交給正確的 handleOrderActions
         { keywords: ['order', 'purchase', 'payment', 'shop_last5', 'arrival'], handler: handleOrderActions },
         { keywords: ['product', 'preorder', 'inventory'], handler: handleProductActions },
         { keywords: ['feedback'], handler: handleFeedbackActions },
         { keywords: ['report'], handler: handleReportActions },
     ];
 
+    // [修正] 將匹配邏輯從 action.includes(keyword) 改為更嚴格的詞組匹配
+    const actionParts = action.split('_'); 
+
     // 遍歷路由表，找到對應的處理函式並執行
     for (const route of actionRouter) {
-        if (route.keywords.some(keyword => action.includes(keyword))) {
+        // 使用新的匹配邏輯：檢查 action 拆分後的詞組中，是否包含任一關鍵字
+        if (route.keywords.some(keyword => actionParts.includes(keyword))) {
             return route.handler(action, data, user);
         }
     }
