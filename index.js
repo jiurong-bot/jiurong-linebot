@@ -3817,6 +3817,7 @@ async function buildTeacherSelectionCarousel() {
         };
     });
 }
+// ########
 async function showManualAdjustHistory(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -3915,6 +3916,7 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
+// ###############
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
