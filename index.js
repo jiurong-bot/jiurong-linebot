@@ -7715,18 +7715,14 @@ async function handleOrderActions(action, data, user) {
             });
         }
         case 'execute_product_purchase': {
+            // [程式夥伴修正] 改用更嚴格的全域商品訂單檢查，確保任何商品都只能有一筆待處理訂單
+            const hasPending = await hasPendingProductOrder(userId);
+            if (hasPending) {
+                return '您已有一筆商品訂單待處理，無法建立新訂單。\n\n請先至「商城」>「我的購買紀錄」完成或取消該筆訂單。';
+            }
             const productId = data.get('product_id');
             const paymentMethod = data.get('method');
             const quantity = parseInt(data.get('qty') || '1', 10);
-            const existingOrderRes = await executeDbQuery(client =>
-                client.query(
-                    "SELECT * FROM product_orders WHERE user_id = $1 AND product_id = $2 AND status IN ('pending_payment', 'pending_confirmation')",
-                    [userId, productId]
-                )
-            );
-            if (existingOrderRes.rows.length > 0) {
-                return '您已經有此商品的待付款訂單，請至「我的購買紀錄」查看或完成付款。';
-            }
             const result = await executeDbQuery(async (client) => {
                 await client.query('BEGIN');
                 try {
