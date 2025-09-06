@@ -7649,7 +7649,7 @@ async function handleOrderActions(action, data, user) {
                 );
             });
             if (paymentMethod === 'transfer') {
-                const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${plan.amount} 元\n\n匯款完成後，請至「點數管理」回報後五碼。`;
+                const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${plan.amount} 元\n\n匯款完成後，請至「點數查詢」回報後五碼。`;
                 return replyText;
             } else { // cash
                 const replyText = `✅ 訂單已成立！\n您選擇了現金支付「${plan.label}」，總金額 ${plan.amount} 元。\n請直接與老師聯繫並完成支付，支付完成後老師會為您手動加點。`;
