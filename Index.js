@@ -6665,7 +6665,26 @@ async function handleCourseActions(action, data, user) {
                             [course_id, nextUserId, expiresAt]
                         );
                         const mainTitle = getCourseMainTitle(course.title);
-                        const invitationMessage = { /* ... 此處省略 Flex Message 結構 ... */ };
+                        
+                        // ====================== [程式碼補齊開始] ======================
+                        const invitationMessage = {
+                            type: 'flex',
+                            altText: '候補課程邀請',
+                            contents: {
+                                type: 'bubble',
+                                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },
+                                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+                                    { type: 'text', text: `您好！您候補的課程「${mainTitle}」現在有名額了！`, wrap: true },
+                                    { type: 'text', text: '請在 15 分鐘內確認是否要預約，逾時將自動放棄資格喔。', size: 'sm', color: '#666666', wrap: true }
+                                ]},
+                                footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+                                    { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${course.id}` } },
+                                    { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認', data: `action=waitlist_confirm&course_id=${course.id}` } }
+                                ]}
+                            }
+                        };
+                        // ====================== [程式碼補齊結束] ======================
+                        
                         await enqueuePushTask(nextUserId, invitationMessage);
                     }
 
@@ -6684,9 +6703,6 @@ async function handleCourseActions(action, data, user) {
             await enqueuePushTask(userId, forfeitMessage);
             return;
         }
-    }
-    return null;
-}
 /** 
  * 處理所有與「商品」相關的操作
  */
