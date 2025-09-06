@@ -3817,7 +3817,7 @@ async function buildTeacherSelectionCarousel() {
         };
     });
 }
-// ########
+
 async function showManualAdjustHistory(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -3838,17 +3838,32 @@ async function showManualAdjustHistory(page, userId = null) {
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
-        // [修正] 將無資料的判斷提前，避免後續程式碼因 pageRows[0] 不存在而出錯
         if (pageRows.length === 0) {
-            if (page === 1) {
-                return userId ? '這位學員沒有任何手動調整紀錄。' : '目前沒有任何手動調整紀錄。';
-            }
-            return '沒有更多紀錄了。';
+            if (page > 1) return '沒有更多紀錄了。';
+            
+            // [最終修正] 當第一頁沒有資料時，回傳一個包含搜尋按鈕的 Flex Message
+            const emptyMsg = userId ? '這位學員沒有任何手動調整紀錄。' : '目前沒有任何手動調整紀錄。';
+            return {
+                type: 'flex',
+                altText: '手動調整紀錄',
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: emptyMsg, align: 'center', wrap: true }
+                        ]
+                    }
+                }
+            };
         }
+        
+        const headerText = userId ? `${pageRows[0].user_name} 的調整紀錄` : '手動調整紀錄';
 
         const listItems = pageRows.map(record => {
             const isAddition = record.points > 0;
-            const typeText = isAddition ? `✨ 手動加點` : `⚠️ 手動扣點`;
             const pointsText = isAddition ? `+${record.points}` : `${record.points}`;
             const pointsColor = isAddition ? '#1A759F' : '#D9534F';
 
@@ -3867,14 +3882,8 @@ async function showManualAdjustHistory(page, userId = null) {
                         ]
                     },
                     {
-                        type: 'text',
-                        text: `${pointsText} 點`,
-                        gravity: 'center',
-                        align: 'end',
-                        flex: 2,
-                        weight: 'bold',
-                        size: 'sm',
-                        color: pointsColor,
+                        type: 'text', text: `${pointsText} 點`, gravity: 'center', align: 'end',
+                        flex: 2, weight: 'bold', size: 'sm', color: pointsColor
                     }
                 ]
             };
@@ -3884,28 +3893,18 @@ async function showManualAdjustHistory(page, userId = null) {
         const paginationBubble = createPaginationBubble('action=view_manual_adjust_history', page, hasNextPage, customParams);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
         
-        // [修正] 確保在 pageRows 有資料後才設定 headerText
-        const headerText = userId ? `${pageRows[0].user_name} 的調整紀錄` : '手動調整紀錄';
-        
         return {
             type: 'flex',
             altText: '手動調整紀錄',
             contents: {
                 type: 'bubble',
                 size: 'giga',
-                header: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [{ type: 'text', text: headerText, weight: 'bold', size: 'lg', color: '#FFFFFF' }],
-                    backgroundColor: '#343A40'
-                },
+                header: createStandardHeader(headerText),
                 body: {
                     type: 'box',
                     layout: 'vertical',
                     paddingAll: 'none',
-                    contents: listItems.flatMap((item, index) => 
-                        index === 0 ? [item] : [{ type: 'separator' }, item]
-                    )
+                    contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item])
                 },
                 footer: {
                     type: 'box',
@@ -3916,7 +3915,6 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
-// ###############
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -3937,13 +3935,29 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
-        // [修正] 將無資料的判斷提前
         if (pageRows.length === 0) {
-            if (page === 1) {
-                return userId ? '這位學員沒有任何購點紀錄。' : '目前沒有任何學員的購點紀錄。';
-            }
-            return '沒有更多紀錄了。';
+            if (page > 1) return '沒有更多紀錄了。';
+
+            // [最終修正] 當第一頁沒有資料時，回傳一個包含搜尋按鈕的 Flex Message
+            const emptyMsg = userId ? '這位學員沒有任何購點紀錄。' : '目前沒有任何學員的購點紀錄。';
+             return {
+                type: 'flex',
+                altText: '購點紀錄',
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: emptyMsg, align: 'center', wrap: true }
+                        ]
+                    }
+                }
+            };
         }
+        
+        const headerText = userId ? `${pageRows[0].user_name} 的購點紀錄` : '所有學員購點紀錄';
 
         const listItems = pageRows.map(order => ({
             type: 'box',
@@ -3961,14 +3975,8 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
                     ]
                 },
                 {
-                    type: 'text',
-                    text: `$${order.amount}`,
-                    gravity: 'center',
-                    align: 'end',
-                    flex: 2,
-                    weight: 'bold',
-                    size: 'md',
-                    color: '#28A745',
+                    type: 'text', text: `$${order.amount}`, gravity: 'center', align: 'end',
+                    flex: 2, weight: 'bold', size: 'md', color: '#28A745',
                 }
             ]
         }));
@@ -3976,9 +3984,6 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
         const customParams = userId ? `&user_id=${userId}` : '';
         const paginationBubble = createPaginationBubble('action=view_purchase_history_as_teacher', page, hasNextPage, customParams);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
-        
-        // [修正] 確保在 pageRows 有資料後才設定 headerText
-        const headerText = userId ? `${pageRows[0].user_name} 的購點紀錄` : '所有學員購點紀錄';
         
         return {
             type: 'flex',
@@ -3991,9 +3996,7 @@ async function showPurchaseHistoryAsTeacher(page, userId = null) {
                     type: 'box',
                     layout: 'vertical',
                     paddingAll: 'none',
-                    contents: listItems.flatMap((item, index) => 
-                        index === 0 ? [item] : [{ type: 'separator' }, item]
-                    )
+                    contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item])
                 },
                 footer: {
                     type: 'box',
@@ -4024,13 +4027,29 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
-        // [修正] 將無資料的判斷提前
         if (pageRows.length === 0) {
-            if (page === 1) {
-                return userId ? '這位學員沒有任何購買紀錄。' : '目前沒有任何學員的購買紀錄。';
-            }
-            return '沒有更多紀錄了。';
+            if (page > 1) return '沒有更多紀錄了。';
+            
+            // [最終修正] 當第一頁沒有資料時，回傳一個包含搜尋按鈕的 Flex Message
+            const emptyMsg = userId ? '這位學員沒有任何購買紀錄。' : '目前沒有任何學員的購買紀錄。';
+            return {
+                type: 'flex',
+                altText: '購買紀錄',
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: emptyMsg, align: 'center', wrap: true }
+                        ]
+                    }
+                }
+            };
         }
+
+        const headerText = userId ? `${pageRows[0].user_name} 的購買紀錄` : '所有學員購買紀錄';
 
         const statusMap = {
             'completed': { text: '✅ 已完成', color: '#52b69a' },
@@ -4059,14 +4078,8 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
                         ]
                     },
                     {
-                        type: 'text',
-                        text: `$${order.amount} 元`,
-                        gravity: 'center',
-                        align: 'end',
-                        flex: 2,
-                        weight: 'bold',
-                        size: 'sm',
-                        color: '#28A745',
+                        type: 'text', text: `$${order.amount} 元`, gravity: 'center', align: 'end',
+                        flex: 2, weight: 'bold', size: 'sm', color: '#28A745',
                     }
                 ]
             };
@@ -4075,9 +4088,6 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
         const customParams = userId ? `&user_id=${userId}` : '';
         const paginationBubble = createPaginationBubble('action=view_exchange_history_as_teacher', page, hasNextPage, customParams);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
-        
-        // [修正] 確保在 pageRows 有資料後才設定 headerText
-        const headerText = userId ? `${pageRows[0].user_name} 的購買紀錄` : '所有學員購買紀錄';
         
         return {
             type: 'flex',
@@ -4090,9 +4100,7 @@ async function showExchangeHistoryAsTeacher(page, userId = null) {
                     type: 'box',
                     layout: 'vertical',
                     paddingAll: 'none',
-                    contents: listItems.flatMap((item, index) => 
-                        index === 0 ? [item] : [{ type: 'separator' }, item]
-                    )
+                    contents: listItems.flatMap((item, index) => index === 0 ? [item] : [{ type: 'separator' }, item])
                 },
                 footer: {
                     type: 'box',
@@ -4123,13 +4131,29 @@ async function showHistoricalMessagesAsTeacher(page, userId = null) {
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageMessages = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
-        // [修正] 將無資料的判斷提前
         if (pageMessages.length === 0) {
-            if (page === 1) {
-                return userId ? '這位學員沒有任何留言紀錄。' : '目前沒有任何學員的留言紀錄。';
-            }
-            return '沒有更多紀錄了。';
+            if (page > 1) return '沒有更多紀錄了。';
+
+            // [最終修正] 當第一頁沒有資料時，回傳一個包含搜尋按鈕的 Flex Message
+            const emptyMsg = userId ? '這位學員沒有任何留言紀錄。' : '目前沒有任何學員的留言紀錄。';
+            return {
+                type: 'flex',
+                altText: '歷史留言',
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'md',
+                        contents: [
+                            { type: 'text', text: emptyMsg, align: 'center', wrap: true }
+                        ]
+                    }
+                }
+            };
         }
+
+        const headerText = userId ? `${pageMessages[0].user_name} 的歷史留言` : '所有學員歷史留言';
 
         const statusMap = {
             new: { text: '🟡 新留言', color: '#ffb703' },
@@ -4167,9 +4191,6 @@ async function showHistoricalMessagesAsTeacher(page, userId = null) {
         const customParams = userId ? `&user_id=${userId}` : '';
         const paginationBubble = createPaginationBubble('action=view_historical_messages_as_teacher', page, hasNextPage, customParams);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
-        
-        // [修正] 確保在 pageMessages 有資料後才設定 headerText
-        const headerText = userId ? `${pageMessages[0].user_name} 的歷史留言` : '所有學員歷史留言';
         
         return {
             type: 'flex',
