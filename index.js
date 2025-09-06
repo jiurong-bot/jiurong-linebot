@@ -7541,15 +7541,6 @@ async function handleOrderActions(action, data, user) {
             };
         }
         case 'execute_point_purchase': {
-             // 在建立訂單前的最後一刻，再次檢查是否已有未完成的訂單
-        const hasPendingOrder = await executeDbQuery(async (client) => {
-        const existingOrderRes = await client.query(`SELECT 1 FROM orders WHERE user_id = $1 AND (status = 'pending_payment' OR status = 'pending_confirmation' OR status = 'rejected') LIMIT 1`, [userId]);
-        return existingOrderRes.rows.length > 0;});
-
-             // 如果檢查到已有訂單，則直接阻擋，不建立新訂單
-        if (hasPendingOrder) {
-            const flexMenu = await buildPointsMenuFlex(userId);
-            return [{type: 'text', text: '您目前尚有未完成的訂單，請先處理該筆訂單。'}, flexMenu];}
             const points = parseInt(data.get('plan'), 10);
             const paymentMethod = data.get('method');
             const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
