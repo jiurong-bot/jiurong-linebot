@@ -1,4 +1,4 @@
-// index.js - V42.3 (手動調點紀錄優化)
+// index.js - V42.4 ()
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6074,7 +6074,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V42.3 (手動調點紀錄優化)`);
+    console.log(`Bot 版本 V42.4 ()`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
