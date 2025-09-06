@@ -906,9 +906,11 @@ async function reply(replyToken, content, menu = null) {
   // 步驟 3: 執行 API 呼叫
   try {
     console.log(`[REPLY-DEBUG] 準備呼叫 client.replyMessage...`);
+    // [新增] 印出完整的訊息內容，方便除錯
+    console.log('[REPLY-PAYLOAD]', JSON.stringify(messages, null, 2));
     const result = await client.replyMessage(replyToken, messages);
     console.log('[REPLY-DEBUG] client.replyMessage 呼叫已完成。');
-    
+
     // API 錯誤的雙重檢查
     if (result && result.response && result.response.status >= 400) {
         console.error('‼️ API 呼叫回傳了非成功的狀態碼 ‼️', JSON.stringify(result.response.data, null, 2));
