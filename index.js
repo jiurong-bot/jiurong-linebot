@@ -3673,19 +3673,7 @@ event.message.text.trim().normalize() : '';
     } else if (text === CONSTANTS.COMMANDS.STUDENT.PURCHASE_HISTORY) {
         return showPurchaseHistory(userId, 1);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.SHOP) {
-        return {
-            type: 'flex', altText: '活動商城',
-            contents: {
-                type: 'bubble', size: 'giga',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🛍️ 活動商城', color: '#ffffff', weight: 'bold', size: 'lg'}], backgroundColor: '#34A0A4', paddingTop: 'lg', paddingBottom: 'lg' },
-                body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
-                    contents: [
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🛒 瀏覽商品', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS)}` } },
-                        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📜 我的購買紀錄', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY)}` } }
-                    ]
-                }
-            }
-        };
+        return buildShopMenuFlex(userId);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.VIEW_SHOP_PRODUCTS) {
         return showShopProducts(1);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.EXCHANGE_HISTORY) {
