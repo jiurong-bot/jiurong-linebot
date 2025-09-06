@@ -5954,8 +5954,6 @@ async function showCourseRosterDetails(courseId) {
         };
     });
 }
-
-
 async function showStudentDetails(studentId) {
     return executeDbQuery(async (client) => {
         const userRes = await client.query('SELECT name, picture_url, points FROM users WHERE id = $1', [studentId]);
@@ -5964,21 +5962,18 @@ async function showStudentDetails(studentId) {
         }
         const student = userRes.rows[0];
 
-
         const coursesRes = await client.query(
             `SELECT title, time FROM courses WHERE $1 = ANY(students) AND time > NOW() ORDER BY time ASC LIMIT 3`,
             [studentId]
         );
 
-
+        // [修改] 查詢 orders 時選取所有欄位 (*)，以便取得 amount 和 notes
         const ordersRes = await client.query(
-            `SELECT points, status, timestamp FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 3`,
+            `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 3`,
             [studentId]
         );
 
-
         const createListItem = (text, size = 'sm', color = '#666666') => ({ type: 'text', text, size, color, wrap: true, margin: 'sm' });
-
 
         const coursesContents = [];
         if (coursesRes.rows.length > 0) {
@@ -5992,14 +5987,23 @@ async function showStudentDetails(studentId) {
         const statusMap = { 'completed': '✅', 'pending_confirmation': '🕒', 'pending_payment': '❗', 'rejected': '❌' };
         const ordersContents = [];
         if (ordersRes.rows.length > 0) {
+            // [修改] 更新訂單顯示邏輯，加入對手動調整原因的判斷
             ordersRes.rows.forEach(order => {
-                const statusIcon = statusMap[order.status] || '❓';
-                ordersContents.push(createListItem(`${statusIcon} ${order.points}點 (${formatDateTime(order.timestamp)})`));
+                if (order.amount === 0) { // 如果是手動調整
+                    const typeText = order.points > 0 ? '✨ 手動加點' : '⚠️ 手動扣點';
+                    ordersContents.push(createListItem(`${typeText} ${order.points}點 (${formatDateTime(order.timestamp)})`));
+                    // 如果有原因，就在下一行顯示
+                    if (order.notes) {
+                        ordersContents.push(createListItem(`└ 原因：${order.notes}`, 'xs', '#888888'));
+                    }
+                } else { // 如果是一般訂單
+                    const statusIcon = statusMap[order.status] || '❓';
+                    ordersContents.push(createListItem(`${statusIcon} ${order.points}點 (${formatDateTime(order.timestamp)})`));
+                }
             });
         } else {
             ordersContents.push(createListItem('無', 'sm', '#aaaaaa'));
         }
-
 
         return {
             type: 'flex',
@@ -6051,6 +6055,7 @@ async function showStudentDetails(studentId) {
         };
     });
 }
+
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
     .then((result) => res.json(result))
