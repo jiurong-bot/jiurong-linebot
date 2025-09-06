@@ -2894,15 +2894,26 @@ async function handleTeacherCommands(event, userId) {
                 const orderId = `MA-${Date.now()}`;
                 // MA for Manual Adjust
                 const pointsChange = state.operation === 'add' ? state.amount : -state.amount;
-                
-                // [修改] 將存入 last_5_digits 的值改為一個簡短的代碼
-                const reasonForOrder = `手動`;
-                await clientDB.query(
-                    `INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                    [orderId, student.id, student.name, pointsChange, 0, reasonForOrder, 'completed', new Date().toISOString()]
-                );
+                // [修改] 使用新的 type 和 notes 欄位來記錄手動調整
+const orderType = state.operation === 'add' ? 'manual_add' : 'manual_deduct';
+const reasonForOrder = state.reason; // 老師輸入的調整原因
 
+await clientDB.query(
+    `INSERT INTO orders (order_id, user_id, user_name, points, amount, last_5_digits, status, timestamp, type, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [
+        orderId,
+        student.id,
+        student.name,
+        pointsChange,
+        0, // amount
+        null, // last_5_digits 設為 null，因為這不是一筆轉帳
+        'completed', // status
+        new Date().toISOString(), // timestamp
+        orderType, // 新增的 type 欄位
+        reasonForOrder // 新增的 notes 欄位
+    ]
+);
 
                 const opTextForStudent = state.operation === 'add' ? `增加了 ${state.amount}` : `扣除了 ${state.amount}`;
                 const notifyMessage = { type: 'text', text: `🔔 點數異動通知\n老師 ${user.name} 為您 ${opTextForStudent} 點。\n原因：${state.reason}\n您目前的點數為：${newPoints} 點。` };
