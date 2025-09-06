@@ -1,4 +1,4 @@
-// index.js - V42.4 (重複訂單)
+// index.js - V42.5 (支付方式二擇一)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6147,7 +6147,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V42.4 (重複訂單)`);
+    console.log(`Bot 版本 V42.5 (支付方式二擇一)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
