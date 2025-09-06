@@ -635,6 +635,22 @@ async function hasPendingPointOrder(userId) {
     );
     return res.rows.length > 0;
 }
+/**
+ * [程式夥伴新增] 檢查學員是否已有待處理的「商品」訂單
+ * @param {string} userId - 要檢查的學員 User ID
+ * @returns {Promise<boolean>} - 如果有待處理訂單則回傳 true，否則回傳 false
+ */
+async function hasPendingProductOrder(userId) {
+    const res = await executeDbQuery(client =>
+        client.query(
+            `SELECT 1 FROM product_orders 
+             WHERE user_id = $1 AND status IN ('pending_payment', 'pending_confirmation') 
+             LIMIT 1`,
+            [userId]
+        )
+    );
+    return res.rows.length > 0;
+}
 
 async function getCourse(courseId, dbClient) {
     return executeDbQuery(async (client) => {
