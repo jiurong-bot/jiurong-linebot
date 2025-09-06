@@ -2301,9 +2301,9 @@ async function showTeacherListForRemoval(page) {
 // [程式夥伴修改] V40.10.4 - 調整購點紀錄中「待處理訂單」的顯示順序
 async function showPurchaseHistory(userId, page) { // page 參數暫時保留
     return executeDbQuery(async (client) => {
-        // 抓取最近 20 筆相關紀錄
+        // [修正] 改為 ORDER BY DESC 來抓取最新的 20 筆紀錄
         const res = await client.query(
-            `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp ASC LIMIT 20`,
+            `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 20`,
             [userId]
         );
 
@@ -2327,43 +2327,8 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
         const separator = { type: 'separator', margin: 'md' };
 
         // ====================== [修改開始] ======================
-        // 步驟 2: (優先顯示) 產生「歷史紀錄」列表
-        if (historyPointOrders.length > 0) {
-            bodyContents.push({ type: 'text', text: '歷史紀錄', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
-            historyPointOrders.forEach(order => {
-                let typeText, pointsText, pointsColor;
-                if (order.amount === 0) { // 手動調整
-                    if (order.points > 0) { typeText = '✨ 手動加點'; pointsText = `+${order.points}`; pointsColor = '#1A759F'; } 
-                    else { typeText = '⚠️ 手動扣點'; pointsText = `${order.points}`; pointsColor = '#D9534F'; }
-                } else { // 一般購點
-                    typeText = '✅ 購點成功'; pointsText = `+${order.points}`; pointsColor = '#28A745';
-                }
-
-                bodyContents.push({
-                    type: 'box',
-                    layout: 'horizontal',
-                    margin: 'lg',
-                    contents: [
-                        {
-                            type: 'box', layout: 'vertical', flex: 3,
-                            contents: [
-                                { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
-                                { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
-                            ]
-                        },
-                        { type: 'text', text: `${pointsText} 點`, gravity: 'center', align: 'end', flex: 2, weight: 'bold', size: 'sm', color: pointsColor }
-                    ]
-                });
-                bodyContents.push(separator);
-            });
-        }
-
-        // 步驟 3: (顯示在後) 產生「待處理訂單」列表
+        // [修正] 步驟 2: (優先顯示) 產生「待處理訂單」列表
         if (pendingPointOrders.length > 0) {
-            // 如果前面已經有歷史紀錄，加一個比較大的分隔，讓視覺更清晰
-            if (historyPointOrders.length > 0) {
-                bodyContents.push({ type: 'separator', margin: 'xxl' });
-            }
             bodyContents.push({ type: 'text', text: '待處理訂單', weight: 'bold', size: 'lg', margin: 'md', color: '#1A759F' });
             pendingPointOrders.forEach(order => {
                 let actionButtonLabel, cardColor, statusText, actionCmd, additionalInfo = '';
@@ -2389,6 +2354,41 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
                             type: 'button', style: 'primary', height: 'sm', margin: 'md', color: cardColor,
                             action: { type: 'postback', label: actionButtonLabel, data: `action=run_command&text=${encodeURIComponent(actionCmd)}` }
                         }
+                    ]
+                });
+                bodyContents.push(separator);
+            });
+        }
+
+        // 步驟 3: (顯示在後) 產生「歷史紀錄」列表
+        if (historyPointOrders.length > 0) {
+            // 如果前面已經有待處理訂單，加一個比較大的分隔，讓視覺更清晰
+            if (pendingPointOrders.length > 0) {
+                bodyContents.push({ type: 'separator', margin: 'xxl' });
+            }
+            bodyContents.push({ type: 'text', text: '歷史紀錄', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
+            historyPointOrders.forEach(order => {
+                let typeText, pointsText, pointsColor;
+                if (order.amount === 0) { // 手動調整
+                    if (order.points > 0) { typeText = '✨ 手動加點'; pointsText = `+${order.points}`; pointsColor = '#1A759F'; } 
+                    else { typeText = '⚠️ 手動扣點'; pointsText = `${order.points}`; pointsColor = '#D9534F'; }
+                } else { // 一般購點
+                    typeText = '✅ 購點成功'; pointsText = `+${order.points}`; pointsColor = '#28A745';
+                }
+
+                bodyContents.push({
+                    type: 'box',
+                    layout: 'horizontal',
+                    margin: 'lg',
+                    contents: [
+                        {
+                            type: 'box', layout: 'vertical', flex: 3,
+                            contents: [
+                                { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
+                                { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
+                            ]
+                        },
+                        { type: 'text', text: `${pointsText} 點`, gravity: 'center', align: 'end', flex: 2, weight: 'bold', size: 'sm', color: pointsColor }
                     ]
                 });
                 bodyContents.push(separator);
