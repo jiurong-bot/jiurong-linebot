@@ -7622,6 +7622,11 @@ async function handleOrderActions(action, data, user) {
             };
         }
         case 'execute_point_purchase': {
+                    // [程式夥伴修正] V42.4c - 在建立訂單前，再次進行嚴格的檢查
+        const hasPending = await hasPendingPointOrder(userId);
+        if (hasPending) {
+            return '您目前已有一筆訂單正在處理中，無法建立新訂單。\n\n請先至「點數查詢」主畫面，查看並完成或取消目前的訂單。';
+        }
             const points = parseInt(data.get('plan'), 10);
             const paymentMethod = data.get('method');
             const plan = CONSTANTS.PURCHASE_PLANS.find(p => p.points === points);
