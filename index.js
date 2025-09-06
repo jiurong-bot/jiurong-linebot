@@ -7765,11 +7765,12 @@ async function handlePostback(event, user) {
     const actionRouter = [
         { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
         { keywords: ['toggle_global_setting', 'error_log', '_auth', '_removal', 'failed_task'], handler: handleAdminActions },
-        // [修正] 在關鍵字清單中加入 'personal_profile'，使其能正確匹配
         { keywords: ['teacher_profile', 'personal_profile', '_adjust', '_search', 'view_type', 'announcement_for_deletion'], handler: handleTeacherActions },
         { keywords: ['course', 'booking', 'waitlist', 'announcement'], handler: handleCourseActions },
-        { keywords: ['product', 'preorder', 'inventory'], handler: handleProductActions },
+        // [修正] 調整路由順序，將 Order 處理器移至 Product 處理器之前，避免關鍵字衝突
+        // 這樣 'confirm_product_purchase' 會先被 'purchase' 關鍵字攔截，交給正確的 handleOrderActions
         { keywords: ['order', 'purchase', 'payment', 'shop_last5', 'arrival'], handler: handleOrderActions },
+        { keywords: ['product', 'preorder', 'inventory'], handler: handleProductActions },
         { keywords: ['feedback'], handler: handleFeedbackActions },
         { keywords: ['report'], handler: handleReportActions },
     ];
