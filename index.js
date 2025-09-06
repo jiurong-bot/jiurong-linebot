@@ -1,4 +1,4 @@
-// index.js -〔測試版.V2〕 
+// index.js - 測試版V3 
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -5991,7 +5991,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本〔測試版.V2〕`);
+    console.log(`Bot 版本 測試版V3`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
