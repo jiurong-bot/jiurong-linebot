@@ -2360,7 +2360,6 @@ async function showTeacherListForRemoval(page) {
 // [程式夥伴修改] V40.10.4 - 調整購點紀錄中「待處理訂單」的顯示順序
 async function showPurchaseHistory(userId, page) { // page 參數暫時保留
     return executeDbQuery(async (client) => {
-        // [修正] 改為 ORDER BY DESC 來抓取最新的 20 筆紀錄
         const res = await client.query(
             `SELECT * FROM orders WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 20`,
             [userId]
@@ -2370,7 +2369,6 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
              return '您沒有任何購點紀錄。';
         }
 
-        // 步驟 1: 將訂單分組
         const pendingPointOrders = [];
         const historyPointOrders = [];
 
@@ -2385,19 +2383,35 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
         const bodyContents = [];
         const separator = { type: 'separator', margin: 'md' };
 
-        // ====================== [修改開始] ======================
-        // 步驟 2: (優先顯示) 產生「待處理訂單」列表
         if (pendingPointOrders.length > 0) {
             bodyContents.push({ type: 'text', text: '待處理訂單', weight: 'bold', size: 'lg', margin: 'md', color: '#1A759F' });
             pendingPointOrders.forEach(order => {
                 let actionButtonLabel, cardColor, statusText, actionCmd, additionalInfo = '';
+                // [新增] 建立一個 cancelButton 變數
+                let cancelButton = null;
+
                 if (order.status === 'pending_confirmation') {
                     actionButtonLabel = '修改匯款後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardColor = '#ff9e00'; statusText = '已提交，等待老師確認';
                 } else if (order.status === 'rejected') {
                     actionButtonLabel = '重新提交後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER; cardColor = '#d90429'; statusText = '訂單被老師退回'; additionalInfo = '請檢查金額或後五碼，並重新提交。';
                 } else { // pending_payment
-                    actionButtonLabel = '輸入匯款後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER; cardColor = '#f28482'; statusText = '待付款';
+                    // [修改] 如果是待付款(轉帳)，顯示輸入按鈕
+                    if (order.payment_method === 'transfer') {
+                        actionButtonLabel = '輸入匯款後五碼'; actionCmd = CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER; 
+                    }
+                    cardColor = '#f28482'; statusText = '待付款';
+                    // [新增] 只要是待付款狀態，就顯示取消按鈕
+                    cancelButton = {
+                        type: 'button', style: 'link', height: 'sm', margin: 'md', color: '#DE5246',
+                        action: { type: 'postback', label: '取消此訂單', data: `action=cancel_pending_order_start&order_id=${order.order_id}` }
+                    };
                 }
+
+                // [修改] 組合主要的動作按鈕
+                const mainActionButton = actionCmd ? {
+                    type: 'button', style: 'primary', height: 'sm', margin: 'md', color: cardColor,
+                    action: { type: 'postback', label: actionButtonLabel, data: `action=run_command&text=${encodeURIComponent(actionCmd)}` }
+                } : null;
 
                 bodyContents.push({
                     type: 'box',
@@ -2407,19 +2421,19 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
                     contents: [
                         { type: 'text', text: `${order.points} 點 / ${order.amount} 元`, weight: 'bold', wrap: true },
                         { type: 'text', text: `狀態: ${statusText}`, size: 'sm', color: cardColor, weight: 'bold' },
+                        { type: 'text', text: `(${order.payment_method === 'transfer' ? '轉帳' : '現金'})`, size: 'xs', color: '#AAAAAA' },
                         { type: 'text', text: formatDateTime(order.timestamp), size: 'sm', color: '#AAAAAA' },
                         ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', color: '#B00020', wrap: true, margin: 'sm' }] : []),
-                        {
-                            type: 'button', style: 'primary', height: 'sm', margin: 'md', color: cardColor,
-                            action: { type: 'postback', label: actionButtonLabel, data: `action=run_command&text=${encodeURIComponent(actionCmd)}` }
-                        }
+                        // [修改] 只有在 mainActionButton 存在時才顯示
+                        ...(mainActionButton ? [mainActionButton] : []),
+                        // [修改] 只有在 cancelButton 存在時才顯示
+                        ...(cancelButton ? [cancelButton] : [])
                     ]
                 });
                 bodyContents.push(separator);
             });
         }
 
-        // 步驟 3: (顯示在後) 產生「歷史紀錄」列表
         if (historyPointOrders.length > 0) {
             if (pendingPointOrders.length > 0) {
                 bodyContents.push({ type: 'separator', margin: 'xxl' });
@@ -2427,25 +2441,18 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
             bodyContents.push({ type: 'text', text: '歷史紀錄', weight: 'bold', size: 'lg', margin: 'xl', color: '#6c757d' });
             historyPointOrders.forEach(order => {
                 let typeText, pointsText, pointsColor;
-                // [新增] 建立一個空陣列，用來存放原因元件
                 let reasonComponent = [];
 
-                if (order.amount === 0) { // 手動調整
+                if (order.amount === 0) {
                     if (order.points > 0) { typeText = '✨ 手動加點'; pointsText = `+${order.points}`; pointsColor = '#1A759F'; } 
                     else { typeText = '⚠️ 手動扣點'; pointsText = `${order.points}`; pointsColor = '#D9534F'; }
                     
-                    // [新增] 如果是手動調整且有備註，就產生原因元件
                     if (order.notes) {
                         reasonComponent.push({
-                            type: 'text',
-                            text: `原因：${order.notes}`,
-                            size: 'xs',
-                            color: '#666666',
-                            wrap: true,
-                            margin: 'sm'
+                            type: 'text', text: `原因：${order.notes}`, size: 'xs', color: '#666666', wrap: true, margin: 'sm'
                         });
                     }
-                } else { // 一般購點
+                } else {
                     typeText = '✅ 購點成功'; pointsText = `+${order.points}`; pointsColor = '#28A745';
                 }
 
@@ -2458,7 +2465,6 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
                             type: 'box', layout: 'vertical', flex: 3, spacing: 'sm',
                             contents: [
                                 { type: 'text', text: typeText, weight: 'bold', size: 'sm' },
-                                // [修改] 將原因元件插入此處
                                 ...reasonComponent,
                                 { type: 'text', text: formatDateTime(order.timestamp), size: 'xxs', color: '#AAAAAA' }
                             ]
@@ -2469,7 +2475,6 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
                 bodyContents.push(separator);
             });
         }
-        // ====================== [修改結束] ======================
         
         if (bodyContents.length > 0 && bodyContents[bodyContents.length - 1].type === 'separator') {
             bodyContents.pop();
@@ -2481,18 +2486,9 @@ async function showPurchaseHistory(userId, page) { // page 參數暫時保留
             contents: {
                 type: 'bubble',
                 size: 'giga',
-                header: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [{ type: 'text', text: '📜 查詢購點紀錄', weight: 'bold', size: 'xl', color: '#FFFFFF' }],
-                    backgroundColor: '#343A40',
-                    paddingAll: 'lg'
-                },
+                header: createStandardHeader('📜 查詢購點紀錄'),
                 body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    spacing: 'md',
-                    paddingAll: 'lg',
+                    type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
                     contents: bodyContents.length > 0 ? bodyContents : [{type: 'text', text: '目前沒有任何紀錄。', align: 'center'}]
                 }
             }
