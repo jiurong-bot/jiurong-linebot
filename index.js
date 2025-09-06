@@ -1153,15 +1153,15 @@ function buildBuyPointsFlex() {
         }
     };
 }
-// [最終體驗優化] 將所有待付款操作整合至點數查詢主頁
+// [程式夥伴修改] V42.4b - 修正重複訂單問題
 async function buildPointsMenuFlex(userId) {
     const user = await getUser(userId);
     if (!user) return { type: 'text', text: '無法獲取您的使用者資料。' };
 
-    // [修改] 檢查使用者是否有一筆任何類型的「待付款」訂單
+    // [修正] 擴大查詢範圍，納入所有待處理狀態，並只取最新一筆
     const pendingOrderRes = await executeDbQuery(client =>
         client.query(
-            "SELECT order_id, points, amount, payment_method FROM orders WHERE user_id = $1 AND status = 'pending_payment' ORDER BY timestamp DESC LIMIT 1",
+            "SELECT * FROM orders WHERE user_id = $1 AND status IN ('pending_payment', 'pending_confirmation', 'rejected') ORDER BY timestamp DESC LIMIT 1",
             [userId]
         )
     );
@@ -1169,75 +1169,66 @@ async function buildPointsMenuFlex(userId) {
 
     const bodyContents = [];
 
-    // [修改] 如果有待付款訂單，就在最上方顯示一個包含所有操作的提示框
+    // 如果找到任何待處理的訂單，就建立一個詳細的提示卡
     if (pendingOrder) {
+        // --- [整合] 從 showPurchaseHistory 借用並簡化邏輯，以顯示更詳細的狀態 ---
+        let actionButton = null;
+        let cardColor, statusText, additionalInfo = '';
         const isTransfer = pendingOrder.payment_method === 'transfer';
-        const paymentMethodText = isTransfer ? '轉帳' : '現金';
-        
-        const actionButtons = [];
 
-        // 如果是轉帳訂單，加入「輸入後五碼」按鈕
-        if (isTransfer) {
-            actionButtons.push({
-                type: 'button',
-                action: {
-                    type: 'postback',
-                    label: '點此輸入匯款後五碼',
-                    displayText: '我要輸入匯款後五碼',
-                    data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER)}`
-                },
-                style: 'primary',
-                color: '#DE5246',
-                height: 'sm'
-            });
+        // 根據訂單狀態決定顯示的文字和按鈕
+        if (pendingOrder.status === 'pending_confirmation') {
+            // 如果是轉帳訂單，提供「修改後五碼」的選項
+            if (isTransfer) { 
+                actionButton = {
+                    type: 'button', style: 'primary', height: 'sm', color: '#ff9e00', margin: 'md',
+                    action: { type: 'postback', label: '修改匯款後五碼', displayText: '我要修改匯款後五碼', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER)}` }
+                };
+            }
+            cardColor = '#ff9e00'; 
+            statusText = '已提交，等待老師確認';
+        } else if (pendingOrder.status === 'rejected') {
+            if (isTransfer) {
+                actionButton = {
+                    type: 'button', style: 'primary', height: 'sm', color: '#d90429', margin: 'md',
+                    action: { type: 'postback', label: '重新提交後五碼', displayText: '我要重新提交後五碼', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.EDIT_LAST5_CARD_TRIGGER)}` }
+                };
+            }
+            cardColor = '#d90429'; 
+            statusText = '訂單被老師退回'; 
+            additionalInfo = '請檢查金額或後五碼是否有誤。';
+        } else { // status === 'pending_payment'
+            if (isTransfer) {
+                actionButton = {
+                    type: 'button', style: 'primary', height: 'sm', color: '#DE5246', margin: 'md',
+                    action: { type: 'postback', label: '點此輸入匯款後五碼', displayText: '我要輸入匯款後五碼', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.STUDENT.INPUT_LAST5_CARD_TRIGGER)}` }
+                };
+            }
+            cardColor = '#f28482'; 
+            statusText = '待付款';
         }
 
-        // 為所有待付款訂單都加入「取消訂單」按鈕
-        actionButtons.push({
-            type: 'button',
-            action: {
-                type: 'postback',
-                label: '取消此訂單',
-                data: `action=cancel_pending_order_start&order_id=${pendingOrder.order_id}`
-            },
-            style: isTransfer ? 'link' : 'primary', // 如果是轉帳，取消按鈕樣式為次要
-            color: '#999999',
-            height: 'sm',
-            margin: 'md'
-        });
-
+        // 為所有待處理訂單都加入「取消訂單」按鈕
+        const cancelButton = {
+            type: 'button', style: 'link', height: 'sm', margin: 'sm', color: '#999999',
+            action: { type: 'postback', label: '取消此訂單', data: `action=cancel_pending_order_start&order_id=${pendingOrder.order_id}` }
+        };
+        
         bodyContents.push({
-            type: 'box',
-            layout: 'vertical',
-            paddingAll: 'lg',
-            backgroundColor: '#FFF1F0',
-            cornerRadius: 'md',
-            spacing: 'sm',
+            type: 'box', layout: 'vertical', paddingAll: 'lg', backgroundColor: '#FFF1F0', cornerRadius: 'md', spacing: 'sm',
             contents: [
-                {
-                    type: 'text',
-                    text: '❗️ 您有一筆訂單等待付款',
-                    weight: 'bold',
-                    color: '#D9534F',
-                    size: 'md',
-                    align: 'center'
-                },
+                { type: 'text', text: `❗️ 您有一筆訂單 - ${statusText}`, weight: 'bold', color: cardColor, size: 'md', align: 'center', wrap: true },
                 { type: 'separator', margin: 'md' },
-                {
-                    type: 'text',
-                    text: `${pendingOrder.points} 點 / ${pendingOrder.amount} 元 (${paymentMethodText})`,
-                    align: 'center',
-                    size: 'sm',
-                    margin: 'md',
-                    wrap: true
-                },
-                ...actionButtons
+                { type: 'text', text: `${pendingOrder.points} 點 / ${pendingOrder.amount} 元 (${isTransfer ? '轉帳' : '現金'})`, align: 'center', size: 'sm', margin: 'md', wrap: true },
+                ...(additionalInfo ? [{ type: 'text', text: additionalInfo, size: 'xs', color: '#B00020', wrap: true, align: 'center', margin: 'sm' }] : []),
+                ...(actionButton ? [actionButton] : []), // 只在有動作時顯示主要按鈕
+                cancelButton // 總是顯示取消按鈕
             ]
         });
         bodyContents.push({ type: 'separator', margin: 'lg' });
     }
     
-    // 原有的點數餘額顯示
+    // 原有的點數餘額顯示 (這部分維持不變)
     bodyContents.push({
         type: 'box',
         layout: 'vertical',
