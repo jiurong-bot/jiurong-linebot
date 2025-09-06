@@ -3523,6 +3523,11 @@ event.message.text.trim().normalize() : '';
         delete pendingBookingConfirmation[userId];
         return buildPointsMenuFlex(userId);
     } else if (text === CONSTANTS.COMMANDS.STUDENT.BUY_POINTS) {
+        // [修改] 在顯示購買方案前，先檢查是否有待處理訂單
+        const hasPending = await hasPendingPointOrder(userId);
+        if (hasPending) {
+            return '您目前尚有一筆訂單待處理。\n請至「點數查詢」>「查詢購點紀錄」完成該筆訂單，或等待老師審核。';
+        }
         return buildBuyPointsFlex();
     } else if (text === CONSTANTS.COMMANDS.STUDENT.PURCHASE_HISTORY) {
         return showPurchaseHistory(userId, 1);
