@@ -7456,6 +7456,35 @@ async function handleProductActions(action, data, user) {
 async function handleOrderActions(action, data, user) {
     const userId = user.id;
     switch (action) {
+         // [新增] 處理學員取消待付款訂單的邏輯
+        case 'cancel_pending_order_start': {
+            const order_id = data.get('order_id');
+            if (!order_id) return '操作失敗，缺少訂單資訊。';
+
+            return {
+                type: 'text',
+                text: '您確定要取消這筆待付款訂單嗎？此操作無法復原。',
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_pending_order_execute&order_id=${order_id}` }
+                        },
+                        {
+                            type: 'action',
+                            action: { type: 'message', label: '返回', text: CONSTANTS.COMMANDS.STUDENT.PURCHASE_HISTORY }
+                        }
+                    ]
+                }
+            };
+        }
+        case 'cancel_pending_order_execute': {
+            const order_id = data.get('order_id');
+            if (!order_id) return '操作失敗，缺少訂單資訊。';
+
+            const result = await deleteOrder(order_id);
+            return '✅ 已成功為您取消訂單。';
+        }
         case 'notify_product_arrival_start': {
             const productId = data.get('product_id');
             const product = await getProduct(productId);
