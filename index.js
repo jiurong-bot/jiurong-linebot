@@ -7548,7 +7548,63 @@ async function handleProductActions(action, data, user) {
 async function handleOrderActions(action, data, user) {
     const userId = user.id;
     switch (action) {
-         // [新增] 處理學員取消待付款訂單的邏輯
+                 case 'cancel_pending_product_order_start': {
+            const orderUID = data.get('orderUID');
+            if (!orderUID) return '操作失敗，缺少訂單資訊。';
+
+            return {
+                type: 'text',
+                text: '您確定要取消這筆商品訂單嗎？此操作無法復原。',
+                quickReply: {
+                    items: [
+                        {
+                            type: 'action',
+                            action: { type: 'postback', label: '✅ 確認取消', data: `action=cancel_pending_product_order_execute&orderUID=${orderUID}` }
+                        },
+                        {
+                            type: 'action',
+                            action: { type: 'message', label: '返回商城', text: CONSTANTS.COMMANDS.STUDENT.SHOP }
+                        }
+                    ]
+                }
+            };
+        }
+        case 'cancel_pending_product_order_execute': {
+            const orderUID = data.get('orderUID');
+            if (!orderUID) return '操作失敗，缺少訂單資訊。';
+
+            const result = await executeDbQuery(async (client) => {
+                await client.query('BEGIN');
+                try {
+                    const orderRes = await client.query("SELECT * FROM product_orders WHERE order_uid = $1 AND status IN ('pending_payment', 'pending_confirmation') FOR UPDATE", [orderUID]);
+                    if (orderRes.rows.length === 0) {
+                        await client.query('ROLLBACK');
+                        return { success: false, message: '找不到可取消的訂單，或訂單已被處理。' };
+                    }
+                    const order = orderRes.rows[0];
+
+                    // 將庫存加回去
+                    await client.query("UPDATE products SET inventory = inventory + $1 WHERE id = $2", [order.quantity, order.product_id]);
+                    // 刪除訂單
+                    await client.query("DELETE FROM product_orders WHERE order_uid = $1", [orderUID]);
+
+                    await client.query('COMMIT');
+                    return { success: true };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    console.error('取消商品訂單失敗:', err);
+                    return { success: false, message: '取消訂單時發生錯誤，請稍後再試。' };
+                }
+            });
+
+            if (result.success) {
+                return '✅ 已成功為您取消訂單，商品庫存已歸還。';
+            } else {
+                return result.message;
+            }
+        }
+
+        // [新增] 處理學員取消待付款訂單的邏輯
         case 'cancel_pending_order_start': {
             const order_id = data.get('order_id');
             if (!order_id) return '操作失敗，缺少訂單資訊。';
