@@ -3054,6 +3054,16 @@ async function handleAdminCommands(event, userId) {
           targetUser.role = 'teacher';
           targetUser.approved_by = userId;
           await saveUser(targetUser);
+          // 在授權的同時，為老師建立一筆預設的公開資訊檔案
+          await executeDbQuery(async (client) => {
+          await client.query(
+        `INSERT INTO teachers (line_user_id, name, bio)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (line_user_id) 
+         DO UPDATE SET name = $2`, // 如果已存在，至少更新一下名字
+        [targetUser.id, targetUser.name, '這位老師尚未留下簡介。']
+    );
+});
           delete pendingTeacherAddition[userId];
           
           const notifyMessage = { type: 'text', text: '恭喜！您的身份已被管理者授權為「老師」。'};
