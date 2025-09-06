@@ -3815,8 +3815,6 @@ async function buildTeacherSelectionCarousel() {
         };
     });
 }
-
-
 async function showManualAdjustHistory(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
@@ -3824,37 +3822,35 @@ async function showManualAdjustHistory(page, userId = null) {
         const queryParams = [];
         let paramIndex = 1;
 
-
         if (userId) {
             query += ` AND user_id = $${paramIndex++}`;
             queryParams.push(userId);
         }
-
 
         query += ` ORDER BY timestamp DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         queryParams.push(CONSTANTS.PAGINATION_SIZE + 1, offset);
         
         const res = await client.query(query, queryParams);
 
-
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
-
-        if (pageRows.length === 0 && page === 1) {
-            return userId ? '這位學員沒有任何手動調整紀錄。' : '目前沒有任何手動調整紀錄。';
-        }
+        // [修正] 將無資料的判斷提前，避免後續程式碼出錯
         if (pageRows.length === 0) {
+            if (page === 1) {
+                return userId ? '這位學員沒有任何手動調整紀錄。' : '目前沒有任何手動調整紀錄。';
+            }
             return '沒有更多紀錄了。';
         }
-
+        
+        // [修正] 確保在 pageRows 有資料後才設定 headerText
+        const headerText = userId ? `${pageRows[0].user_name} 的調整紀錄` : '手動調整紀錄';
 
         const listItems = pageRows.map(record => {
             const isAddition = record.points > 0;
             const typeText = isAddition ? `✨ 手動加點` : `⚠️ 手動扣點`;
             const pointsText = isAddition ? `+${record.points}` : `${record.points}`;
             const pointsColor = isAddition ? '#1A759F' : '#D9534F';
-
 
             return {
                 type: 'box',
@@ -3888,19 +3884,13 @@ async function showManualAdjustHistory(page, userId = null) {
         const paginationBubble = createPaginationBubble('action=view_manual_adjust_history', page, hasNextPage, customParams);
         const footerContents = paginationBubble ? paginationBubble.body.contents : [];
         
-        const headerText = userId ? `${pageRows[0].user_name} 的調整紀錄` : '手動調整紀錄';
         return {
             type: 'flex',
             altText: '手動調整紀錄',
             contents: {
                 type: 'bubble',
                 size: 'giga',
-                header: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [{ type: 'text', text: headerText, weight: 'bold', size: 'lg', color: '#FFFFFF' }],
-                    backgroundColor: '#343A40'
-                },
+                header: createStandardHeader(headerText), // 使用 createStandardHeader 統一樣式
                 body: {
                     type: 'box',
                     layout: 'vertical',
@@ -3918,6 +3908,7 @@ async function showManualAdjustHistory(page, userId = null) {
         };
     });
 }
+
 // [修改] 老師用來查看購點紀錄的函式 (改為條列式清單, 時間由舊到新)
 async function showPurchaseHistoryAsTeacher(page, userId = null) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
