@@ -7798,7 +7798,7 @@ async function handleReportActions(action, data, user) {
     }
     return null;
 }
-// [最終修正版] 使用 includes() 進行匹配，並維持正確的路由順序來避免衝突
+// [最終修正版] 修正了 actionRouter 中關鍵字過於寬鬆導致的路由衝突問題
 async function handlePostback(event, user) {
     const data = new URLSearchParams(event.postback.data);
     const action = data.get('action');
@@ -7817,23 +7817,30 @@ async function handlePostback(event, user) {
         return null;
     }
 
-    // 路由順序至關重要，將容易衝突且意圖更明確的處理器往前放
+    // [最終修正] 調整了關鍵字，使其更精確，並優化了路由順序
     const actionRouter = [
-        // [修正] 將 TeacherActions 移到 ViewActions 之前
-        // 確保 'view_type' 這類更精確的關鍵字能被優先匹配，避免被 'view_' 攔截
-        { keywords: ['toggle_global_setting', 'error_log', '_auth', '_removal', 'failed_task'], handler: handleAdminActions },
-        { keywords: ['teacher_profile', 'personal_profile', '_adjust', '_search', 'view_type', 'announcement_for_deletion'], handler: handleTeacherActions },
+        { keywords: ['toggle_global_setting', 'delete_error_log', 'select_student_for_auth', 'select_teacher_for_removal', 'retry_failed_task', 'delete_failed_task'], handler: handleAdminActions },
+        { keywords: ['manage_personal_profile', 'create_teacher_profile_start', 'edit_teacher_profile_field', 'confirm_teacher_profile_update', 'select_student_for_adjust', 'select_announcement_for_deletion', 'select_purchase_history_view_type', 'select_exchange_history_view_type', 'select_message_history_view_type', 'select_adjust_history_view_type', 'start_manual_adjust_history_search', 'start_purchase_history_search', 'start_exchange_history_search', 'start_message_history_search'], handler: handleTeacherActions },
+        { keywords: ['set_course_weekday', 'select_teacher_for_course', 'publish_prefilled_announcement', 'edit_prefilled_announcement', 'cancel_announcement', 'cancel_course_group_confirm', 'confirm_single_course_cancel', 'select_booking_spots', 'start_booking_confirmation', 'execute_booking', 'confirm_cancel_booking_start', 'confirm_cancel_waiting_start', 'confirm_join_waiting_list_start', 'execute_join_waiting_list', 'waitlist_confirm', 'waitlist_forfeit'], handler: handleCourseActions },
+        { keywords: ['view_preorder_list', 'stop_preorder_start', 'execute_stop_preorder', 'cancel_preorder_start', 'execute_cancel_preorder', 'enable_preorder_start', 'execute_enable_preorder', 'disable_product_start', 'execute_disable_product', 'select_preorder_quantity', 'confirm_product_preorder_start', 'execute_product_preorder', 'confirm_add_product', 'manage_product', 'edit_product_field', 'adjust_inventory_start', 'toggle_product_status', 'select_product_quantity', 'confirm_product_purchase', 'delete_product_start', 'delete_product_execute'], handler: handleProductActions },
+        { keywords: ['notify_product_arrival_start', 'execute_notify_product_arrival', 'select_purchase_plan', 'execute_point_purchase', 'confirm_order', 'reject_order', 'execute_product_purchase', 'confirm_shop_order', 'cancel_shop_order_start', 'reject_shop_order', 'cancel_shop_order_execute', 'report_shop_last5'], handler: handleOrderActions },
+        { keywords: ['mark_feedback_read', 'reply_feedback'], handler: handleFeedbackActions },
+        { keywords: ['generate_report'], handler: handleReportActions },
+        // [最終修正] 將最通用的 ViewActions 放在最後，作為「萬用接球手」
         { keywords: ['view_', 'list_', 'manage_course_group', 'student_search_results'], handler: handleViewActions },
-        { keywords: ['course', 'booking', 'waitlist', 'announcement'], handler: handleCourseActions },
-        { keywords: ['order', 'purchase', 'payment', 'shop_last5', 'arrival'], handler: handleOrderActions },
-        { keywords: ['product', 'preorder', 'inventory'], handler: handleProductActions },
-        { keywords: ['feedback'], handler: handleFeedbackActions },
-        { keywords: ['report'], handler: handleReportActions },
     ];
     
-    // 遍歷路由表，找到對應的處理函式並執行
+    // 使用精確匹配優先，然後才用關鍵字匹配
     for (const route of actionRouter) {
-        // [修正] 將匹配邏輯還原為簡單有效的 includes()
+        if (route.keywords.some(keyword => action === keyword || action.startsWith(keyword))) {
+             if (route.keywords.some(keyword => action.includes(keyword))) {
+                return route.handler(action, data, user);
+            }
+        }
+    }
+
+    // 如果上面都沒有匹配，再執行一次寬鬆的 includes 匹配，確保向下相容
+    for (const route of actionRouter) {
         if (route.keywords.some(keyword => action.includes(keyword))) {
             return route.handler(action, data, user);
         }
