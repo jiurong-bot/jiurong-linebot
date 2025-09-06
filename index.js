@@ -7877,7 +7877,7 @@ async function handleOrderActions(action, data, user) {
                     await client.query('COMMIT');
                     
                     if (paymentMethod === 'transfer') {
-                        const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${totalAmount} 元\n\n匯款完成後，請至「商城」->「我的購買紀錄」回報後五碼。`;
+                        const replyText = `感謝您的購買！訂單已成立。\n\n請匯款至以下帳戶：\n銀行：${CONSTANTS.BANK_INFO.bankName}\n戶名：${CONSTANTS.BANK_INFO.accountName}\n帳號：${CONSTANTS.BANK_INFO.accountNumber}\n金額：${totalAmount} 元\n\n匯款完成後，請至「活動商城」回報後五碼。`;
                         return { success: true, message: replyText };
                     } else {
                         const replyText = `✅ 訂單已成立！\n您購買了「${product.name} x${quantity}」，總金額 ${totalAmount} 元。\n您選擇了現金付款，請直接與老師聯繫並完成支付。`;
