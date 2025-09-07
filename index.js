@@ -1,4 +1,4 @@
-// index.js - V42.8 (個資更新邏輯)
+// index.js - V42.9 (RichMenu同步更新)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6314,7 +6314,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V42.8 (個資更新邏輯)`);
+    console.log(`Bot 版本 V42.9 (RichMenu同步更新)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
