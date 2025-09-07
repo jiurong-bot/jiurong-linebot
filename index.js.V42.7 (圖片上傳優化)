@@ -848,8 +848,8 @@ async function promoteNextOnWaitlist(client, courseId) {
   const waiting = course.waiting || [];
   const students = course.students || [];
 
-  // 只有在「名額已滿」且「還有人在候補」的情況下才需要遞補
-  if (students.length >= course.capacity && waiting.length > 0) {
+  // 當「名額未滿」且「還有人在候補」時，才需要遞補
+  if (students.length < course.capacity && waiting.length > 0) {
     const isWithinTwoHours = new Date(course.time).getTime() - Date.now() < CONSTANTS.TIME.TWO_HOURS_IN_MS;
     const promotedUserId = waiting.shift(); // 取出第一位候補者
 
