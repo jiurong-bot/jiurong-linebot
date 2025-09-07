@@ -2363,6 +2363,7 @@ async function buildAdminPanelFlex() {
         { label: '系統狀態', command: CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS },
         { label: '失敗任務管理', command: CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT },
         { label: '查看錯誤日誌',command: CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS },
+        { label: '更新圖文選單', command: CONSTANTS.COMMANDS.ADMIN.FORCE_UPDATE_RICH_MENU },
         { label: '授權老師', command: CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER },
         { label: '移除老師', command: CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER },
         { label: '模擬學員身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT },
