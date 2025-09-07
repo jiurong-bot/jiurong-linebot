@@ -3251,7 +3251,12 @@ await clientDB.query(
                 value = uploadResponse.url;
             } catch (err) {
                 console.error('更新老師照片至 ImageKit 失敗', err);
-                return '❌ 圖片上傳失敗，請稍後再試。';
+                // [修改] 改為回傳友善的重試訊息
+                return {
+                    type: 'text',
+                    text: '圖片上傳失敗，請您再試一次。',
+                    quickReply: { items: getCancelMenu() }
+                };
             }
         } else {
             value = text;
