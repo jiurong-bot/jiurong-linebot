@@ -22,8 +22,6 @@ const imagekit = new ImageKit({
     privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
     urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT
 });
-const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || '9527';
-const SELF_URL = process.env.SELF_URL || 'https://你的部署網址/';
 const TEACHER_ID = process.env.TEACHER_ID;
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
 const STUDENT_RICH_MENU_ID = process.env.STUDENT_RICH_MENU_ID;
