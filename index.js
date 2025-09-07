@@ -614,6 +614,52 @@ async function saveUser(user, dbClient) {
         );
     }, dbClient);
 }
+/**
+ * [程式夥伴新增] 檢查並更新使用者的 LINE Profile 資訊 (名稱和頭像)。
+ * 只有在資料有變動，或距離上次快取超過特定時間時，才會實際執行更新。
+ * @param {string} userId - 要檢查的使用者 ID。
+ * @param {object} [currentUser=null] - (可選) 已從資料庫取出的使用者物件，避免重複查詢。
+ * @returns {Promise<object>} - 回傳最新狀態的使用者物件。
+ */
+async function updateUserProfileIfNeeded(userId, currentUser = null) {
+  // 步驟 1: 如果沒有傳入使用者物件，就從資料庫查詢一次。
+  const user = currentUser || await getUser(userId);
+  // 如果根本找不到使用者 (例如，在 follow 事件中)，就先不處理。
+  if (!user) {
+    console.log(`[Profile Update] 在 updateUserProfileIfNeeded 中找不到使用者 ${userId}，跳過更新。`);
+    return null;
+  }
+
+  // 步驟 2: 檢查快取，如果短時間內已更新過，就直接返回，避免頻繁呼叫 API。
+  const cachedData = userProfileCache.get(userId);
+  const now = Date.now();
+  // 10 分鐘的快取時間
+  if (cachedData && (now - cachedData.timestamp < 10 * 60 * 1000)) {
+    return user;
+  }
+
+  // 步驟 3: 呼叫 LINE API 並進行比對與更新。
+  try {
+    const profile = await client.getProfile(userId);
+    const nameChanged = profile.displayName !== user.name;
+    const pictureChanged = profile.pictureUrl && profile.pictureUrl !== user.picture_url;
+
+    if (nameChanged || pictureChanged) {
+      user.name = profile.displayName;
+      user.picture_url = profile.pictureUrl;
+      await saveUser(user); // 使用現有的 saveUser 函式儲存
+      console.log(`[Profile Update] 已成功更新使用者 ${userId} 的個人資料。`);
+    }
+
+    // 更新快取時間戳
+    userProfileCache.set(userId, { timestamp: now });
+    return user; // 回傳更新後的 user 物件
+
+  } catch (err) {
+    console.error(`[Profile Update] 更新使用者 ${userId} 的資料時發生錯誤:`, err.message);
+    return user; // 即使 API 呼叫失敗，也回傳原本的使用者物件，確保程式流程不中斷。
+  }
+}
 
 /**
  * [新增] 檢查學員是否已有待處理的點數訂單
