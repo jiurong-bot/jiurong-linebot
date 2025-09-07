@@ -68,7 +68,8 @@ const CONSTANTS = {
       CONFIRM_ADD_TEACHER: '✅ 確認授權',
       CONFIRM_REMOVE_TEACHER: '✅ 確認移除',
       TOGGLE_NOTIFICATIONS: '@切換推播',
-      VIEW_ERROR_LOGS:'@查看錯誤日誌'
+      VIEW_ERROR_LOGS:'@查看錯誤日誌',
+      FORCE_UPDATE_RICH_MENU: '@強制更新圖文選單' // 新增強制更新圖文選單的指令
       },
     TEACHER: {
       COURSE_MANAGEMENT: '@課程管理',
