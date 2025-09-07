@@ -2748,7 +2748,7 @@ async function handleTeacherCommands(event, userId) {
         text: summaryText,
         quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}
     };
-            const summaryText = `請確認商品資訊：\n\n` +
+            summaryText = `請確認商品資訊：\n\n` +
                               `名稱：${state.name}\n` +
                               `描述：${state.description || '無'}\n` +
                               `價格：${state.price} 元\n` +
