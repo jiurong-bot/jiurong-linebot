@@ -859,6 +859,83 @@ async function handleError(error, replyToken, context = '未知操作', userId =
     }
 }
 /**
+ * [程式夥伴新增] 批次更新所有使用者的圖文選單。
+ * 此函式會在背景執行，避免 webhook 逾時。
+ * @param {string} adminUserId - 觸發此操作的管理員 User ID，用於接收完成通知。
+ */
+function batchUpdateRichMenus(adminUserId) {
+  console.log(`[Rich Menu] 由管理者 ${adminUserId} 觸發全用戶圖文選單更新...`);
+
+  // 使用 IIFE (立即調用函式表達式) 讓這個任務在背景執行
+  (async () => {
+    let studentCount = 0;
+    let teacherCount = 0;
+    let adminCount = 0;
+    let errorCount = 0;
+
+    try {
+      // 1. 從資料庫撈出所有使用者的 ID 和角色
+      const users = await executeDbQuery(async (db) => {
+        const res = await db.query("SELECT id, role FROM users");
+        return res.rows;
+      });
+
+      if (users.length === 0) {
+        await enqueuePushTask(adminUserId, { type: 'text', text: 'ℹ️ 圖文選單更新：資料庫中沒有任何使用者。' });
+        return;
+      }
+
+      // 2. 準備所有要執行的 API 呼叫
+      const updatePromises = users.map(user => {
+        let targetMenuId = null;
+        switch (user.role) {
+          case 'student':
+            targetMenuId = STUDENT_RICH_MENU_ID;
+            studentCount++;
+            break;
+          case 'teacher':
+            targetMenuId = TEACHER_RICH_MENU_ID;
+            teacherCount++;
+            break;
+          case 'admin':
+            targetMenuId = ADMIN_RICH_MENU_ID;
+            adminCount++;
+            break;
+        }
+
+        if (targetMenuId) {
+          // 傳回一個 Promise
+          return client.linkRichMenuToUser(user.id, targetMenuId)
+            .catch(err => {
+              console.error(`[Rich Menu] 為使用者 ${user.id} 更新選單失敗:`, err.originalError?.response?.data || err.message);
+              errorCount++;
+            });
+        }
+        return Promise.resolve(); // 對於沒有對應選單的角色，直接完成
+      });
+
+      // 3. 平行執行所有 API 呼叫
+      await Promise.all(updatePromises);
+
+      // 4. 任務完成後，發送報告給管理者
+      const summary = `✅ 圖文選單批次更新完成！\n\n` +
+                      `- 學員選單: ${studentCount} 人\n` +
+                      `- 老師選單: ${teacherCount} 人\n` +
+                      `- 管理員選單: ${adminCount} 人\n` +
+                      `--------------------\n` +
+                      `- 總計: ${users.length} 人\n` +
+                      (errorCount > 0 ? `- 失敗: ${errorCount} 人 (請檢查後台日誌)` : '');
+
+      await enqueuePushTask(adminUserId, { type: 'text', text: summary });
+
+    } catch (err) {
+      console.error('❌ 執行批次更新圖文選單時發生嚴重錯誤:', err);
+      await enqueuePushTask(adminUserId, { type: 'text', text: `❌ 更新圖文選單時發生嚴重錯誤，請檢查後台日誌。` });
+    }
+  })();
+}
+
+/**
  * [V42.2 新增] 建立一個標準的候補邀請 Flex Message
  * @param {object} course - 課程物件，至少需要包含 id 和 title
  * @returns {object} - LINE Flex Message 物件
