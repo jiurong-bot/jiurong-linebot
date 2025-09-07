@@ -2707,24 +2707,47 @@ async function handleTeacherCommands(event, userId) {
             state.step = 'await_image_url'; return { type: 'text', text: '請直接上傳一張商品圖片，或輸入「無」：', quickReply: { items: getCancelMenu() } };
             }
             break;
-        case 'await_image_url':
-            let imageUrl = null;
-            let proceedToNextStep = true; let errorImageUrlMessage = '';
-            if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') { imageUrl = null;
-            } 
-            else if (event.message.type === 'image') {
-                try {
-                    const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
-                    const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                    const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `product_${Date.now()}.jpg`, useUniqueFileName: true, folder: "yoga_products" });
-                    imageUrl = uploadResponse.url;
-                } catch (err) { console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err); proceedToNextStep = false; errorImageUrlMessage = '圖片上傳失敗，請稍後再試。';
-                }
-            } else { proceedToNextStep = false;
-            errorImageUrlMessage = '格式錯誤，請直接上傳一張商品圖片，或輸入「無」。'; }
-            if (!proceedToNextStep) { return { type: 'text', text: errorImageUrlMessage, quickReply: { items: getCancelMenu() } };
-            }
-            state.image_url = imageUrl; state.step = 'await_confirmation';
+            case 'await_image_url':
+    let imageUrl = null;
+    if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') {
+        imageUrl = null;
+    }
+    else if (event.message.type === 'image') {
+        try {
+            const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
+            const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+            const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `product_${Date.now()}.jpg`, useUniqueFileName: true, folder: "yoga_products" });
+            imageUrl = uploadResponse.url;
+        } catch (err) {
+            console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err);
+            // [修改] 直接回傳友善的重試訊息，而不是中斷流程
+            return {
+                type: 'text',
+                text: '圖片上傳失敗，請您再試一次，或輸入「無」暫不設定商品圖片。',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+    } else {
+         // 格式錯誤，也要求重試
+         return { type: 'text', text: '格式錯誤，請直接上傳一張商品圖片，或輸入「無」。', quickReply: { items: getCancelMenu() } };
+    }
+
+    // 只有在上傳成功或輸入「無」時，才會繼續往下執行
+    state.image_url = imageUrl;
+    state.step = 'await_confirmation';
+    const summaryText = `請確認商品資訊：\n\n` +
+                      `名稱：${state.name}\n` +
+                      `描述：${state.description || '無'}\n` +
+                      `價格：${state.price} 元\n` +
+                      `庫存：${state.inventory}\n` +
+                      `狀態：${state.isPreorder ? '開放預購' : '直接上架'}\n` +
+                      `圖片：${state.image_url || '無'}\n\n` +
+                      `確認無誤後請點擊「✅ 確認上架」。`;
+    return {
+        type: 'text',
+        text: summaryText,
+        quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}
+    };
             const summaryText = `請確認商品資訊：\n\n` +
                               `名稱：${state.name}\n` +
                               `描述：${state.description || '無'}\n` +
