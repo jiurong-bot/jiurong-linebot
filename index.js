@@ -8241,18 +8241,9 @@ async function handleEvent(event) {
             if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
         } catch (error) { console.error(`創建新用戶時出錯: `, error); return; }
     } else {
-        const cachedData = userProfileCache.get(userId);
-        const now = Date.now();
-        if (!cachedData || (now - cachedData.timestamp > 10 * 60 * 1000)) {
-            try {
-                const profile = await client.getProfile(userId);
-                if (profile.displayName !== user.name || (profile.pictureUrl && profile.pictureUrl !== user.picture_url)) {
-                    user.name = profile.displayName;
-                    user.picture_url = profile.pictureUrl; await saveUser(user);
-                }
-                userProfileCache.set(userId, { timestamp: now, name: profile.displayName, pictureUrl: profile.pictureUrl });
-            } catch (e) { console.error(`[Cache] 更新用戶 ${userId} 資料時出錯:`, e.message); }
-        }
+    // 直接呼叫新函式來處理個人資料的檢查與更新
+    // 函式內部會處理快取和 API 呼叫，並回傳最新的 user 物件
+    user = await updateUserProfileIfNeeded(userId, user);
     }
     const now = Date.now();
     const lastInteraction = userLastInteraction[userId] || 0;
