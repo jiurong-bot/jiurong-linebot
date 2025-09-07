@@ -2911,9 +2911,25 @@ async function handleTeacherCommands(event, userId) {
         case 'await_end_time': 
             if (!/^\d{2}:\d{2}$/.test(text)) { 
                 return { type: 'text', text: '時間格式不正確，請輸入四位數時間，例如：20:30', quickReply: { items: getCancelMenu() } };
-            } 
-            state.end_time = text; // 存入 end_time
-            state.step = 'await_sessions'; // 流程繼續
+            }
+
+            // [新增] 驗證結束時間是否晚於開始時間
+            const [startHour, startMinute] = state.start_time.split(':').map(Number);
+            const totalStartMinutes = startHour * 60 + startMinute;
+            const [endHour, endMinute] = text.split(':').map(Number);
+            const totalEndMinutes = endHour * 60 + endMinute;
+
+            if (totalEndMinutes <= totalStartMinutes) {
+                return {
+                    type: 'text',
+                    text: `❌ 結束時間（${text}）必須晚於開始時間（${state.start_time}）。\n請重新輸入正確的結束時間：`,
+                    quickReply: { items: getCancelMenu() }
+                };
+            }
+            
+            // 驗證通過
+            state.end_time = text;
+            state.step = 'await_sessions';
             return { type: 'text', text: '請問這個系列總共要開設幾堂課？（請輸入數字）', quickReply: { items: getCancelMenu() } };
 
         case 'await_sessions': 
