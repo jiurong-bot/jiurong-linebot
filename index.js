@@ -8201,20 +8201,41 @@ async function handleEvent(event) {
     if (event.type === 'follow') {
     try {
         const userId = event.source.userId;
-        // 先建立一個基本的使用者資料
-        const profile = await client.getProfile(userId);
-        let user = { id: userId, name: profile.displayName, points: 0, role: 'student', history: [], picture_url: profile.pictureUrl };
-        await saveUser(user); // 存入資料庫
+        const existingUser = await getUser(userId);
 
-        // 使用新函式來更新快取
-        userProfileCache.set(userId, { timestamp: Date.now(), name: profile.displayName, pictureUrl: profile.pictureUrl });
+        if (existingUser) {
+            // ----- 這是重新加入的使用者 -----
+            console.log(`[Follow Event] 舊使用者 ${userId} 重新加入。`);
 
-        // 發送歡迎訊息和設定選單
-        const welcomeMessage = { type: 'text', text: `歡迎 ${user.name}！感謝您加入九容瑜伽。` };
-        await enqueuePushTask(userId, welcomeMessage).catch(err => console.error(`發送歡迎詞給新用戶 ${userId} 失敗:`, err.message));
-        if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+            // 歡迎他們回來，並更新他們可能已變更的 LINE 名稱或頭像
+            const updatedUser = await updateUserProfileIfNeeded(userId, existingUser);
+            const welcomeMessage = { type: 'text', text: `歡迎回來，${updatedUser.name}！` };
+            await enqueuePushTask(userId, welcomeMessage);
+
+            // 確保他們有正確的選單
+            if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+
+        } else {
+            // ----- 這是真正的新使用者 -----
+            console.log(`[Follow Event] 新使用者 ${userId} 加入。`);
+            const profile = await client.getProfile(userId);
+            const newUser = { 
+                id: userId, 
+                name: profile.displayName, 
+                points: 0, 
+                role: 'student', 
+                history: [], 
+                picture_url: profile.pictureUrl 
+            };
+            await saveUser(newUser);
+            userProfileCache.set(userId, { timestamp: Date.now(), name: profile.displayName, pictureUrl: profile.pictureUrl });
+
+            const welcomeMessage = { type: 'text', text: `歡迎 ${newUser.name}！感謝您加入九容瑜伽。` };
+            await enqueuePushTask(userId, welcomeMessage);
+            if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
+        }
     } catch (error) {
-        console.error(`[Follow Event] 處理新用戶 ${event.source.userId} 時出錯:`, error.message);
+        console.error(`[Follow Event] 處理用戶 ${event.source.userId} 加入時出錯:`, error.message);
     }
     return;
 }
