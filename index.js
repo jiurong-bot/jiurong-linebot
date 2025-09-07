@@ -3233,8 +3233,6 @@ await clientDB.query(
     state.step = 'await_confirmation';
     state.newData = state.profileData;
     return buildProfileConfirmationMessage(userId, state.newData);
-                state.newData = state.profileData;
-                return buildProfileConfirmationMessage(userId, state.newData);
         }
     } 
     else if (state.type === 'edit') {
