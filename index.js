@@ -3579,6 +3579,13 @@ await saveUser(user);
       if(TEACHER_RICH_MENU_ID) await client.linkRichMenuToUser(userId, TEACHER_RICH_MENU_ID);
       return '您已切換為「老師」模擬身份。\n若要返回，請手動輸入「@管理模式」。';
     }
+  // [程式夥伴新增] 在這裡加上新的指令處理
+    else if (text === CONSTANTS.COMMANDS.ADMIN.FORCE_UPDATE_RICH_MENU) {
+      // 呼叫我們的新函式，並把管理者自己的 ID 傳入，以便接收完成通知
+      batchUpdateRichMenus(userId);
+      // 立刻回覆管理者，讓他知道系統已經開始處理
+      return '✅ 指令已收到！\n系統正在背景為所有使用者更新圖文選單，完成後將會傳送報告給您。';
+    }
   }
 }
 
