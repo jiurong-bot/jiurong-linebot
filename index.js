@@ -1006,7 +1006,7 @@ async function promoteNextOnWaitlist(client, courseId) {
       );
       // 使用新的輔助函式來建立訊息
       const invitationMessage = createWaitlistInvitationFlexMessage(course);
-      await enqueuePushTask(promotedUserId, invitationMessage);
+      await enqueuePushTask(promotedUserId, invitationMessage, { settingKey: 'student_new_announcement' });
     } else {
       // 舊邏輯：直接遞補
       students.push(promotedUserId);
