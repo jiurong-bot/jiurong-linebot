@@ -8005,7 +8005,7 @@ async function handleOrderActions(action, data, user) {
                     const newPoints = userRes.rows[0].points + order.points;
                     await client.query("UPDATE users SET points = $1 WHERE id = $2", [newPoints, order.user_id]);
                     const notifyMessage = { type: 'text', text: `✅ 您的點數購買已核准！\n\n已為您帳戶加入 ${order.points} 點，您目前的總點數為 ${newPoints} 點。` };
-                    await enqueuePushTask(order.user_id, notifyMessage);
+                    await enqueuePushTask(order.user_id, notifyMessage, { settingKey: 'student_order_result' });
                     await client.query('COMMIT');
                     return `✅ 已核准 ${order.user_name} 的訂單，並已通知對方。`;
                 } catch (err) { await client.query('ROLLBACK'); console.error('❌ 核准訂單時發生錯誤:', err); return '處理訂單時發生錯誤，操作已取消。';
@@ -8119,7 +8119,7 @@ async function handleOrderActions(action, data, user) {
                 if (res.rowCount > 0) {
                     const order = res.rows[0];
                     const notifyMessage = { type: 'text', text: `❗️ 訂單退回通知\n您購買「${order.product_name}」的回報資訊已被退回。\n請檢查後五碼或金額是否有誤，並重新回報。` };
-                    await enqueuePushTask(order.user_id, notifyMessage);
+                     await enqueuePushTask(order.user_id, notifyMessage, { settingKey: 'student_order_result' });
                     return `✅ 已退回學員 ${order.user_name} 的訂單，並通知對方重新提交資訊。`;
                 }
                 return '找不到該筆待確認訂單，或已被處理。';
@@ -8138,7 +8138,7 @@ async function handleOrderActions(action, data, user) {
                     await client.query("UPDATE products SET inventory = inventory + 1 WHERE id = $1", [order.product_id]);
                     await client.query("UPDATE product_orders SET status = 'cancelled', updated_at = NOW() WHERE order_uid = $1", [orderUID]);
                     const notifyMessage = { type: 'text', text: `❗️ 訂單取消通知\n您購買的「${order.product_name}」訂單已被老師取消。\n已將花費的 ${order.points_spent} 點歸還至您的帳戶。` };
-                    await enqueuePushTask(order.user_id, notifyMessage);
+                     await enqueuePushTask(order.user_id, notifyMessage, { settingKey: 'student_order_result' });
                     await client.query('COMMIT');
                     return `✅ 已成功取消訂單 (ID: ...${orderUID.slice(-6)}) 並歸還點數及庫存。`;
                 } catch (err) { await client.query('ROLLBACK'); console.error('❌ 取消商城訂單失敗:', err);
