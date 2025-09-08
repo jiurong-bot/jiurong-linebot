@@ -8451,8 +8451,8 @@ async function handleEvent(event) {
         }
         
         // 管理員的提醒 (綁定在老師系統通知開關上)
-        if (user.role === 'admin' && settings.teacher_new_order && notifications.failedTasks > 0) {
-            notificationMessages.push({ type: 'text', text: `🚨 管理員注意：系統中有 ${notifications.failedTasks} 個失敗任務，請至管理模式查看。`});
+        if (user.role === 'admin' && settings.admin_notifications_enabled && settings.admin_failed_task_alert_enabled && notifications.failedTasks > 0) {
+          notificationMessages.push({ type: 'text', text: `🚨 管理員注意：系統中有 ${notifications.failedTasks} 個失敗任務，請至管理模式查看。`});
         }
 
         // 學員的提醒
