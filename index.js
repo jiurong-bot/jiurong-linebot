@@ -2334,7 +2334,7 @@ async function getGlobalNotificationSettings() {
 
     return settings;
 }
-// [程式夥伴修正] V42.14 (Final) - 使用更穩健的 Box Action 結構取代 Button
+// [程式夥伴修正] V42.15 (Final-Fix) - 移除 Box 元件中不合法的 height 屬性
 async function buildAdminPanelFlex() {
     // 步驟 1: 取得所有開關狀態
     const isMasterEnabled = await getNotificationStatus();
@@ -2396,15 +2396,17 @@ async function buildAdminPanelFlex() {
                     spacing: 'sm',
                     margin: 'sm',
                     contents: [
-                        leftItem,
-                        rightItem || { type: 'box', flex: 1 } // 空白佔位符
+                        { type: 'box', layout: 'vertical', flex: 1, contents: [leftItem] },
+                        rightItem
+                            ? { type: 'box', layout: 'vertical', flex: 1, contents: [rightItem] }
+                            : { type: 'box', flex: 1 } // 空白佔位符
                     ]
                 });
             }
             return sectionContents;
         };
-
-        // [重大修正] 輔助函式：將按鈕資料轉換為更穩定的「可點擊 Box」元件
+        
+        // 輔助函式：將按鈕資料轉換為更穩定的「可點擊 Box」元件
         const createClickableBox = (options) => ({
             type: 'box',
             layout: 'vertical',
@@ -2412,8 +2414,9 @@ async function buildAdminPanelFlex() {
             backgroundColor: options.style === 'primary' ? (options.color || '#28a745') : '#F0F0F0',
             cornerRadius: 'md',
             justifyContent: 'center',
+            paddingAll: 'md', // 使用 padding 來控制高度
             action: options.action,
-            height: 'sm',
+            // [關鍵修正] 移除了不合法的 height: 'sm' 屬性
             contents: [{
                 type: 'text',
                 text: options.action.label,
