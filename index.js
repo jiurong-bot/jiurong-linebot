@@ -8316,7 +8316,7 @@ async function handleEvent(event) {
             // 歡迎他們回來，並更新他們可能已變更的 LINE 名稱或頭像
             const updatedUser = await updateUserProfileIfNeeded(userId, existingUser);
             const welcomeMessage = { type: 'text', text: `歡迎回來，${updatedUser.name}！` };
-            await enqueuePushTask(userId, welcomeMessage);
+            await enqueuePushTask(userId, welcomeMessage, { settingKey: 'student_welcome_message' });
 
             // 確保他們有正確的選單
             if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
@@ -8337,7 +8337,7 @@ async function handleEvent(event) {
             userProfileCache.set(userId, { timestamp: Date.now(), name: profile.displayName, pictureUrl: profile.pictureUrl });
 
             const welcomeMessage = { type: 'text', text: `歡迎 ${newUser.name}！感謝您加入九容瑜伽。` };
-            await enqueuePushTask(userId, welcomeMessage);
+            await enqueuePushTask(userId, welcomeMessage, { settingKey: 'student_welcome_message' });
             if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
         }
     } catch (error) {
@@ -8364,7 +8364,7 @@ async function handleEvent(event) {
             await saveUser(user);
             userProfileCache.set(userId, { timestamp: Date.now(), name: profile.displayName, pictureUrl: profile.pictureUrl });
             const welcomeMessage = { type: 'text', text: `歡迎 ${user.name}！感謝您加入九容瑜伽。`};
-            await enqueuePushTask(userId, welcomeMessage);
+            await enqueuePushTask(userId, welcomeMessage, { settingKey: 'student_welcome_message' });
             if (STUDENT_RICH_MENU_ID) await client.linkRichMenuToUser(userId, STUDENT_RICH_MENU_ID);
         } catch (error) { console.error(`創建新用戶時出錯: `, error); return; }
     } else {
