@@ -2272,6 +2272,69 @@ async function showFailedTasks(page) {
     });
 }
 /**
+ * [V39.0 修改] 取得所有全局通知設定
+ * @returns {Promise<object>} 一個包含所有通知設定狀態的物件
+ */
+async function getGlobalNotificationSettings() {
+    // 預設所有通知都是開啟的
+    const settings = {
+        // [新增] 分類總開關
+        admin_notifications_enabled: true,
+        teacher_notifications_enabled: true,
+        student_notifications_enabled: true,
+
+        // [新增] 管理員細項開關
+        admin_failed_task_alert_enabled: true,
+        
+        // 老師細項開關
+        teacher_class_reminder_24hr: true,
+        teacher_new_order: true,
+        teacher_new_message: true,
+
+        // 學員細項開關
+        student_class_reminder_1hr: true,
+        student_order_result: true,
+        student_message_reply: true,
+        student_welcome_message: true,
+        student_new_announcement: true
+    };
+
+    // 所有要去資料庫查詢的 key
+    const allSettingKeys = [
+        'admin_notifications_enabled', 'teacher_notifications_enabled', 'student_notifications_enabled',
+        'admin_failed_task_alert_enabled',
+        'teacher_class_reminder_24hr_enabled', 'teacher_new_order_enabled', 'teacher_new_message_enabled',
+        'student_class_reminder_1hr_enabled', 'student_order_result_enabled', 'student_message_reply_enabled',
+        'student_welcome_message_enabled', 'student_new_announcement_enabled'
+    ];
+
+    await executeDbQuery(async (db) => {
+        const res = await db.query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key = ANY($1::text[])", [allSettingKeys]);
+        
+        const dbSettings = new Map(res.rows.map(row => [row.setting_key, row.setting_value === 'true']));
+
+        // 用資料庫的值更新預設設定
+        settings.admin_notifications_enabled = dbSettings.get('admin_notifications_enabled') ?? true;
+        settings.teacher_notifications_enabled = dbSettings.get('teacher_notifications_enabled') ?? true;
+        settings.student_notifications_enabled = dbSettings.get('student_notifications_enabled') ?? true;
+     
+        settings.admin_failed_task_alert_enabled = dbSettings.get('admin_failed_task_alert_enabled') ?? true;
+
+        settings.teacher_class_reminder_24hr = dbSettings.get('teacher_class_reminder_24hr_enabled') ?? true;
+        settings.teacher_new_order = dbSettings.get('teacher_new_order_enabled') ?? true;
+        settings.teacher_new_message = dbSettings.get('teacher_new_message_enabled') ?? true;
+
+        settings.student_class_reminder_1hr = dbSettings.get('student_class_reminder_1hr_enabled') ?? true;
+        settings.student_order_result = dbSettings.get('student_order_result_enabled') ?? true;
+        settings.student_message_reply = dbSettings.get('student_message_reply_enabled') ?? true;
+        settings.student_welcome_message = dbSettings.get('student_welcome_message_enabled') ?? true;
+        settings.student_new_announcement = dbSettings.get('student_new_announcement_enabled') ?? true;
+    });
+
+    return settings;
+}
+
+/**
  * [程式夥伴修改] V42.21 - 建立「通知細項設定」子選單 (升級為穩定的雙排佈局)
  * @returns {Promise<object>} Flex Message 物件
  */
