@@ -3272,9 +3272,7 @@ await clientDB.query(
 
                 const opTextForStudent = state.operation === 'add' ? `增加了 ${state.amount}` : `扣除了 ${state.amount}`;
                 const notifyMessage = { type: 'text', text: `🔔 點數異動通知\n老師 ${user.name} 為您 ${opTextForStudent} 點。\n原因：${state.reason}\n您目前的點數為：${newPoints} 點。` };
-                await enqueuePushTask(student.id, notifyMessage);
-
-
+                await enqueuePushTask(student.id, notifyMessage, { settingKey: 'student_order_result' });
                 await clientDB.query('COMMIT');
                 delete pendingManualAdjust[userId];
                 return `✅ 已成功為學員 ${student.name} ${state.operation === 'add' ? '增加' : '扣除'} ${state.amount} 點。`;
