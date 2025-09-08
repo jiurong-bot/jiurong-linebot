@@ -6735,7 +6735,7 @@ async function handleAdminActions(action, data, user) {
             });
             
             simpleCache.clear(key);
-            return buildAdminPanelFlex();
+            return buildNotificationSettingsFlex();
         }
         case 'delete_error_log': {
             const logId = data.get('id');
