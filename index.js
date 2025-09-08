@@ -2334,88 +2334,118 @@ async function getGlobalNotificationSettings() {
 
     return settings;
 }
-
-/**
- * [V39.1 修改] 建立管理者控制面板的 Flex Message，整合總開關與分類開關
- * @returns {Promise<object>} Flex Message 物件
- */
+// [程式夥伴修改] V42.12 - 全新設計的管理者面板，支援三層開關與雙排顯示
 async function buildAdminPanelFlex() {
-    // 步驟 1: 檢查總開關目前是開啟還是關閉
-    const isMasterEnabled = await getNotificationStatus(); 
-    
-    const bodyContents = []; // 用一個陣列來動態存放 body 內容
+    // 步驟 1: 取得所有開關狀態
+    const isMasterEnabled = await getNotificationStatus();
+    const settings = await getGlobalNotificationSettings();
+    const bodyContents = [];
 
-    // 步驟 2: 根據總開關狀態，建立第一個按鈕
-    const masterToggleButton = {
+    // 步驟 2: 建立最上層的「系統總開關」
+    bodyContents.push({
         type: 'button',
         action: {
             type: 'postback',
-            label: isMasterEnabled ? '所有通知：開啟中' : '所有通知：已關閉',
+            label: isMasterEnabled ? '所有通知：🟢 開啟中' : '所有通知：🔴 已關閉',
             displayText: `正在切換所有通知為「${isMasterEnabled ? '關閉' : '開啟'}」`,
             data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.TOGGLE_NOTIFICATIONS)}`
         },
         style: isMasterEnabled ? 'primary' : 'secondary',
         color: isMasterEnabled ? '#28a745' : '#dc3545',
-        height: 'sm'
-    };
-    bodyContents.push(masterToggleButton);
-    bodyContents.push({ type: 'separator', margin: 'lg' });
-
-    // 步驟 3: 如果總開關是開啟的，才建立並顯示八個分類開關
-    if (isMasterEnabled) {
-        const settings = await getGlobalNotificationSettings();
-        const createSwitch = (label, settingKey, isEnabled) => ({
-            type: 'box', layout: 'horizontal', alignItems: 'center', paddingAll: 'md',
-            contents: [
-                { type: 'text', text: label, wrap: true, flex: 4 },
-                {
-                    type: 'button',
-                    action: { type: 'postback', label: isEnabled ? '開啟' : '關閉', displayText: `正在切換「${label}」`, data: `action=toggle_global_setting&key=${settingKey}&value=${isEnabled}` },
-                    style: isEnabled ? 'primary' : 'secondary', color: isEnabled ? '#28a745' : '#dc3545', height: 'sm', flex: 1
-                }
-            ]
-        });
-        const createSectionHeader = (title) => ({ type: 'text', text: title, weight: 'bold', size: 'md', margin: 'lg', color: '#343A40' });
-
-        bodyContents.push(createSectionHeader('課程通知 (Class Notifications)'));
-        bodyContents.push(createSwitch('(學員) 上課前一小時提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr));
-        bodyContents.push(createSwitch('(老師) 未來 24 小時課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr));
-        
-        bodyContents.push(createSectionHeader('訂單通知 (Order Notifications)'));
-        bodyContents.push(createSwitch('(學員) 訂單審核結果 (核准/退回)', 'student_order_result_enabled', settings.student_order_result));
-        bodyContents.push(createSwitch('(老師) 收到新訂單或付款資訊', 'teacher_new_order_enabled', settings.teacher_new_order));
-
-        bodyContents.push(createSectionHeader('互動通知 (Interaction Notifications)'));
-        bodyContents.push(createSwitch('(學員) 收到老師的留言回覆', 'student_message_reply_enabled', settings.student_message_reply));
-        bodyContents.push(createSwitch('(老師) 收到學員的新留言', 'teacher_new_message_enabled', settings.teacher_new_message));
-        
-        bodyContents.push(createSectionHeader('系統通知 (System Notifications)'));
-        bodyContents.push(createSwitch('(學員) 新好友歡迎訊息', 'student_welcome_message_enabled', settings.student_welcome_message));
-        bodyContents.push(createSwitch('(學員) 新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement));
-    }
-
-    // 步驟 4: 建立下方的常用管理功能
-    const otherCommands = [
-        { label: '系統狀態', command: CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS },
-        { label: '失敗任務管理', command: CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT },
-        { label: '查看錯誤日誌',command: CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS },
-        { label: '更新圖文選單', command: CONSTANTS.COMMANDS.ADMIN.FORCE_UPDATE_RICH_MENU },
-        { label: '授權老師', command: CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER },
-        { label: '移除老師', command: CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER },
-        { label: '模擬學員身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT },
-        { label: '模擬老師身份', command: CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER }
-    ];
-    
-    bodyContents.push({ type: 'separator', margin: 'xl' });
-    bodyContents.push({ type: 'text', text: '常用管理功能', weight: 'bold', size: 'md', margin: 'md' });
-    otherCommands.forEach(cmd => {
-        bodyContents.push({
-            type: 'button', style: 'secondary', height: 'sm',
-            action: { type: 'postback', label: cmd.label, data: `action=run_command&text=${encodeURIComponent(cmd.command)}` }
-        });
     });
 
-    // 步驟 5: 組裝成最後的 Flex Message
+    // 如果總開關是關閉的，就到此為止，不顯示任何細項
+    if (!isMasterEnabled) {
+        bodyContents.push({ type: 'text', text: '所有細項設定已暫時隱藏。', align: 'center', size: 'sm', color: '#888888', margin: 'md' });
+    } else {
+        // 步驟 3: 建立「分類總開關」
+        bodyContents.push({ type: 'separator', margin: 'lg' });
+        const createCategoryToggle = (label, key, isEnabled) => ({
+            type: 'button',
+            style: isEnabled ? 'primary' : 'secondary',
+            color: isEnabled ? '#17a2b8' : '#6c757d',
+            height: 'sm',
+            action: {
+                type: 'postback',
+                label: `${label}通知: ${isEnabled ? '開' : '關'}`,
+                data: `action=toggle_global_setting&key=${key}&value=${isEnabled}`
+            },
+            flex: 1
+        });
+
+        bodyContents.push({
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'sm',
+            margin: 'md',
+            contents: [
+                createCategoryToggle('管理員', 'admin_notifications_enabled', settings.admin_notifications_enabled),
+                createCategoryToggle('老師', 'teacher_notifications_enabled', settings.teacher_notifications_enabled),
+                createCategoryToggle('學員', 'student_notifications_enabled', settings.student_notifications_enabled),
+            ]
+        });
+
+        // 輔助函式：建立一個雙排佈局的區塊
+        const createTwoColumnSection = (title, items) => {
+            const sectionContents = [{ type: 'separator', margin: 'xl' }, { type: 'text', text: title, weight: 'bold', size: 'md', margin: 'md', color: '#343A40' }];
+            for (let i = 0; i < items.length; i += 2) {
+                const leftItem = items[i];
+                const rightItem = items[i + 1];
+                sectionContents.push({
+                    type: 'box',
+                    layout: 'horizontal',
+                    spacing: 'sm',
+                    margin: 'sm',
+                    contents: [
+                        leftItem,
+                        rightItem || { type: 'box', flex: 1 } // 如果右邊沒有，用空白補滿
+                    ]
+                });
+            }
+            return sectionContents;
+        };
+
+        // 步驟 4: 建立各分類的「細項開關」
+        if (settings.admin_notifications_enabled) {
+            const adminSwitches = [
+                { type: 'button', style: settings.admin_failed_task_alert_enabled ? 'primary' : 'secondary', color: settings.admin_failed_task_alert_enabled ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '失敗任務提醒', data: `action=toggle_global_setting&key=admin_failed_task_alert_enabled&value=${settings.admin_failed_task_alert_enabled}` } }
+            ];
+            bodyContents.push(...createTwoColumnSection('管理員通知細項', adminSwitches));
+        }
+        if (settings.teacher_notifications_enabled) {
+            const teacherSwitches = [
+                { type: 'button', style: settings.teacher_class_reminder_24hr ? 'primary' : 'secondary', color: settings.teacher_class_reminder_24hr ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '24H課程提醒', data: `action=toggle_global_setting&key=teacher_class_reminder_24hr_enabled&value=${settings.teacher_class_reminder_24hr}` } },
+                { type: 'button', style: settings.teacher_new_order ? 'primary' : 'secondary', color: settings.teacher_new_order ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '新訂單通知', data: `action=toggle_global_setting&key=teacher_new_order_enabled&value=${settings.teacher_new_order}` } },
+                { type: 'button', style: settings.teacher_new_message ? 'primary' : 'secondary', color: settings.teacher_new_message ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '新留言通知', data: `action=toggle_global_setting&key=teacher_new_message_enabled&value=${settings.teacher_new_message}` } },
+            ];
+            bodyContents.push(...createTwoColumnSection('老師通知細項', teacherSwitches));
+        }
+        if (settings.student_notifications_enabled) {
+            const studentSwitches = [
+                { type: 'button', style: settings.student_class_reminder_1hr ? 'primary' : 'secondary', color: settings.student_class_reminder_1hr ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '1H上課提醒', data: `action=toggle_global_setting&key=student_class_reminder_1hr_enabled&value=${settings.student_class_reminder_1hr}` } },
+                { type: 'button', style: settings.student_order_result ? 'primary' : 'secondary', color: settings.student_order_result ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '訂單結果通知', data: `action=toggle_global_setting&key=student_order_result_enabled&value=${settings.student_order_result}` } },
+                { type: 'button', style: settings.student_message_reply ? 'primary' : 'secondary', color: settings.student_message_reply ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '老師回覆通知', data: `action=toggle_global_setting&key=student_message_reply_enabled&value=${settings.student_message_reply}` } },
+                { type: 'button', style: settings.student_welcome_message ? 'primary' : 'secondary', color: settings.student_welcome_message ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '新好友歡迎訊息', data: `action=toggle_global_setting&key=student_welcome_message_enabled&value=${settings.student_welcome_message}` } },
+                { type: 'button', style: settings.student_new_announcement ? 'primary' : 'secondary', color: settings.student_new_announcement ? '#28a745' : '#dc3545', height: 'sm', flex: 1, action: { type: 'postback', label: '新公告提醒', data: `action=toggle_global_setting&key=student_new_announcement_enabled&value=${settings.student_new_announcement}` } },
+            ];
+            bodyContents.push(...createTwoColumnSection('學員通知細項', studentSwitches));
+        }
+
+        // 步驟 5: 建立「常用管理功能」
+        const otherCommands = [
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '系統狀態', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS)}` } },
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '失敗任務管理', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT)}` } },
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '查看錯誤日誌', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS)}` } },
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '更新圖文選單', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.FORCE_UPDATE_RICH_MENU)}` } },
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '授權老師', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER)}` } },
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '移除老師', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER)}` } },
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '模擬學員身份', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT)}` } },
+            { type: 'button', style: 'secondary', height: 'sm', flex: 1, action: { type: 'postback', label: '模擬老師身份', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER)}` } }
+        ];
+        bodyContents.push(...createTwoColumnSection('常用管理功能', otherCommands));
+    }
+
+    // 步驟 6: 組裝成最後的 Flex Message
     return {
         type: 'flex',
         altText: '管理者控制面板',
@@ -2432,8 +2462,9 @@ async function buildAdminPanelFlex() {
             body: {
                 type: 'box',
                 layout: 'vertical',
+                paddingAll: 'lg',
                 spacing: 'sm',
-                contents: bodyContents // 將我們動態組合好的內容放到這裡
+                contents: bodyContents
             }
         }
     };
