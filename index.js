@@ -2536,10 +2536,10 @@ async function buildManagementFunctionsFlex() {
 }
 // [程式夥伴修改] V42.19 - 重新設計管理者面板為多層次選單
 async function buildAdminPanelFlex() {
-    [span_0](start_span)const isMasterEnabled = await getNotificationStatus();[span_0](end_span)
+    const isMasterEnabled = await getNotificationStatus();
     const bodyContents = [];
 
-    // 1. 系統總開關 (維持不變)
+    // 1. 系統總開關
     bodyContents.push({
         type: 'button',
         action: {
@@ -2550,7 +2550,7 @@ async function buildAdminPanelFlex() {
         },
         style: isMasterEnabled ? 'primary' : 'secondary',
         color: isMasterEnabled ? '#28a745' : '#dc3545',
-    [span_1](start_span)});[span_1](end_span)
+    });
 
     bodyContents.push({ type: 'separator', margin: 'xl' });
 
