@@ -6948,8 +6948,8 @@ async function handleCourseActions(action, data, user) {
                     const reminderTime = new Date(new Date(course.time).getTime() - CONSTANTS.TIME.ONE_HOUR_IN_MS);
                     if (reminderTime > new Date()) {
                         const reminderMessage = { type: 'text', text: `🔔 課程提醒 🔔\n您預約的課程「${course.title}」即將在約一小時後開始，請準備好上課囉！` };
-                        await enqueuePushTask(userId, reminderMessage, reminderTime);
-                    }
+                        await enqueuePushTask(userId, reminderMessage, { sendAt: reminderTime, settingKey: 'student_class_reminder_1hr' });
+                 }
                     await clientDB.query('COMMIT');
                     return `✅ 成功為您預約 ${spotsToBook} 個名額！\n課程：${course.title}\n時間：${formatDateTime(course.time)}\n\n已為您扣除 ${totalCost} 點，期待課堂上見！`;
                 } catch (e) {
