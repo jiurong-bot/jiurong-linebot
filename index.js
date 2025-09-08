@@ -3000,7 +3000,7 @@ async function handleTeacherCommands(event, userId) {
                         message: { type: 'text', text: `課程取消通知：\n老師已取消「${courseMainTitle}」系列所有課程，已歸還 ${refundAmount} 點至您的帳戶。` }
                     }));
                     if (batchTasks.length > 0) {
-                        await enqueueBatchPushTasks(batchTasks);
+                        await enqueueBatchPushTasks(batchTasks, { settingKey: 'student_new_announcement' });
                     }
                     await client.query('COMMIT');
                     const teacherMsg = { type: 'text', text: `✅ 已成功批次取消「${courseMainTitle}」系列課程，並已退點給所有學員。` }; 
@@ -3039,7 +3039,7 @@ async function handleTeacherCommands(event, userId) {
                           recipientId: studentId,
                           message: { type: 'text', text: `課程取消通知：\n老師已取消您預約的課程「${course.title}」，已歸還 ${course.points_cost} 點至您的帳戶。` }
                       }));
-                      await enqueueBatchPushTasks(batchTasks);
+                      await enqueueBatchPushTasks(batchTasks, { settingKey: 'student_new_announcement' });
                   }
                   await client.query('COMMIT');
                   return `✅ 已成功取消課程「${course.title}」。`;
