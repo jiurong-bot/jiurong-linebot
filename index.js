@@ -7234,7 +7234,7 @@ async function handleProductActions(action, data, user) {
             });
             if (result.success) {
                 if (result.tasks.length > 0) {
-                    await enqueueBatchPushTasks(result.tasks);
+             await enqueueBatchPushTasks(result.tasks, { settingKey: 'student_order_result' });
                 }
                 return `✅ 成功！已為「${result.productName}」取消 ${result.count} 筆預購，並已發送通知。`;
             } else if (result.status === 'error') {
@@ -7888,7 +7888,7 @@ async function handleOrderActions(action, data, user) {
             });
             if (result.success) {
                 if (result.tasks.length > 0) {
-                    await enqueueBatchPushTasks(result.tasks);
+                    await enqueueBatchPushTasks(result.tasks, { settingKey: 'student_order_result' });
                 }
                 return `✅ 成功！已為 ${result.count} 位學員建立訂單並發送付款通知。`;
             } else {
