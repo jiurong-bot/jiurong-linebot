@@ -2334,7 +2334,7 @@ async function getGlobalNotificationSettings() {
 
     return settings;
 }
-// [程式夥伴修正] V42.16 (Final-Fix-2) - 移除 createTwoColumnSection 中多餘的 Box 巢狀結構
+// [程式夥伴修正] V42.17 (Final-Fix-3) - 移除可疑的 justifyContent 屬性
 async function buildAdminPanelFlex() {
     // 步驟 1: 取得所有開關狀態
     const isMasterEnabled = await getNotificationStatus();
@@ -2384,7 +2384,6 @@ async function buildAdminPanelFlex() {
             ]
         });
 
-        // [關鍵修正] 修正輔助函式，不再有多餘的 Box 包裝
         const createTwoColumnSection = (title, items) => {
             const sectionContents = [{ type: 'separator', margin: 'xl' }, { type: 'text', text: title, weight: 'bold', size: 'md', margin: 'md', color: '#343A40' }];
             for (let i = 0; i < items.length; i += 2) {
@@ -2396,21 +2395,21 @@ async function buildAdminPanelFlex() {
                     spacing: 'sm',
                     margin: 'sm',
                     contents: [
-                        leftItem, // 直接使用 item
-                        rightItem || { type: 'box', flex: 1 } // 如果右邊沒有，用空白 box 佔位
+                        leftItem,
+                        rightItem || { type: 'box', flex: 1 }
                     ]
                 });
             }
             return sectionContents;
         };
         
+        // [關鍵修正] 移除了 justifyContent 屬性
         const createClickableBox = (options) => ({
             type: 'box',
             layout: 'vertical',
             flex: 1,
             backgroundColor: options.style === 'primary' ? (options.color || '#28a745') : '#F0F0F0',
             cornerRadius: 'md',
-            justifyContent: 'center',
             paddingAll: 'md',
             action: options.action,
             contents: [{
@@ -2419,6 +2418,7 @@ async function buildAdminPanelFlex() {
                 color: options.style === 'primary' ? '#FFFFFF' : '#333333',
                 align: 'center',
                 size: 'sm',
+                gravity: 'center', // 使用 gravity 替代 justifyContent
                 weight: 'bold'
             }]
         });
