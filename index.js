@@ -7101,11 +7101,9 @@ await client.query('COMMIT');
                 type: 'text',
                 text: '好的，已為您放棄此次候補資格。'
              };
-            await enqueuePushTask(userId, forfeitMessage);
+            await enqueuePushTask(userId, forfeitMessage, { settingKey: 'student_new_announcement' });
             return;
         }
-//...
-
     }
     return null;
 }
