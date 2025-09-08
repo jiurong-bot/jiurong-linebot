@@ -6746,6 +6746,12 @@ async function handleViewActions(action, data, user) {
 async function handleAdminActions(action, data, user) {
     const userId = user.id;
     switch (action) {
+        case 'view_admin_panel':
+            return buildAdminPanelFlex();
+        case 'view_notification_settings':
+            return buildNotificationSettingsFlex();
+        case 'view_management_functions':
+            return buildManagementFunctionsFlex();
         case 'toggle_global_setting': {
             const key = data.get('key');
             const currentValue = data.get('value') === 'true';
