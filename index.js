@@ -3325,7 +3325,7 @@ await clientDB.query(
       const originalMessage = state.originalMessage;
       delete pendingReply[userId];
       const notifyMessage = { type: 'text', text: `老師回覆了您的留言：\n\n【您的留言】\n${originalMessage}\n\n【老師的回覆】\n${text}`};
-      await enqueuePushTask(studentId, notifyMessage);
+      await enqueuePushTask(studentId, notifyMessage, { settingKey: 'student_message_reply' });
       return '✅ 已成功回覆學員的留言。';
     } catch (err) {
       delete pendingReply[userId];
