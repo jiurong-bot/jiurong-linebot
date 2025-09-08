@@ -2335,14 +2335,14 @@ async function getGlobalNotificationSettings() {
     return settings;
 }
 /**
- * [程式夥伴新增] V42.19 - 建立「通知細項設定」子選單
+ * [程式夥伴修正] V42.20 - 建立「通知細項設定」子選單 (修正版，改為穩定的單欄佈局)
  * @returns {Promise<object>} Flex Message 物件
  */
 async function buildNotificationSettingsFlex() {
     const settings = await getGlobalNotificationSettings();
 
     // 輔助函式，用於建立一個開關按鈕
-    const createToggleButton = (label, key, isEnabled) => ({
+    const createToggleButton = (label, key, isEnabled, isFullWidth = false) => ({
         type: 'button',
         style: isEnabled ? 'primary' : 'secondary',
         color: isEnabled ? '#28a745' : '#6c757d',
@@ -2352,34 +2352,12 @@ async function buildNotificationSettingsFlex() {
             label: `${label}: ${isEnabled ? '開' : '關'}`,
             data: `action=toggle_global_setting&key=${key}&value=${isEnabled}`
         },
-        flex: 1
+        ...(isFullWidth ? {} : { flex: 1 }) // 如果不是全寬，才需要 flex
     });
-
-    // 輔助函式，將按鈕排列成兩欄的網格
-    const createGrid = (buttons) => {
-        const rows = [];
-        for (let i = 0; i < buttons.length; i += 2) {
-            const rowButtons = [buttons[i]];
-            if (buttons[i + 1]) {
-                rowButtons.push(buttons[i + 1]);
-            } else {
-                // 如果是單數，補一個空的 box 讓排版對齊
-                rowButtons.push({ type: 'box', flex: 1, contents: [] });
-            }
-            rows.push({
-                type: 'box',
-                layout: 'horizontal',
-                spacing: 'sm',
-                contents: rowButtons,
-                margin: 'md'
-            });
-        }
-        return rows;
-    };
 
     const bodyContents = [];
 
-    // --- 分類總開關 ---
+    // --- 分類總開關 (三欄式) ---
     bodyContents.push({
         type: 'box',
         layout: 'horizontal',
@@ -2394,34 +2372,25 @@ async function buildNotificationSettingsFlex() {
     // --- 管理員細項 ---
     if (settings.admin_notifications_enabled) {
         bodyContents.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '管理員通知細項', weight: 'bold', margin: 'md' });
-        const adminButtons = [
-            createToggleButton('失敗任務提醒', 'admin_failed_task_alert_enabled', settings.admin_failed_task_alert_enabled)
-        ];
-        bodyContents.push(...createGrid(adminButtons));
+        bodyContents.push(createToggleButton('失敗任務提醒', 'admin_failed_task_alert_enabled', settings.admin_failed_task_alert_enabled, true));
     }
 
     // --- 老師細項 ---
     if (settings.teacher_notifications_enabled) {
         bodyContents.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '老師通知細項', weight: 'bold', margin: 'md' });
-        const teacherButtons = [
-            createToggleButton('24H課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr),
-            createToggleButton('新訂單通知', 'teacher_new_order_enabled', settings.teacher_new_order),
-            createToggleButton('新留言通知', 'teacher_new_message_enabled', settings.teacher_new_message),
-        ];
-        bodyContents.push(...createGrid(teacherButtons));
+        bodyContents.push(createToggleButton('24H課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr, true));
+        bodyContents.push(createToggleButton('新訂單通知', 'teacher_new_order_enabled', settings.teacher_new_order, true));
+        bodyContents.push(createToggleButton('新留言通知', 'teacher_new_message_enabled', settings.teacher_new_message, true));
     }
 
     // --- 學員細項 ---
     if (settings.student_notifications_enabled) {
         bodyContents.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '學員通知細項', weight: 'bold', margin: 'md' });
-        const studentButtons = [
-            createToggleButton('1H上課提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr),
-            createToggleButton('訂單結果通知', 'student_order_result_enabled', settings.student_order_result),
-            createToggleButton('老師回覆通知', 'student_message_reply_enabled', settings.student_message_reply),
-            createToggleButton('新好友歡迎', 'student_welcome_message_enabled', settings.student_welcome_message),
-            createToggleButton('新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement),
-        ];
-        bodyContents.push(...createGrid(studentButtons));
+        bodyContents.push(createToggleButton('1H上課提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr, true));
+        bodyContents.push(createToggleButton('訂單結果通知', 'student_order_result_enabled', settings.student_order_result, true));
+        bodyContents.push(createToggleButton('老師回覆通知', 'student_message_reply_enabled', settings.student_message_reply, true));
+        bodyContents.push(createToggleButton('新好友歡迎', 'student_welcome_message_enabled', settings.student_welcome_message, true));
+        bodyContents.push(createToggleButton('新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement, true));
     }
 
     return {
@@ -2435,7 +2404,7 @@ async function buildNotificationSettingsFlex() {
                 type: 'box',
                 layout: 'vertical',
                 paddingAll: 'lg',
-                spacing: 'md',
+                spacing: 'sm', // 縮小間距讓版面更緊湊
                 contents: bodyContents
             },
             footer: {
