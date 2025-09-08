@@ -2334,6 +2334,207 @@ async function getGlobalNotificationSettings() {
 
     return settings;
 }
+/**
+ * [程式夥伴新增] V42.19 - 建立「通知細項設定」子選單
+ * @returns {Promise<object>} Flex Message 物件
+ */
+async function buildNotificationSettingsFlex() {
+    const settings = await getGlobalNotificationSettings();
+
+    // 輔助函式，用於建立一個開關按鈕
+    const createToggleButton = (label, key, isEnabled) => ({
+        type: 'button',
+        style: isEnabled ? 'primary' : 'secondary',
+        color: isEnabled ? '#28a745' : '#6c757d',
+        height: 'sm',
+        action: {
+            type: 'postback',
+            label: `${label}: ${isEnabled ? '開' : '關'}`,
+            data: `action=toggle_global_setting&key=${key}&value=${isEnabled}`
+        },
+        flex: 1
+    });
+
+    // 輔助函式，將按鈕排列成兩欄的網格
+    const createGrid = (buttons) => {
+        const rows = [];
+        for (let i = 0; i < buttons.length; i += 2) {
+            const rowButtons = [buttons[i]];
+            if (buttons[i + 1]) {
+                rowButtons.push(buttons[i + 1]);
+            } else {
+                // 如果是單數，補一個空的 box 讓排版對齊
+                rowButtons.push({ type: 'box', flex: 1, contents: [] });
+            }
+            rows.push({
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'sm',
+                contents: rowButtons,
+                margin: 'md'
+            });
+        }
+        return rows;
+    };
+
+    const bodyContents = [];
+
+    // --- 分類總開關 ---
+    bodyContents.push({
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'sm',
+        contents: [
+            createToggleButton('管理員', 'admin_notifications_enabled', settings.admin_notifications_enabled),
+            createToggleButton('老師', 'teacher_notifications_enabled', settings.teacher_notifications_enabled),
+            createToggleButton('學員', 'student_notifications_enabled', settings.student_notifications_enabled),
+        ]
+    });
+
+    // --- 管理員細項 ---
+    if (settings.admin_notifications_enabled) {
+        bodyContents.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '管理員通知細項', weight: 'bold', margin: 'md' });
+        const adminButtons = [
+            createToggleButton('失敗任務提醒', 'admin_failed_task_alert_enabled', settings.admin_failed_task_alert_enabled)
+        ];
+        bodyContents.push(...createGrid(adminButtons));
+    }
+
+    // --- 老師細項 ---
+    if (settings.teacher_notifications_enabled) {
+        bodyContents.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '老師通知細項', weight: 'bold', margin: 'md' });
+        const teacherButtons = [
+            createToggleButton('24H課程提醒', 'teacher_class_reminder_24hr_enabled', settings.teacher_class_reminder_24hr),
+            createToggleButton('新訂單通知', 'teacher_new_order_enabled', settings.teacher_new_order),
+            createToggleButton('新留言通知', 'teacher_new_message_enabled', settings.teacher_new_message),
+        ];
+        bodyContents.push(...createGrid(teacherButtons));
+    }
+
+    // --- 學員細項 ---
+    if (settings.student_notifications_enabled) {
+        bodyContents.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '學員通知細項', weight: 'bold', margin: 'md' });
+        const studentButtons = [
+            createToggleButton('1H上課提醒', 'student_class_reminder_1hr_enabled', settings.student_class_reminder_1hr),
+            createToggleButton('訂單結果通知', 'student_order_result_enabled', settings.student_order_result),
+            createToggleButton('老師回覆通知', 'student_message_reply_enabled', settings.student_message_reply),
+            createToggleButton('新好友歡迎', 'student_welcome_message_enabled', settings.student_welcome_message),
+            createToggleButton('新公告提醒', 'student_new_announcement_enabled', settings.student_new_announcement),
+        ];
+        bodyContents.push(...createGrid(studentButtons));
+    }
+
+    return {
+        type: 'flex',
+        altText: '通知細項設定',
+        contents: {
+            type: 'bubble',
+            size: 'giga',
+            header: createStandardHeader('⚙️ 通知細項設定'),
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'lg',
+                spacing: 'md',
+                contents: bodyContents
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'link',
+                    height: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: '⬅️ 返回主選單',
+                        data: 'action=view_admin_panel'
+                    }
+                }]
+            }
+        }
+    };
+}
+
+/**
+ * [程式夥伴新增] V42.19 - 建立「常用管理功能」子選單
+ * @returns {Promise<object>} Flex Message 物件
+ */
+async function buildManagementFunctionsFlex() {
+    // 輔助函式，建立一個功能按鈕
+    const createMenuButton = (label, command) => ({
+        type: 'button',
+        style: 'secondary',
+        height: 'sm',
+        action: {
+            type: 'postback',
+            label: label,
+            data: `action=run_command&text=${encodeURIComponent(command)}`
+        },
+        flex: 1
+    });
+
+    // 將按鈕排列成兩欄的網格
+    const buttons = [
+        createMenuButton('系統狀態', CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS),
+        createMenuButton('失敗任務管理', CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT),
+        createMenuButton('查看錯誤日誌', CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS),
+        createMenuButton('更新圖文選單', CONSTANTS.COMMANDS.ADMIN.FORCE_UPDATE_RICH_MENU),
+        createMenuButton('授權老師', CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER),
+        createMenuButton('移除老師', CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER),
+        createMenuButton('模擬學員身份', CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT),
+        createMenuButton('模擬老師身份', CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER),
+    ];
+
+    const rows = [];
+    for (let i = 0; i < buttons.length; i += 2) {
+        const rowButtons = [buttons[i]];
+        if (buttons[i + 1]) {
+            rowButtons.push(buttons[i + 1]);
+        } else {
+            rowButtons.push({ type: 'box', flex: 1, contents: [] });
+        }
+        rows.push({
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'sm',
+            contents: rowButtons,
+            margin: 'md'
+        });
+    }
+
+    return {
+        type: 'flex',
+        altText: '常用管理功能',
+        contents: {
+            type: 'bubble',
+            size: 'giga',
+            header: createStandardHeader('🛠️ 常用管理功能'),
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'lg',
+                spacing: 'sm',
+                contents: rows
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [{
+                    type: 'button',
+                    style: 'link',
+                    height: 'sm',
+                    action: {
+                        type: 'postback',
+                        label: '⬅️ 返回主選單',
+                        data: 'action=view_admin_panel'
+                    }
+                }]
+            }
+        }
+    };
+}
+
 // [程式夥伴修正] V42.18 (Final-Downgrade-Test) - 退回至最穩定的單排列表佈局
 async function buildAdminPanelFlex() {
     const isMasterEnabled = await getNotificationStatus();
