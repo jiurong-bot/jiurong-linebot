@@ -2334,14 +2334,54 @@ async function getGlobalNotificationSettings() {
 
     return settings;
 }
-// [程式夥伴修正] V42.18 (Final-Downgrade-Test) - 退回至最穩定的單排列表佈局
+// [程式夥伴修正] V42.19 - 使用輪播 (Carousel) 結構重建雙排版面
 async function buildAdminPanelFlex() {
     const isMasterEnabled = await getNotificationStatus();
     const settings = await getGlobalNotificationSettings();
-    const bodyContents = [];
+    const bubbles = []; // 準備一個陣列來放所有的氣泡
 
-    // 系統總開關 (維持不變)
-    bodyContents.push({
+    // --- 通用的輔助函式 ---
+    const createTwoColumnSection = (items) => {
+        const sectionContents = [];
+        for (let i = 0; i < items.length; i += 2) {
+            const leftItem = items[i];
+            const rightItem = items[i + 1];
+            sectionContents.push({
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'sm',
+                margin: 'sm',
+                contents: [
+                    leftItem,
+                    rightItem || { type: 'box', flex: 1 } // 空白佔位符
+                ]
+            });
+        }
+        return sectionContents;
+    };
+
+    const createClickableBox = (options) => ({
+        type: 'box',
+        layout: 'vertical',
+        flex: 1,
+        backgroundColor: options.style === 'primary' ? (options.color || '#28a745') : '#F0F0F0',
+        cornerRadius: 'md',
+        paddingAll: 'md',
+        action: options.action,
+        contents: [{
+            type: 'text',
+            text: options.action.label,
+            color: options.style === 'primary' ? '#FFFFFF' : '#333333',
+            align: 'center',
+            size: 'sm',
+            gravity: 'center',
+            weight: 'bold'
+        }]
+    });
+
+    // --- 氣泡 1: 主要開關與設定 ---
+    const mainControlsBody = [];
+    mainControlsBody.push({
         type: 'button',
         action: {
             type: 'postback',
@@ -2354,10 +2394,8 @@ async function buildAdminPanelFlex() {
     });
 
     if (!isMasterEnabled) {
-        bodyContents.push({ type: 'text', text: '所有細項設定已暫時隱藏。', align: 'center', size: 'sm', color: '#888888', margin: 'md' });
+        mainControlsBody.push({ type: 'text', text: '所有細項設定已暫時隱藏。', align: 'center', size: 'sm', color: '#888888', margin: 'md' });
     } else {
-        // 分類總開關 (維持不變)
-        bodyContents.push({ type: 'separator', margin: 'lg' });
         const createCategoryToggle = (label, key, isEnabled) => ({
             type: 'button',
             style: isEnabled ? 'primary' : 'secondary',
@@ -2366,7 +2404,8 @@ async function buildAdminPanelFlex() {
             action: { type: 'postback', label: `${label}通知: ${isEnabled ? '開' : '關'}`, data: `action=toggle_global_setting&key=${key}&value=${isEnabled}`},
             flex: 1
         });
-        bodyContents.push({
+        mainControlsBody.push({ type: 'separator', margin: 'lg' });
+        mainControlsBody.push({
             type: 'box',
             layout: 'horizontal',
             spacing: 'sm',
@@ -2378,46 +2417,10 @@ async function buildAdminPanelFlex() {
             ]
         });
 
-        // [重大修正] 改回單排佈局
-        const createSingleRowSection = (title, items) => {
-            const sectionContents = [{ type: 'separator', margin: 'xl' }, { type: 'text', text: title, weight: 'bold', size: 'md', margin: 'md', color: '#343A40' }];
-            items.forEach(item => {
-                sectionContents.push({
-                    type: 'box',
-                    layout: 'horizontal',
-                    spacing: 'sm',
-                    margin: 'sm',
-                    contents: [item] // 每個 item 單獨佔一整行
-                });
-            });
-            return sectionContents;
-        };
-        
-        const createClickableBox = (options) => ({
-            type: 'box',
-            layout: 'vertical',
-            flex: 1,
-            backgroundColor: options.style === 'primary' ? (options.color || '#28a745') : '#F0F0F0',
-            cornerRadius: 'md',
-            paddingAll: 'md',
-            action: options.action,
-            contents: [{
-                type: 'text',
-                text: options.action.label,
-                color: options.style === 'primary' ? '#FFFFFF' : '#333333',
-                align: 'center',
-                size: 'sm',
-                gravity: 'center',
-                weight: 'bold'
-            }]
-        });
-
-        // 建立各分類的「細項開關」
         if (settings.admin_notifications_enabled) {
-            const adminSwitches = [
-                createClickableBox({ style: settings.admin_failed_task_alert_enabled ? 'primary' : 'secondary', color: '#28a745', action: { type: 'postback', label: '失敗任務提醒', data: `action=toggle_global_setting&key=admin_failed_task_alert_enabled&value=${settings.admin_failed_task_alert_enabled}` } })
-            ];
-            bodyContents.push(...createSingleRowSection('管理員通知細項', adminSwitches));
+            const adminSwitches = [createClickableBox({ style: settings.admin_failed_task_alert_enabled ? 'primary' : 'secondary', color: '#28a745', action: { type: 'postback', label: '失敗任務提醒', data: `action=toggle_global_setting&key=admin_failed_task_alert_enabled&value=${settings.admin_failed_task_alert_enabled}` } })];
+            mainControlsBody.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '管理員通知細項', weight: 'bold', size: 'md', margin: 'md', color: '#343A40' });
+            mainControlsBody.push(...createTwoColumnSection(adminSwitches));
         }
         if (settings.teacher_notifications_enabled) {
             const teacherSwitches = [
@@ -2425,7 +2428,8 @@ async function buildAdminPanelFlex() {
                 createClickableBox({ style: settings.teacher_new_order ? 'primary' : 'secondary', action: { type: 'postback', label: '新訂單通知', data: `action=toggle_global_setting&key=teacher_new_order_enabled&value=${settings.teacher_new_order}` } }),
                 createClickableBox({ style: settings.teacher_new_message ? 'primary' : 'secondary', action: { type: 'postback', label: '新留言通知', data: `action=toggle_global_setting&key=teacher_new_message_enabled&value=${settings.teacher_new_message}` } }),
             ];
-            bodyContents.push(...createSingleRowSection('老師通知細項', teacherSwitches));
+            mainControlsBody.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '老師通知細項', weight: 'bold', size: 'md', margin: 'md', color: '#343A40' });
+            mainControlsBody.push(...createTwoColumnSection(teacherSwitches));
         }
         if (settings.student_notifications_enabled) {
              const studentSwitches = [
@@ -2435,10 +2439,20 @@ async function buildAdminPanelFlex() {
                 createClickableBox({ style: settings.student_welcome_message ? 'primary' : 'secondary', action: { type: 'postback', label: '新好友歡迎訊息', data: `action=toggle_global_setting&key=student_welcome_message_enabled&value=${settings.student_welcome_message}` } }),
                 createClickableBox({ style: settings.student_new_announcement ? 'primary' : 'secondary', action: { type: 'postback', label: '新公告提醒', data: `action=toggle_global_setting&key=student_new_announcement_enabled&value=${settings.student_new_announcement}` } }),
             ];
-            bodyContents.push(...createSingleRowSection('學員通知細項', studentSwitches));
+            mainControlsBody.push({ type: 'separator', margin: 'xl' }, { type: 'text', text: '學員通知細項', weight: 'bold', size: 'md', margin: 'md', color: '#343A40' });
+            mainControlsBody.push(...createTwoColumnSection(studentSwitches));
         }
+    }
+    
+    bubbles.push({
+        type: 'bubble',
+        size: 'giga',
+        header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '⚙️ 主要開關與設定', color: '#FFFFFF', weight: 'bold', size: 'lg' }], backgroundColor: '#343A40', paddingAll: 'lg'},
+        body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'sm', contents: mainControlsBody }
+    });
 
-        // 建立「常用管理功能」
+    // --- 氣泡 2: 常用管理功能 ---
+    if (isMasterEnabled) {
         const otherCommands = [
             createClickableBox({ style: 'secondary', action: { type: 'postback', label: '系統狀態', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS)}` } }),
             createClickableBox({ style: 'secondary', action: { type: 'postback', label: '失敗任務管理', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT)}` } }),
@@ -2449,30 +2463,22 @@ async function buildAdminPanelFlex() {
             createClickableBox({ style: 'secondary', action: { type: 'postback', label: '模擬學員身份', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT)}` } }),
             createClickableBox({ style: 'secondary', action: { type: 'postback', label: '模擬老師身份', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER)}` } })
         ];
-        bodyContents.push(...createSingleRowSection('常用管理功能', otherCommands));
+        
+        bubbles.push({
+            type: 'bubble',
+            size: 'giga',
+            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🛠️ 常用管理功能', color: '#FFFFFF', weight: 'bold', size: 'lg' }], backgroundColor: '#343A40', paddingAll: 'lg'},
+            body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'sm', contents: createTwoColumnSection(otherCommands) }
+        });
     }
 
-    // 組裝成最後的 Flex Message
+    // --- 最終組裝 ---
     return {
         type: 'flex',
         altText: '管理者控制面板',
         contents: {
-            type: 'bubble',
-            size: 'giga',
-            header: {
-                type: 'box',
-                layout: 'vertical',
-                contents: [{ type: 'text', text: '⚙️ 管理者控制面板', color: '#FFFFFF', weight: 'bold', size: 'lg' }],
-                backgroundColor: '#343A40',
-                paddingAll: 'lg'
-            },
-            body: {
-                type: 'box',
-                layout: 'vertical',
-                paddingAll: 'lg',
-                spacing: 'sm',
-                contents: bodyContents
-            }
+            type: 'carousel',
+            contents: bubbles
         }
     };
 }
