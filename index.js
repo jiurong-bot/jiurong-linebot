@@ -2534,14 +2534,12 @@ async function buildManagementFunctionsFlex() {
         }
     };
 }
-
-// [程式夥伴修正] V42.18 (Final-Downgrade-Test) - 退回至最穩定的單排列表佈局
+// [程式夥伴修改] V42.19 - 重新設計管理者面板為多層次選單
 async function buildAdminPanelFlex() {
-    const isMasterEnabled = await getNotificationStatus();
-    const settings = await getGlobalNotificationSettings();
+    [span_0](start_span)const isMasterEnabled = await getNotificationStatus();[span_0](end_span)
     const bodyContents = [];
 
-    // 系統總開關 (維持不變)
+    // 1. 系統總開關 (維持不變)
     bodyContents.push({
         type: 'button',
         action: {
@@ -2552,126 +2550,59 @@ async function buildAdminPanelFlex() {
         },
         style: isMasterEnabled ? 'primary' : 'secondary',
         color: isMasterEnabled ? '#28a745' : '#dc3545',
-    });
+    [span_1](start_span)});[span_1](end_span)
 
-    if (!isMasterEnabled) {
-        bodyContents.push({ type: 'text', text: '所有細項設定已暫時隱藏。', align: 'center', size: 'sm', color: '#888888', margin: 'md' });
-    } else {
-        // 分類總開關 (維持不變)
-        bodyContents.push({ type: 'separator', margin: 'lg' });
-        const createCategoryToggle = (label, key, isEnabled) => ({
-            type: 'button',
-            style: isEnabled ? 'primary' : 'secondary',
-            color: isEnabled ? '#17a2b8' : '#6c757d',
-            height: 'sm',
-            action: { type: 'postback', label: `${label}通知: ${isEnabled ? '開' : '關'}`, data: `action=toggle_global_setting&key=${key}&value=${isEnabled}`},
-            flex: 1
-        });
+    bodyContents.push({ type: 'separator', margin: 'xl' });
+
+    // 2. 根據總開關狀態，決定是否顯示通知設定入口
+    if (isMasterEnabled) {
         bodyContents.push({
-            type: 'box',
-            layout: 'horizontal',
-            spacing: 'sm',
+            type: 'button',
+            style: 'secondary',
+            height: 'sm',
+            action: {
+                type: 'postback',
+                label: '⚙️ 通知細項設定',
+                data: 'action=view_notification_settings'
+            }
+        });
+    } else {
+        bodyContents.push({
+            type: 'text',
+            text: '總開關已關閉，所有通知細項設定已隱藏。',
+            align: 'center',
+            size: 'sm',
+            color: '#888888',
             margin: 'md',
-            contents: [
-                createCategoryToggle('管理員', 'admin_notifications_enabled', settings.admin_notifications_enabled),
-                createCategoryToggle('老師', 'teacher_notifications_enabled', settings.teacher_notifications_enabled),
-                createCategoryToggle('學員', 'student_notifications_enabled', settings.student_notifications_enabled),
-            ]
+            wrap: true
         });
-
-        // [重大修正] 改回單排佈局
-        const createSingleRowSection = (title, items) => {
-            const sectionContents = [{ type: 'separator', margin: 'xl' }, { type: 'text', text: title, weight: 'bold', size: 'md', margin: 'md', color: '#343A40' }];
-            items.forEach(item => {
-                sectionContents.push({
-                    type: 'box',
-                    layout: 'horizontal',
-                    spacing: 'sm',
-                    margin: 'sm',
-                    contents: [item] // 每個 item 單獨佔一整行
-                });
-            });
-            return sectionContents;
-        };
-        
-        const createClickableBox = (options) => ({
-            type: 'box',
-            layout: 'vertical',
-            flex: 1,
-            backgroundColor: options.style === 'primary' ? (options.color || '#28a745') : '#F0F0F0',
-            cornerRadius: 'md',
-            paddingAll: 'md',
-            action: options.action,
-            contents: [{
-                type: 'text',
-                text: options.action.label,
-                color: options.style === 'primary' ? '#FFFFFF' : '#333333',
-                align: 'center',
-                size: 'sm',
-                gravity: 'center',
-                weight: 'bold'
-            }]
-        });
-
-        // 建立各分類的「細項開關」
-        if (settings.admin_notifications_enabled) {
-            const adminSwitches = [
-                createClickableBox({ style: settings.admin_failed_task_alert_enabled ? 'primary' : 'secondary', color: '#28a745', action: { type: 'postback', label: '失敗任務提醒', data: `action=toggle_global_setting&key=admin_failed_task_alert_enabled&value=${settings.admin_failed_task_alert_enabled}` } })
-            ];
-            bodyContents.push(...createSingleRowSection('管理員通知細項', adminSwitches));
-        }
-        if (settings.teacher_notifications_enabled) {
-            const teacherSwitches = [
-                createClickableBox({ style: settings.teacher_class_reminder_24hr ? 'primary' : 'secondary', action: { type: 'postback', label: '24H課程提醒', data: `action=toggle_global_setting&key=teacher_class_reminder_24hr_enabled&value=${settings.teacher_class_reminder_24hr}` } }),
-                createClickableBox({ style: settings.teacher_new_order ? 'primary' : 'secondary', action: { type: 'postback', label: '新訂單通知', data: `action=toggle_global_setting&key=teacher_new_order_enabled&value=${settings.teacher_new_order}` } }),
-                createClickableBox({ style: settings.teacher_new_message ? 'primary' : 'secondary', action: { type: 'postback', label: '新留言通知', data: `action=toggle_global_setting&key=teacher_new_message_enabled&value=${settings.teacher_new_message}` } }),
-            ];
-            bodyContents.push(...createSingleRowSection('老師通知細項', teacherSwitches));
-        }
-        if (settings.student_notifications_enabled) {
-             const studentSwitches = [
-                createClickableBox({ style: settings.student_class_reminder_1hr ? 'primary' : 'secondary', action: { type: 'postback', label: '1H上課提醒', data: `action=toggle_global_setting&key=student_class_reminder_1hr_enabled&value=${settings.student_class_reminder_1hr}` } }),
-                createClickableBox({ style: settings.student_order_result ? 'primary' : 'secondary', action: { type: 'postback', label: '訂單結果通知', data: `action=toggle_global_setting&key=student_order_result_enabled&value=${settings.student_order_result}` } }),
-                createClickableBox({ style: settings.student_message_reply ? 'primary' : 'secondary', action: { type: 'postback', label: '老師回覆通知', data: `action=toggle_global_setting&key=student_message_reply_enabled&value=${settings.student_message_reply}` } }),
-                createClickableBox({ style: settings.student_welcome_message ? 'primary' : 'secondary', action: { type: 'postback', label: '新好友歡迎訊息', data: `action=toggle_global_setting&key=student_welcome_message_enabled&value=${settings.student_welcome_message}` } }),
-                createClickableBox({ style: settings.student_new_announcement ? 'primary' : 'secondary', action: { type: 'postback', label: '新公告提醒', data: `action=toggle_global_setting&key=student_new_announcement_enabled&value=${settings.student_new_announcement}` } }),
-            ];
-            bodyContents.push(...createSingleRowSection('學員通知細項', studentSwitches));
-        }
-
-        // 建立「常用管理功能」
-        const otherCommands = [
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '系統狀態', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SYSTEM_STATUS)}` } }),
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '失敗任務管理', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.FAILED_TASK_MANAGEMENT)}` } }),
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '查看錯誤日誌', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.VIEW_ERROR_LOGS)}` } }),
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '更新圖文選單', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.FORCE_UPDATE_RICH_MENU)}` } }),
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '授權老師', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.ADD_TEACHER)}` } }),
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '移除老師', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.REMOVE_TEACHER)}` } }),
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '模擬學員身份', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SIMULATE_STUDENT)}` } }),
-            createClickableBox({ style: 'secondary', action: { type: 'postback', label: '模擬老師身份', data: `action=run_command&text=${encodeURIComponent(CONSTANTS.COMMANDS.ADMIN.SIMULATE_TEACHER)}` } })
-        ];
-        bodyContents.push(...createSingleRowSection('常用管理功能', otherCommands));
     }
 
-    // 組裝成最後的 Flex Message
+    // 3. 常用管理功能入口 (永遠顯示)
+    bodyContents.push({
+        type: 'button',
+        style: 'secondary',
+        height: 'sm',
+        action: {
+            type: 'postback',
+            label: '🛠️ 常用管理功能',
+            data: 'action=view_management_functions'
+        }
+    });
+
+    // 4. 組裝成最後的 Flex Message
     return {
         type: 'flex',
         altText: '管理者控制面板',
         contents: {
             type: 'bubble',
             size: 'giga',
-            header: {
-                type: 'box',
-                layout: 'vertical',
-                contents: [{ type: 'text', text: '⚙️ 管理者控制面板', color: '#FFFFFF', weight: 'bold', size: 'lg' }],
-                backgroundColor: '#343A40',
-                paddingAll: 'lg'
-            },
+            header: createStandardHeader('⚙️ 管理者控制面板'),
             body: {
                 type: 'box',
                 layout: 'vertical',
                 paddingAll: 'lg',
-                spacing: 'sm',
+                spacing: 'md',
                 contents: bodyContents
             }
         }
