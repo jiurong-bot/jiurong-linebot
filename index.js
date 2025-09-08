@@ -1011,7 +1011,7 @@ async function promoteNextOnWaitlist(client, courseId) {
       // 舊邏輯：直接遞補
       students.push(promotedUserId);
       const notifyMessage = { type: 'text', text: `🎉 候補成功通知 🎉\n您候補的課程「${getCourseMainTitle(course.title)}」已有空位，已為您自動預約成功！`};
-      await enqueuePushTask(promotedUserId, notifyMessage);
+      await enqueuePushTask(promotedUserId, notifyMessage, { settingKey: 'student_new_announcement' });
     }
 
     // 無論是哪種邏輯，最後都要更新課程的候補名單
