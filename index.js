@@ -371,24 +371,37 @@ async function getNotificationStatus() {
         return true;
     }
 }
-
-
+// [程式夥伴修改] V42.11 - 升級 enqueuePushTask 函式，整合開關邏輯
 /**
  * [V24.0 新增] 將一個推播任務加入到資料庫佇列中
  * @param {string} recipientId - 收件人 User ID
  * @param {object|object[]} message - LINE 訊息物件或物件陣列
- * @param {Date} [sendAt=null] - 預計發送時間，若為 null 則立即發送
+ * @param {object} [options={}] - (可選) 其他選項
+ * @param {Date} [options.sendAt=null] - 預計發送時間
+ * @param {string} [options.settingKey=null] - (學員專用) 要檢查的細項推播設定鍵
  */
-async function enqueuePushTask(recipientId, message, sendAt = null) {
+async function enqueuePushTask(recipientId, message, { sendAt = null, settingKey = null } = {}) {
   const isSystemRecipient = [TEACHER_ID, ADMIN_USER_ID].includes(recipientId);
+
+  // 1. 檢查系統總開關 (僅對老師/管理員有效)
   if (isSystemRecipient) {
       const notificationsEnabled = await getNotificationStatus();
       if (!notificationsEnabled) {
           console.log(`[DEV MODE] 系統推播功能已關閉，已阻擋傳送給 ${recipientId} 的通知。`);
           return;
       }
+  } 
+  // 2. 檢查學員的細項開關 (如果 settingKey 有被提供)
+  else if (settingKey) {
+      const settings = await getGlobalNotificationSettings();
+      // 如果找不到設定鍵或設定值為 false，就直接返回
+      if (!settings[settingKey]) {
+          console.log(`[Push Blocked] 因使用者設定 (${settingKey})，已阻擋傳送給 ${recipientId} 的通知。`);
+          return;
+      }
   }
   
+  // 3. 如果通過所有檢查，就將任務加入資料庫
   try {
     await executeDbQuery(async (db) => {
         const messagePayload = Array.isArray(message) ? message : [message];
@@ -398,9 +411,7 @@ async function enqueuePushTask(recipientId, message, sendAt = null) {
             return;
         }
 
-
         const sendTimestamp = sendAt instanceof Date ? sendAt.toISOString() : new Date().toISOString();
-
 
         await db.query(
           `INSERT INTO tasks (recipient_id, message_payload, send_at) VALUES ($1, $2, $3)`,
@@ -411,53 +422,61 @@ async function enqueuePushTask(recipientId, message, sendAt = null) {
     console.error(`❌ enqueuePushTask 寫入任務失敗 for ${recipientId}:`, err);
   }
 }
+// [程式夥伴修改] V42.11 - 升級 enqueueBatchPushTasks 函式，整合開關邏輯
 /**
  * [V31.1 新增] 將多個推播任務批次加入到資料庫佇列中
  * @param {Array<object>} tasks - 任務物件的陣列，每個物件應包含 { recipientId: string, message: object|object[] }
+ * @param {object} [options={}] - (可選) 其他選項
+ * @param {string} [options.settingKey=null] - (學員專用) 要檢查的細項推播設定鍵
  */
-async function enqueueBatchPushTasks(tasks) {
+async function enqueueBatchPushTasks(tasks, { settingKey = null } = {}) {
   if (!tasks || tasks.length === 0) {
     return;
   }
 
+  // 1. 檢查學員的細項開關 (如果 settingKey 有被提供)
+  if (settingKey) {
+    const settings = await getGlobalNotificationSettings();
+    if (!settings[settingKey]) {
+        console.log(`[Push Blocked] 因使用者設定 (${settingKey})，已阻擋此批次通知。`);
+        return;
+    }
+  }
 
-  // 與單一任務函式一樣，檢查系統推播設定
+  // 2. 檢查系統總開關 (過濾掉老師/管理員的部分)
   const systemRecipients = [TEACHER_ID, ADMIN_USER_ID];
   let tasksToEnqueue = tasks;
-  // 只有在任務列表中包含系統管理員/老師時，才需要檢查推播開關
   if (tasks.some(t => systemRecipients.includes(t.recipientId))) {
     const notificationsEnabled = await getNotificationStatus();
     if (!notificationsEnabled) {
       console.log(`[DEV MODE] 系統推播功能已關閉，已過濾掉傳送給老師/管理員的批次通知。`);
       tasksToEnqueue = tasks.filter(t => !systemRecipients.includes(t.recipientId));
-      if (tasksToEnqueue.length === 0) return; // 如果過濾後沒有任務了，就直接返回
+      if (tasksToEnqueue.length === 0) return;
     }
   }
 
-
+  // 3. 如果通過所有檢查，就將任務加入資料庫
   try {
     const recipientIds = [];
     const messagePayloads = [];
     const sendTimestamps = [];
     const now = new Date().toISOString();
+    
     tasksToEnqueue.forEach(task => {
       const messagePayload = Array.isArray(task.message) ? task.message : [task.message];
       const validMessages = messagePayload.filter(m => typeof m === 'object' && m !== null && m.type);
       if (validMessages.length > 0) {
         recipientIds.push(task.recipientId);
         messagePayloads.push(JSON.stringify(validMessages));
-        sendTimestamps.push(now); // 所有批次任務使用相同的時間戳
+        sendTimestamps.push(now);
       } else {
         console.error(`[enqueueBatchPushTasks] 嘗試為 ${task.recipientId} 加入無效的訊息 payload`, task.message);
       }
     });
 
-
     if (recipientIds.length === 0) return;
 
-
     await executeDbQuery(async (db) => {
-      // 使用 unnest 進行高效的批次插入
       await db.query(
         `INSERT INTO tasks (recipient_id, message_payload, send_at)
          SELECT * FROM unnest($1::text[], $2::jsonb[], $3::timestamp[])`,
@@ -468,6 +487,7 @@ async function enqueueBatchPushTasks(tasks) {
     console.error(`❌ enqueueBatchPushTasks 批次寫入任務失敗:`, err);
   }
 }
+
 /**
  * [V35.3 新增] 查詢所有老師並發送通知給他們
  * @param {object|object[]} message - 要發送的 LINE 訊息物件或陣列
