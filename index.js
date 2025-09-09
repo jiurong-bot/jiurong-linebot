@@ -1,4 +1,4 @@
-// index.js - V43.2 (合併查詢)
+// index.js - V43.3 (user物件作為參數傳遞)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6562,7 +6562,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43.2 (合併查詢)`);
+    console.log(`Bot 版本 V43.3 (user物件作為參數傳遞)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
