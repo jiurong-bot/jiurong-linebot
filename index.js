@@ -3441,18 +3441,20 @@ await clientDB.query(
         }
         break;
     }
-  
-  } else if (pendingManualAdjustSearch[userId]) {
-    const searchQuery = text;
-    delete pendingManualAdjustSearch[userId];
-    const res = await executeDbQuery(client => 
-        client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${searchQuery.toLowerCase()}%`, searchQuery])
-    );
-    if (res.rows.length === 0) {
-        return { type: 'text', text: `找不到學員「${searchQuery}」。請重新操作。` };
-    }
-    return showStudentSelectionForAdjustHistory(res.rows, searchQuery);
-  }
+} else if (pendingManualAdjustSearch[userId]) {
+    // 建立一個函式，告訴 handleStudentSearchFlow 找到學員後該做什麼
+    const showSelectionFunction = (users) => {
+        return buildUserSelectionCarousel(
+            users,
+            '請選擇要查詢手動調整紀錄的學員',
+            'action=view_manual_adjust_history&user_id=${userId}&page=1', // 按鈕的 Postback 動作
+            '查看此學員紀錄' // 按鈕上的文字
+        );
+    };
+
+    // 直接呼叫通用的流程函式
+    return handleStudentSearchFlow(text, pendingManualAdjustSearch, userId, showSelectionFunction);
+}
 
   // 使用新函式來簡化查詢流程
   else if (pendingPurchaseHistorySearch[userId]) {
@@ -4190,15 +4192,6 @@ function buildUserSelectionCarousel(users, altText, postbackActionTemplate, butt
         altText: altText,
         contents: { type: 'carousel', contents: userBubbles }
     };
-}
-// [V39.6 重構]
-async function showStudentSelectionForAdjustHistory(users, originalQuery) {
-    return buildUserSelectionCarousel(
-        users,
-        `請選擇要查詢手動調整紀錄的學員`,
-        'action=view_manual_adjust_history&user_id=${userId}&page=1',
-        '查看此學員紀錄'
-    );
 }
 
 // [V39.6 重構]
