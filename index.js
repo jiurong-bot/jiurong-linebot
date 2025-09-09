@@ -3581,6 +3581,7 @@ await clientDB.query(
 }
 async function handleAdminCommands(event, user) {
   // [V38.6 修正] 增加對全形 @ 符號的處理，提升指令辨識的彈性
+  const userId = user.id;
   const rawText = event.message.text ?
 event.message.text.trim() : '';
   const text = rawText.replace(/＠/g, '@').normalize(); // 將全形＠自動換成半形@
