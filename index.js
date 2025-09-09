@@ -2982,6 +2982,7 @@ async function handleStudentSearchFlow(searchQuery, pendingState, userId, showSe
 }
 
 async function handleTeacherCommands(event, user) {
+  const userId = user.id;
   const text = event.message.text ? event.message.text.trim().normalize() : '';
   // 優先處理有延續性的對話 (Pending States)
   if (pendingProductCreation[userId]) {
