@@ -1,4 +1,4 @@
-// index.js - V43 (整合相似查詢邏輯)
+// index.js - V43.1 (統一圖片佔位符)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
