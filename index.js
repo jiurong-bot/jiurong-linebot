@@ -1521,7 +1521,6 @@ async function buildProfileConfirmationMessage(userId, newData) {
         const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
         const currentProfile = res.rows[0] || { name: '新老師', bio: '尚未填寫簡介', image_url: null };
         const previewProfile = { ...currentProfile, ...newData };
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
         
         return {
             type: 'flex',
@@ -1529,7 +1528,7 @@ async function buildProfileConfirmationMessage(userId, newData) {
             contents: {
                 type: 'bubble',
                 header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: `⚠️ 請確認更新內容`, weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#FFC107' },
-                hero: { type: 'image', url: previewProfile.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                hero: { type: 'image', url: previewProfile.image_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
                 body: {
                     type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md',
                     contents: [
