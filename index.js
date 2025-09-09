@@ -3774,6 +3774,7 @@ await saveUser(user);
 }
 
 async function handleStudentCommands(event, user) {
+  const userId = user.id;
   const text = event.message.text ?
 event.message.text.trim().normalize() : '';
 
