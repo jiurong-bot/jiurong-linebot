@@ -3811,7 +3811,7 @@ event.message.text.trim().normalize() : '';
         }
     }
     
-    const purchaseFlowResult = await handlePurchaseFlow(event, userId);
+    const purchaseFlowResult = await handlePurchaseFlow(event, user);
   
   if (purchaseFlowResult.handled) {
       return purchaseFlowResult.reply;
