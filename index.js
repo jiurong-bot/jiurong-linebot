@@ -534,25 +534,32 @@ async function getPendingNotificationsForUser(user) {
     const notifications = {};
     try {
         await executeDbQuery(async (client) => {
-            if (user.role === 'teacher') {
-                const [newMessages, pendingPointOrders, pendingShopOrders, upcomingCoursesRes] = await Promise.all([
-                    client.query("SELECT COUNT(*) FROM feedback_messages WHERE status = 'new'"),
-                    client.query("SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation'"),
-                    client.query("SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')"),
-                    client.query(`
-                        SELECT title, time 
-                        FROM courses 
-                        WHERE time BETWEEN NOW() AND NOW() + interval '24 hours' 
-                        ORDER BY time ASC
-                    `)
-                ]);
-                notifications.newMessages = parseInt(newMessages.rows[0].count, 10);
-                notifications.pendingPointOrders = parseInt(pendingPointOrders.rows[0].count, 10);
-                notifications.pendingShopOrders = parseInt(pendingShopOrders.rows[0].count, 10);
-                
-                // 處理即將到來的課程
-                notifications.upcomingCourses = upcomingCoursesRes.rows;
+      if (user.role === 'teacher') {
+    // 1. 將三個計數查詢合併為一個，課程查詢維持不變
+    const [statsRes, upcomingCoursesRes] = await Promise.all([
+        client.query(`
+            SELECT
+                (SELECT COUNT(*) FROM feedback_messages WHERE status = 'new') AS new_messages_count,
+                (SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation') AS pending_point_orders_count,
+                (SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')) AS pending_shop_orders_count
+        `),
+        client.query(`
+            SELECT title, time 
+            FROM courses 
+            WHERE time BETWEEN NOW() AND NOW() + interval '24 hours' 
+            ORDER BY time ASC
+        `)
+    ]);
 
+    // 2. 接收合併後的結果，它會在 statsRes.rows[0] 中
+    const stats = statsRes.rows[0];
+
+    // 3. 從新的結果物件中，透過我們設定的「別名」來取出計數
+    notifications.newMessages = parseInt(stats.new_messages_count, 10);
+    notifications.pendingPointOrders = parseInt(stats.pending_point_orders_count, 10);
+    notifications.pendingShopOrders = parseInt(stats.pending_shop_orders_count, 10);
+    notifications.upcomingCourses = upcomingCoursesRes.rows;
+        
             } else if (user.role === 'admin') {
                 const failedTasks = await client.query("SELECT COUNT(*) FROM failed_tasks");
                 notifications.failedTasks = parseInt(failedTasks.rows[0].count, 10);
