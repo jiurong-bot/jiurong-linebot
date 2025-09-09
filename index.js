@@ -6341,9 +6341,6 @@ async function showCourseRosterDetails(courseId) {
 
 
         const userMap = new Map(users.map(u => [u.id, u]));
-        const placeholderAvatar = 'https://i.imgur.com/8l1Yd2S.png';
-
-
         const createStudentListComponent = (ids, title) => {
             const studentCounts = ids.reduce((acc, id) => {
                 acc[id] = (acc[id] || 0) + 1;
@@ -6370,7 +6367,7 @@ async function showCourseRosterDetails(courseId) {
                         contents: [
                             {
                                 type: 'image',
-                                url: user?.picture_url || placeholderAvatar,
+                                url: user?.picture_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER,
                                 aspectRatio: '1:1',
                                 size: 'md',
                                 flex: 0
