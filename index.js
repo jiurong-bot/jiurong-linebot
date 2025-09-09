@@ -3591,7 +3591,6 @@ if (studentSearchRes.rows.length === 0) {
           return { type: 'text', text: `找不到與「${text}」相關的學員。請重新輸入或取消操作。`, quickReply: { items: getCancelMenu() } };
 }
 
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
 const userBubbles = studentSearchRes.rows.map(s => ({
             type: 'bubble',
             body: {
@@ -3602,7 +3601,7 @@ const userBubbles = studentSearchRes.rows.map(s => ({
  
                    {
                         type: 'image',
-                        url: s.picture_url || placeholder_avatar,
+                        url: s.picture_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER,
                         size: 'md',
     
                     aspectRatio: '1:1',
