@@ -3365,15 +3365,17 @@ async function handleTeacherCommands(event, userId) {
   } else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
     switch (state.step) {
-      case 'await_student_search':
-        const res = await executeDbQuery(client => 
-            client.query(`SELECT id, name, picture_url FROM users WHERE role = 'student' AND (LOWER(name) LIKE $1 OR id = $2) LIMIT 10`, [`%${text.toLowerCase()}%`, text])
-        );
-        if (res.rows.length === 0) { return { type: 'text', text: `找不到學員「${text}」。請重新輸入或取消操作。`, quickReply: { items: getCancelMenu() } };
-        }
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
-        const userBubbles = res.rows.map(u => ({ type: 'bubble', body: { type: 'box', layout: 'horizontal', spacing: 'md', contents: [ { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' }, { type: 'box', layout: 'vertical', flex: 3, justifyContent: 'center', contents: [ { type: 'text', text: u.name, weight: 'bold', size: 'lg', wrap: true }, { type: 'text', text: `ID: ${u.id}`, size: 'xxs', color: '#AAAAAA', margin: 'sm' } ] } ] }, footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'primary', color: '#1A759F', height: 'sm', action: { type: 'postback', label: '選擇此學員', data: `action=select_student_for_adjust&studentId=${u.id}` } }] } }));
-        return { type: 'flex', altText: '請選擇要調整點數的學員', contents: { type: 'carousel', contents: userBubbles } };
+    case 'await_student_search': { 
+        const showSelectionFunction = (users) => {
+            return buildUserSelectionCarousel(
+                users,
+                '請選擇要調整點數的學員',
+                'action=select_student_for_adjust&studentId=${userId}', // 按鈕的 Postback 動作
+                '選擇此學員' // 按鈕上的文字
+            );
+        };
+        return handleStudentSearchFlow(text, pendingManualAdjust, userId, showSelectionFunction);
+    }
       case 'await_operation':
         if (text === CONSTANTS.COMMANDS.TEACHER.ADD_POINTS || text === CONSTANTS.COMMANDS.TEACHER.DEDUCT_POINTS) { state.operation = text === CONSTANTS.COMMANDS.TEACHER.ADD_POINTS ? 'add' : 'deduct'; state.step = 'await_amount'; return { type: 'text', text: `請輸入要 ${text === CONSTANTS.COMMANDS.TEACHER.ADD_POINTS ? '增加' : '扣除'} 的點數數量 (純數字)：`, quickReply: { items: getCancelMenu() } };
         } 
