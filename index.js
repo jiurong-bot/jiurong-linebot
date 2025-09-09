@@ -4088,8 +4088,6 @@ async function showStudentSearchResults(query, page) {
             return '沒有更多搜尋結果了。';
         }
 
-
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
         const userBubbles = pageUsers.map(u => ({
             type: 'bubble',
             body: {
@@ -4097,7 +4095,7 @@ async function showStudentSearchResults(query, page) {
                 layout: 'horizontal',
                 spacing: 'md',
                 contents: [
-                    { type: 'image', url: u.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
+                    { type: 'image', url: u.picture_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
                     { 
                         type: 'box', 
                         layout: 'vertical', 
@@ -4140,7 +4138,6 @@ async function showStudentSearchResults(query, page) {
  * @returns {object} - 可直接回覆的 Flex Message 物件。
  */
 function buildUserSelectionCarousel(users, altText, postbackActionTemplate, buttonLabel) {
-    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
     const userBubbles = users.map(u => {
         // 將模板中的 ${userId} 替換為實際的 user id
         const postbackData = postbackActionTemplate.replace('${userId}', u.id);
@@ -4154,7 +4151,7 @@ function buildUserSelectionCarousel(users, altText, postbackActionTemplate, butt
                 contents: [
                     { 
                         type: 'image', 
-                        url: u.picture_url || placeholder_avatar, 
+                        url: u.picture_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, 
                         size: 'md', 
                         aspectRatio: '1:1', 
                         aspectMode: 'cover' 
@@ -4252,13 +4249,10 @@ async function showAllTeachersList(page) {
         if (pageTeachers.length === 0) {
             return '沒有更多老師的資訊了。';
         }
-        
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
-
 
         const teacherBubbles = pageTeachers.map(t => ({
             type: 'bubble',
-            hero: { type: 'image', url: t.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+            hero: { type: 'image', url: t.image_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
             body: {
                 type: 'box', layout: 'vertical', paddingAll: 'lg',
                 contents: [
@@ -4287,13 +4281,11 @@ async function buildTeacherSelectionCarousel() {
             return { type: 'text', text: '錯誤：系統中沒有任何師資檔案，請先至「個人資訊」建立至少一位老師的檔案。' };
         }
 
-
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
         const teacherBubbles = res.rows.map(t => ({
             type: 'bubble',
             hero: {
                 type: 'image',
-                url: t.image_url || placeholder_avatar,
+                url: t.image_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER,
                 size: 'full',
                 aspectRatio: '1:1',
                 aspectMode: 'cover',
@@ -6797,12 +6789,11 @@ async function handleTeacherActions(action, data, user) {
                 const res = await client.query('SELECT * FROM teachers WHERE line_user_id = $1', [userId]);
                 if (res.rows.length > 0) {
                     const profile = res.rows[0];
-                    const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
                     return {
                         type: 'flex', altText: '我的個人資訊',
                         contents: {
                             type: 'bubble',
-                            hero: { type: 'image', url: profile.image_url || placeholder_avatar, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
+                            hero: { type: 'image', url: profile.image_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, size: 'full', aspectRatio: '1:1', aspectMode: 'cover' },
                             body: { type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'md', contents: [ { type: 'text', text: profile.name, weight: 'bold', size: 'xl' }, { type: 'text', text: profile.bio || '尚未填寫簡介', wrap: true, size: 'sm', color: '#666666' } ] },
                             footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', contents: [ { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯姓名', data: `action=edit_teacher_profile_field&field=name` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '✏️ 編輯簡介', data: `action=edit_teacher_profile_field&field=bio` } }, { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📷 更換照片', data: `action=edit_teacher_profile_field&field=image_url` } }, ] }
                         }
