@@ -1,4 +1,4 @@
-// index.js - V43 (對話狀態管理器)
+// index.js - V43 (整合相似查詢邏輯)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6573,7 +6573,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43 (對話狀態管理器)`);
+    console.log(`Bot 版本 V43 (整合相似查詢邏輯)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
