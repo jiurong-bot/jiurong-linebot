@@ -2717,8 +2717,6 @@ async function showTeacherListForRemoval(page) {
             return '沒有更多老師了。';
         }
 
-
-        const placeholder_avatar = 'https://i.imgur.com/8l1Yd2S.png';
         const teacherBubbles = pageTeachers.map(t => ({
             type: 'bubble',
             body: {
@@ -2726,7 +2724,7 @@ async function showTeacherListForRemoval(page) {
                 layout: 'horizontal',
                 spacing: 'md',
                 contents: [
-                    { type: 'image', url: t.picture_url || placeholder_avatar, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
+                    { type: 'image', url: t.picture_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
                     { type: 'box', layout: 'vertical', flex: 3, justifyContent: 'center',
                         contents: [
                             { type: 'text', text: t.name, weight: 'bold', size: 'lg', wrap: true },
