@@ -8599,7 +8599,7 @@ async function handleEvent(event) {
                 user.role = 'admin';
                 await saveUser(user);
             }
-            mainReplyContent = await handleAdminCommands(event, userId);
+            mainReplyContent = await handleAdminCommands(event, user);
         }
         else if (event.type === 'message') {
             contextForError = `處理訊息: ${text}`;
