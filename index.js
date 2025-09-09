@@ -1655,9 +1655,8 @@ function setupConversationTimeout(userId, conversationState, stateName, onTimeou
     }, CONSTANTS.INTERVALS.CONVERSATION_TIMEOUT_MS);
     conversationState[userId] = { ...conversationState[userId], timeoutId };
 }
-async function handlePurchaseFlow(event, userId) {
+async function handlePurchaseFlow(event, user) {
     const text = event.message.text ? event.message.text.trim() : '';
-    const user = await getUser(userId);
     const purchaseState = pendingPurchase[userId];
 
 
