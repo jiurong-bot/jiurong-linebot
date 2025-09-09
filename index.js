@@ -6568,7 +6568,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43 (整合相似查詢邏輯)`);
+    console.log(`Bot 版本 V43 (統一圖片佔位符)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
