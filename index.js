@@ -1,4 +1,4 @@
-// index.js - V42.11 (通知開關簡化)
+// index.js - V42.12 ()
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
