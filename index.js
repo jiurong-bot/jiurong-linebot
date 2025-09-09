@@ -8609,9 +8609,9 @@ async function handleEvent(event) {
         else if (event.type === 'message') {
             contextForError = `處理訊息: ${text}`;
             switch(user.role) {
-                case 'admin': mainReplyContent = await handleAdminCommands(event, userId); break;
-                case 'teacher': mainReplyContent = await handleTeacherCommands(event, userId); break;
-                default: mainReplyContent = await handleStudentCommands(event, userId); break;
+                case 'admin': mainReplyContent = await handleAdminCommands(event, user); break;
+                case 'teacher': mainReplyContent = await handleTeacherCommands(event, user); break;
+                default: mainReplyContent = await handleStudentCommands(event, user); break;
             }
         } 
         else if (event.type === 'postback') {
