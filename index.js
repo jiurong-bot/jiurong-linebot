@@ -2981,9 +2981,8 @@ async function handleStudentSearchFlow(searchQuery, pendingState, userId, showSe
     return showSelectionFunction(res.rows);
 }
 
-async function handleTeacherCommands(event, userId) {
+async function handleTeacherCommands(event, user) {
   const text = event.message.text ? event.message.text.trim().normalize() : '';
-  const user = await getUser(userId);
   // 優先處理有延續性的對話 (Pending States)
   if (pendingProductCreation[userId]) {
     const state = pendingProductCreation[userId];
@@ -3580,13 +3579,11 @@ await clientDB.query(
     return handleUnknownTeacherCommand(text);
   }
 }
-async function handleAdminCommands(event, userId) {
+async function handleAdminCommands(event, user) {
   // [V38.6 修正] 增加對全形 @ 符號的處理，提升指令辨識的彈性
   const rawText = event.message.text ?
 event.message.text.trim() : '';
   const text = rawText.replace(/＠/g, '@').normalize(); // 將全形＠自動換成半形@
-
-  const user = await getUser(userId);
 if (pendingTeacherAddition[userId]) {
     const state = pendingTeacherAddition[userId];
 switch (state.step) {
@@ -3774,11 +3771,9 @@ await saveUser(user);
   }
 }
 
-async function handleStudentCommands(event, userId) {
+async function handleStudentCommands(event, user) {
   const text = event.message.text ?
 event.message.text.trim().normalize() : '';
-    const user = await getUser(userId);
-
 
     // [V35.5 新增] 處理商品訂單的後五碼回報
     if (pendingShopPayment[userId]) {
