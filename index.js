@@ -34,6 +34,10 @@ const CONSTANTS = {
     TWO_HOURS_IN_MS: 7200000,
     ONE_HOUR_IN_MS: 3600000,
   },
+  IMAGES: { 
+    PLACEHOLDER_AVATAR_USER: 'https://i.imgur.com/8l1Yd2S.png',
+    PLACEHOLDER_AVATAR_COURSE: 'https://i.imgur.com/s43t5tQ.jpeg'
+  },
   INTERVALS: {
     PING_INTERVAL_MS: 1000 * 60 * 5,
     CONVERSATION_TIMEOUT_MS: 1000 * 60 * 5,
