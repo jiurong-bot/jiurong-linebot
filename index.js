@@ -8394,9 +8394,9 @@ async function handlePostback(event, user) {
         const commandText = decodeURIComponent(data.get('text'));
         if (!commandText) return null;
         const simulatedEvent = { ...event, type: 'message', message: { type: 'text', id: `simulated_${Date.now()}`, text: commandText } };
-        if (user.role === 'admin') return handleAdminCommands(simulatedEvent, user.id);
-        if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, user.id);
-        return handleStudentCommands(simulatedEvent, user.id);
+        if (user.role === 'admin') return handleAdminCommands(simulatedEvent, user);
+        if (user.role === 'teacher') return handleTeacherCommands(simulatedEvent, user);
+        return handleStudentCommands(simulatedEvent, user);
     }
 
     if (action === 'do_nothing') {
