@@ -5094,8 +5094,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        
        const showMorePrefix = postbackData.get('show_more');
        const seriesPage = parseInt(postbackData.get('series_page') || '1', 10);
-       
-       const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
+      
        let allSeries = Object.values(courseSeries);
        if (showMorePrefix) {
            const activeSeriesIndex = allSeries.findIndex(s => s.prefix === showMorePrefix);
@@ -5250,7 +5249,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
                             contents: [
                                 {
                                     type: 'image',
-                                    url: series.teacherImageUrl || placeholder_avatar,
+                                    url: series.teacherImageUrl || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_COURSE,
                                     aspectRatio: '1:1',
                                     aspectMode: 'cover',
                                     size: 'full'
@@ -5353,7 +5352,6 @@ async function showMyCourses(userId, page) {
             return '沒有更多課程了。';
         }
 
-        const placeholder_avatar = 'https://i.imgur.com/s43t5tQ.jpeg';
         const courseBubbles = pageCardsData.map(cardData => {
             const c = cardData.course;
             const statusComponents = [];
@@ -5395,7 +5393,7 @@ async function showMyCourses(userId, page) {
                     contents: [
                         {
                             type: 'image',
-                            url: c.teacher_image_url || placeholder_avatar,
+                            url: c.teacher_image_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_COURSE,
                             aspectRatio: '1:1',
                             aspectMode: 'cover',
                             size: 'md',
