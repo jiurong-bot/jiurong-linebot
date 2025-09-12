@@ -6050,59 +6050,13 @@ async function showPreorderProducts(page) {
         };
     });
 }
-
 // =======================================================
-// [新增] 顯示待出貨的預購商品列表
+// [新增] 顯示待出貨的預購商品列表 (效能優化版)
 // =======================================================
 async function showFulfillmentList(page) {
-    const mapRowToBubble = async (product) => {
-        const rosterRes = await executeDbQuery(client =>
-            client.query("SELECT user_name, quantity FROM product_preorders WHERE product_id = $1 AND status = 'active' ORDER BY created_at ASC", [product.id])
-        );
-        const rosterItems = rosterRes.rows.map(r => `• ${r.user_name} (x${r.quantity})`).join('\n');
-
-        return {
-            type: 'bubble',
-            size: 'giga',
-            header: {
-                type: 'box', layout: 'vertical', paddingAll: 'lg', backgroundColor: '#1A759F',
-                contents: [
-                    { type: 'text', text: product.name, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
-                    { type: 'text', text: '待通知出貨', size: 'sm', color: '#FFFFFF' }
-                ]
-            },
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
-                contents: [
-                    { type: 'text', text: '最終預購名單：', weight: 'bold' },
-                    { type: 'text', text: rosterItems.length > 0 ? rosterItems : '無', wrap: true, size: 'sm' }
-                ]
-            },
-            footer: {
-                type: 'box', layout: 'vertical', spacing: 'sm',
-                contents: [
-                    {
-                        type: 'button', style: 'primary', color: '#28A745', height: 'sm',
-                        action: { type: 'postback', label: '🚚 商品已到貨 (通知付款)', data: `action=notify_product_arrival_start&product_id=${product.id}` }
-                    },
-                    {
-                        type: 'button',
-                        style: 'secondary',
-                        color: '#DE5246', // 使用紅色系以示警示
-                        height: 'sm',
-                        action: {
-                            type: 'postback',
-                            label: '❗ 商品缺貨 (取消預購)',
-                            data: `action=cancel_preorder_start&product_id=${product.id}`
-                        }
-                    }
-                ]
-            }
-        };
-    };
-
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
+        // 步驟 1: 找出當頁需要顯示的、有活躍預購的已下架商品
         const res = await client.query(`
             SELECT p.* FROM products p
             WHERE p.status = 'unavailable' 
@@ -6114,16 +6068,80 @@ async function showFulfillmentList(page) {
         `, [CONSTANTS.PAGINATION_SIZE + 1, offset]);
 
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        const pageProducts = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
-        if (pageRows.length === 0 && page === 1) {
+        if (pageProducts.length === 0 && page === 1) {
             return '目前沒有待處理的已到貨預購商品。';
         }
-        if (pageRows.length === 0) {
+        if (pageProducts.length === 0) {
             return '沒有更多待處理的預購商品了。';
         }
 
-        const bubbles = await Promise.all(pageRows.map(mapRowToBubble));
+        // ✅ 步驟 2: 收集本頁所有商品的 ID
+        const productIds = pageProducts.map(p => p.id);
+
+        // ✅ 步驟 3: 一次性查詢所有相關的預購名單
+        const rosterRes = await client.query(
+            `SELECT product_id, user_name, quantity 
+             FROM product_preorders 
+             WHERE product_id = ANY($1::int[]) AND status = 'active' 
+             ORDER BY product_id, created_at ASC`,
+            [productIds]
+        );
+
+        // ✅ 步驟 4: 將名單資料整理成 Map，方便快速查找
+        const rosterMap = new Map();
+        rosterRes.rows.forEach(r => {
+            if (!rosterMap.has(r.product_id)) {
+                rosterMap.set(r.product_id, []);
+            }
+            rosterMap.get(r.product_id).push(`• ${r.user_name} (x${r.quantity})`);
+        });
+
+        // 步驟 5: 組合 Bubble，直接從 Map 取用資料，不再查詢資料庫
+        const bubbles = pageProducts.map(product => {
+            const rosterItems = (rosterMap.get(product.id) || []).join('\n');
+
+            return {
+                type: 'bubble',
+                size: 'giga',
+                header: {
+                    type: 'box', layout: 'vertical', paddingAll: 'lg', backgroundColor: '#1A759F',
+                    contents: [
+                        { type: 'text', text: product.name, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
+                        { type: 'text', text: '待通知出貨', size: 'sm', color: '#FFFFFF' }
+                    ]
+                },
+                body: {
+                    type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
+                    contents: [
+                        { type: 'text', text: '最終預購名單：', weight: 'bold' },
+                        { type: 'text', text: rosterItems.length > 0 ? rosterItems : '無', wrap: true, size: 'sm' }
+                    ]
+                },
+                footer: {
+                    type: 'box', layout: 'vertical', spacing: 'sm',
+                    contents: [
+                        {
+                            type: 'button', style: 'primary', color: '#28A745', height: 'sm',
+                            action: { type: 'postback', label: '🚚 商品已到貨 (通知付款)', data: `action=notify_product_arrival_start&product_id=${product.id}` }
+                        },
+                        {
+                            type: 'button',
+                            style: 'secondary',
+                            color: '#DE5246',
+                            height: 'sm',
+                            action: {
+                                type: 'postback',
+                                label: '❗ 商品缺貨 (取消預購)',
+                                data: `action=cancel_preorder_start&product_id=${product.id}`
+                            }
+                        }
+                    ]
+                }
+            };
+        });
+
         const paginationBubble = createPaginationBubble('action=view_fulfillment_list', page, hasNextPage);
         if (paginationBubble) {
             bubbles.push(paginationBubble);
