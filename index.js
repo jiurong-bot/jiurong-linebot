@@ -814,17 +814,20 @@ async function getProductOrder(orderUID, dbClient) {
         return res.rows.length > 0 ? res.rows[0] : null;
     }, dbClient);
 }
-
-
 async function saveProductOrder(order, dbClient) {
     return executeDbQuery(async (client) => {
+        // ✅ 使用 UPSERT 語法，假設 order_uid 是唯一鍵
         await client.query(
-            `UPDATE product_orders SET status = $1, updated_at = $2, teacher_notes = $3 WHERE id = $4`,
-            [order.status, order.updated_at, order.teacher_notes, order.id]
+            `INSERT INTO product_orders (id, order_uid, status, updated_at, teacher_notes)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (order_uid) DO UPDATE SET
+                status = EXCLUDED.status,
+                updated_at = EXCLUDED.updated_at,
+                teacher_notes = EXCLUDED.teacher_notes`,
+            [order.id, order.order_uid, order.status, order.updated_at, order.teacher_notes]
         );
     }, dbClient);
 }
-
 
 async function saveOrder(order, dbClient) {
     return executeDbQuery(async (client) => {
