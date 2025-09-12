@@ -3832,7 +3832,7 @@ event.message.text.trim().normalize() : '';
 
     switch (state.type) {
         case 'cancel_book':
-    if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING) {
+        if (text === CONSTANTS.COMMANDS.STUDENT.CONFIRM_CANCEL_BOOKING) {
         
         const courseForCheck = await getCourse(state.course_id);
         if (!courseForCheck) {
@@ -3854,7 +3854,6 @@ event.message.text.trim().normalize() : '';
                 const currentCourse = courseForUpdateRes.rows[0];
                 const newStudents = [...currentCourse.students];
                 
-                // 修正點 1：保留 .splice() 的寫法，確保只移除一個名額
                 const indexToRemove = newStudents.indexOf(userId);
 
                 if (indexToRemove === -1) { 
@@ -3869,13 +3868,22 @@ event.message.text.trim().normalize() : '';
                 const userHistory = userForUpdateRes.rows[0].history || [];
                 const newHistory = [...userHistory, historyEntry];
                 await client.query('UPDATE users SET points = $1, history = $2 WHERE id = $3', [newPoints, JSON.stringify(newHistory), userId]);
-
-                // 修正點 2：先更新課程的 students 陣列
                 await client.query('UPDATE courses SET students = $1 WHERE id = $2', [newStudents, state.course_id]);
 
-                // 修正點 3：再呼叫重構後的遞補函式
-                await promoteNextOnWaitlist(client, state.course_id);
+                // ====================== [程式夥伴修正] ======================
+                // 在這裡加入刪除提醒任務的邏輯
+                // 我們透過使用者 ID 和訊息內容中的課程標題來鎖定要刪除的任務
+                const reminderTextPattern = `%${getCourseMainTitle(currentCourse.title)}%`;
+                await client.query(
+                    `DELETE FROM tasks 
+                     WHERE recipient_id = $1 
+                     AND status = 'pending' 
+                     AND message_payload::text LIKE $2`,
+                    [userId, reminderTextPattern]
+                );
+                // ==========================================================
 
+                await promoteNextOnWaitlist(client, state.course_id);
                 await client.query('COMMIT');
                 delete pendingBookingConfirmation[userId];
 
