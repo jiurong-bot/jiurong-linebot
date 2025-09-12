@@ -3141,23 +3141,38 @@ async function handleTeacherCommands(event, userId) {
                     if (coursesToCancelRes.rows.length === 0) { 
                         const errMsg = { type: 'text', text: `❌ 批次取消失敗：找不到可取消的「${backgroundState.prefix}」系列課程。`}; 
                         await enqueuePushTask(userId, errMsg); 
-                        return; 
+                         return; 
                     }
                     const coursesToCancel = coursesToCancelRes.rows; 
                     const affectedUsers = new Map();
-                    for (const course of coursesToCancel) { 
+              
+                     for (const course of coursesToCancel) { 
                         for (const studentId of course.students) { 
                             if (!affectedUsers.has(studentId)) affectedUsers.set(studentId, 0); 
-                            affectedUsers.set(studentId, affectedUsers.get(studentId) + course.points_cost); 
+                             affectedUsers.set(studentId, affectedUsers.get(studentId) + course.points_cost); 
                         } 
+
+                        // ====================== [程式夥伴新增] ======================
+                        // 順便刪除每一堂課可能對應的老師提醒
+                        const reminderTextPattern = `%${getCourseMainTitle(course.title)}%`;
+                        await client.query(
+                            `DELETE FROM tasks 
+                             WHERE recipient_id = $1 
+                             AND status = 'pending' 
+                             AND message_payload::text LIKE $2`,
+                            [course.teacher_id, reminderTextPattern]
+                        );
+                        // ==========================================================
                     }
+
                     for (const [studentId, refundAmount] of affectedUsers.entries()) { 
                         if (refundAmount > 0) { 
-                            await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [refundAmount, studentId]);
+                           await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [refundAmount, studentId]);
                         } 
                     }
                     const courseMainTitle = getCourseMainTitle(coursesToCancel[0].title);
                     await client.query("DELETE FROM courses WHERE id LIKE $1 AND time > NOW()", [`${backgroundState.prefix}%`]);
+
                     const batchTasks = Array.from(affectedUsers.entries()).map(([studentId, refundAmount]) => ({
                         recipientId: studentId,
                         message: { type: 'text', text: `課程取消通知：\n老師已取消「${courseMainTitle}」系列所有課程，已歸還 ${refundAmount} 點至您的帳戶。` }
