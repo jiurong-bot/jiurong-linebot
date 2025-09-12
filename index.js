@@ -880,18 +880,15 @@ async function logErrorToDb(error, userId = null, context = '') {
  */
 async function handleError(error, replyToken, context = '未知操作', userId = null) {
     console.error(`❌ 在執行 [${context}] 時為使用者 ${userId || 'N/A'} 發生錯誤:`, error.stack);
-
-    // 步驟 1: 將錯誤記錄到資料庫並取得錯誤代碼
+    
     const errorCode = await logErrorToDb(error, userId, context);
-
-    // 步驟 2: 準備回覆給使用者的訊息
+    
     let userMessage = `抱歉，系統發生了一點問題，請稍後再試。`;
     if (errorCode) {
-        // 如果成功記錄錯誤，附上錯誤代碼
         userMessage = `抱歉，系統發生了一點問題，我們已記錄下來並會盡快修復！\n(錯誤代碼: ${errorCode})`;
     }
 
-    // 步驟 3: 嘗試回覆給使用者
+    // ✅ 為 reply 加上獨立的 try/catch
     try {
         if (replyToken) {
             await reply(replyToken, userMessage);
@@ -900,6 +897,7 @@ async function handleError(error, replyToken, context = '未知操作', userId =
         console.error(`❌ 連錯誤回覆都失敗了 (ErrorCode: ${errorCode || 'N/A'}):`, replyError.message);
     }
 }
+
 /**
  * [程式夥伴新增] 批次更新所有使用者的圖文選單。
  * 此函式會在背景執行，避免 webhook 逾時。
