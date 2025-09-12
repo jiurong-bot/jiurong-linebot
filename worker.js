@@ -292,72 +292,102 @@ async function sendSystemAlertEmail(subject, body) {
         console.error('❌ 發送警報郵件時發生嚴重錯誤:', error);
     }
 }
-
 async function processExpiredWaitlistInvites() {
     try {
         await executeDbQuery(async (db) => {
             await db.query('BEGIN');
+            // 步驟 1: 找出並更新所有過期的邀請 (維持不變)
             const expiredInvitesRes = await db.query(
                 `UPDATE waitlist_notifications 
                  SET status = 'expired' 
                  WHERE status = 'pending' AND expires_at < NOW() 
                  RETURNING id, course_id, user_id`
             );
+
             if (expiredInvitesRes.rows.length === 0) {
                 await db.query('COMMIT');
                 return;
             }
 
             console.log(`[Waitlist] 處理了 ${expiredInvitesRes.rows.length} 筆過期的候補邀請。`);
+            
+            // 收集需要處理的 course_id (維持不變)
             const coursesToProcess = new Map();
             for (const invite of expiredInvitesRes.rows) {
                 coursesToProcess.set(invite.course_id, invite.course_id);
             }
 
-            for (const courseId of coursesToProcess.keys()) {
-                const courseRes = await db.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [courseId]);
-                if (courseRes.rows.length === 0) continue; 
+            const courseIds = Array.from(coursesToProcess.keys());
+            if (courseIds.length === 0) {
+                await db.query('COMMIT');
+                return;
+            }
 
-                const course = courseRes.rows[0];
+            // ✅ 步驟 2: 一次性查詢出所有需要處理的課程
+            const coursesRes = await db.query(
+                "SELECT * FROM courses WHERE id = ANY($1::text[]) FOR UPDATE", 
+                [courseIds]
+            );
+
+            // ✅ 步驟 3: 將課程資料整理成 Map，方便快速查找
+            const courseMap = new Map(coursesRes.rows.map(c => [c.id, c]));
+
+            // 步驟 4: 遍歷需要處理的課程 ID，但不再查詢資料庫
+            for (const courseId of courseIds) {
+                const course = courseMap.get(courseId);
+                if (!course) continue;
+
                 const hasSpot = (course.students || []).length < course.capacity;
                 const hasWaiting = (course.waiting || []).length > 0;
+
                 if (hasSpot && hasWaiting) {
+                    // 這部分的遞補邏輯完全相同，只是 course 物件的來源不同
                     const nextUserId = course.waiting[0];
                     const newWaitingList = course.waiting.slice(1);
 
                     await db.query("UPDATE courses SET waiting = $1 WHERE id = $2", [newWaitingList, courseId]);
+                    
                     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
                     await db.query(
                         `INSERT INTO waitlist_notifications (course_id, user_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
                         [courseId, nextUserId, expiresAt]
                     );
-                    const mainTitle = course.title.replace(/ - 第 \d+ 堂$/, '');
-                    const invitationMessage = {
-                        type: 'flex', altText: '候補課程邀請',
-                        contents: {
-                            type: 'bubble',
-                            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },
-                            body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-                                { type: 'text', text: `您好！您候補的課程「${mainTitle}」現在有名額了！`, wrap: true },
-                                { type: 'text', text: '請在 15 分鐘內確認是否要預約，逾時將自動放棄資格喔。', size: 'sm', color: '#666666', wrap: true }
-                            ]},
-                            footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-                                { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${courseId}` } },
-                                { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認預約', data: `action=waitlist_confirm&course_id=${courseId}` } }
-                            ]}
-                        }
-                    };
+
+                    // 建立並發送邀請訊息
+                    const invitationMessage = createWaitlistInvitationFlexMessage(course);
                     await client.pushMessage(nextUserId, invitationMessage);
                     console.log(`[Waitlist] 已為課程 ${courseId} 發送新的候補邀請給 ${nextUserId}`);
                 }
             }
+
             await db.query('COMMIT');
         });
     } catch (error) {
-        if (error.code !== 'ECONNRESET') { // 忽略網路連線重設的錯誤
+        if (error.code !== 'ECONNRESET') {
              console.error('❌ 處理過期候補邀請時發生嚴重錯誤:', error);
         }
     }
+}
+
+// 註：別忘了也要把 createWaitlistInvitationFlexMessage 函式複製到 worker.js
+function createWaitlistInvitationFlexMessage(course) {
+  const mainTitle = course.title.replace(/ - 第 \d+ 堂$/, '');
+  return {
+    type: 'flex',
+    altText: '候補課程邀請',
+    contents: {
+      type: 'bubble',
+      header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🔔 候補邀請', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#ff9e00' },
+      body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+        { type: 'text', text: `您好！您候補的課程「${mainTitle}」現在有名額了！`, wrap: true },
+        { type: 'text', text: '請在 15 分鐘內確認是否要預約，逾時將自動放棄資格喔。', size: 'sm', color: '#666666', wrap: true }
+      ]},
+      footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+        { type: 'button', style: 'secondary', action: { type: 'postback', label: '😭 放棄', data: `action=waitlist_forfeit&course_id=${course.id}` } },
+        { type: 'button', style: 'primary', color: '#28a745', action: { type: 'postback', label: '✅ 確認', data: `action=waitlist_confirm&course_id=${course.id}` } }
+      ]}
+    }
+  };
 }
 
 
