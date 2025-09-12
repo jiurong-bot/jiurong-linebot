@@ -3171,6 +3171,19 @@ async function handleTeacherCommands(event, userId) {
                         } 
                     }
                     const courseMainTitle = getCourseMainTitle(coursesToCancel[0].title);
+                      // ====================== [詳細說明：在這裡新增] ======================
+                    // 目的：一次性刪除所有與這些即將被取消的課程相關的候補邀請。
+
+                    // 步驟 1: 取得所有要被刪除的課程 ID
+                    const courseIdsToDelete = coursesToCancel.map(c => c.id);
+
+                    // 步驟 2: 使用 ANY 語法，一次性刪除所有相關的候補邀請
+                    await client.query(
+                        `DELETE FROM waitlist_notifications
+                         WHERE course_id = ANY($1::text[])`,
+                        [courseIdsToDelete]
+                    );
+                    // ================================================================
                     await client.query("DELETE FROM courses WHERE id LIKE $1 AND time > NOW()", [`${backgroundState.prefix}%`]);
 
                     const batchTasks = Array.from(affectedUsers.entries()).map(([studentId, refundAmount]) => ({
