@@ -1,4 +1,4 @@
-// index.js - V43.3 (上課錯誤通知)
+// index.js - V43.3 (錯誤訊息通知)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -3189,14 +3189,29 @@ async function handleTeacherCommands(event, userId) {
                 await client.query('BEGIN');
                 try {
                   const courseToCancelRes = await client.query("SELECT * FROM courses WHERE id = $1 FOR UPDATE", [state.course_id]);
+    
                   if (courseToCancelRes.rows.length === 0) { delete pendingCourseCancellation[userId]; return "找不到該課程，可能已被取消。"; }
                   const course = courseToCancelRes.rows[0];
                   const studentIdsToNotify = [...course.students];
                   for (const studentId of studentIdsToNotify) { 
-                      await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [course.points_cost, studentId]); 
+                     await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [course.points_cost, studentId]); 
                   }
+                  
+                  // ====================== [程式夥伴新增] ======================
+                  // 在刪除課程前，先刪除可能已存在的老師提醒任務
+                  const reminderTextPattern = `%${getCourseMainTitle(course.title)}%`;
+                  await client.query(
+                      `DELETE FROM tasks 
+                       WHERE recipient_id = $1 
+                       AND status = 'pending' 
+                       AND message_payload::text LIKE $2`,
+                      [course.teacher_id, reminderTextPattern]
+                  );
+                  // ==========================================================
+
                   await client.query("DELETE FROM courses WHERE id = $1", [state.course_id]); 
                   delete pendingCourseCancellation[userId];
+          
                   if (studentIdsToNotify.length > 0) {
                       const batchTasks = studentIdsToNotify.map(studentId => ({
                           recipientId: studentId,
@@ -3213,7 +3228,7 @@ async function handleTeacherCommands(event, userId) {
                   return '取消課程時發生錯誤，請稍後再試。';
                 }
             });
-        }
+         }
         break;
     }
 } else if (pendingCourseCreation[userId]) {
