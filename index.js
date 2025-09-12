@@ -3223,7 +3223,12 @@ async function handleTeacherCommands(event, userId) {
                       [course.teacher_id, reminderTextPattern]
                   );
                   // ==========================================================
-
+                  // 目的：一併刪除所有與這堂課相關的、還在等待回應的候補邀請。
+                  await client.query(
+                      `DELETE FROM waitlist_notifications WHERE course_id = $1`,
+                      [course.id]
+                  );
+                  // ==========================================================
                   await client.query("DELETE FROM courses WHERE id = $1", [state.course_id]); 
                   delete pendingCourseCancellation[userId];
           
