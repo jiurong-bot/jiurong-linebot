@@ -792,13 +792,21 @@ async function getProduct(productId, dbClient) {
 }
 async function saveProduct(product, dbClient) {
     return executeDbQuery(async (client) => {
+        // ✅ 使用 UPSERT 語法
         await client.query(
-            `UPDATE products SET name = $1, description = $2, price = $3, image_url = $4, inventory = $5, status = $6 WHERE id = $7`,
-            [product.name, product.description, product.price, product.image_url, product.inventory, product.status, product.id]
+            `INSERT INTO products (id, name, description, price, image_url, inventory, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (id) DO UPDATE SET 
+                name = EXCLUDED.name, 
+                description = EXCLUDED.description, 
+                price = EXCLUDED.price, 
+                image_url = EXCLUDED.image_url, 
+                inventory = EXCLUDED.inventory, 
+                status = EXCLUDED.status`,
+            [product.id, product.name, product.description, product.price, product.image_url, product.inventory, product.status]
         );
     }, dbClient);
 }
-
 
 async function getProductOrder(orderUID, dbClient) {
     return executeDbQuery(async (client) => {
