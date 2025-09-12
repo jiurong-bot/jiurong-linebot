@@ -1,4 +1,4 @@
-// index.js - V43.3 (修改訊息通知邏輯)
+// index.js - V43.3 (優化商品查詢)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -5946,79 +5946,102 @@ async function showSoldOutProducts(page) {
     });
 }
 // =======================================================
-// [新增] 顯示預購中的商品管理介面
+// [優化建議] 顯示預購中的商品管理介面 (解決 N+1 查詢)
 // =======================================================
 async function showPreorderProducts(page) {
-    const mapRowToBubble = async (product) => {
-        // 取得此商品的預購總數
-        const preorderStats = await executeDbQuery(client =>
-            client.query("SELECT COUNT(*), SUM(quantity) as total_quantity FROM product_preorders WHERE product_id = $1 AND status = 'active'", [product.id])
-        ).then(res => ({
-            count: parseInt(res.rows[0].count, 10) || 0,
-            total_quantity: parseInt(res.rows[0].total_quantity, 10) || 0
-        }));
-
-        return {
-            type: 'bubble',
-            hero: (product.image_url && product.image_url.startsWith('https')) ? {
-                type: 'image', url: product.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
-            } : undefined,
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'md',
-                contents: [
-                    { type: 'text', text: product.name, weight: 'bold', size: 'xl', wrap: true },
-                    { type: 'separator', margin: 'lg' },
-                    {
-                        type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
-                        contents: [
-                            { type: 'text', text: `預購人數：${preorderStats.count} 人`, size: 'sm' },
-                            { type: 'text', text: `預購總數：${preorderStats.total_quantity} 個`, size: 'sm' }
-                        ]
-                    }
-                ]
-            },
-            footer: {
-                type: 'box', layout: 'vertical', spacing: 'sm',
-                contents: [
-                    {
-                        type: 'button', style: 'primary', height: 'sm',
-                        action: { type: 'postback', label: '📋 查看預購清單', data: `action=view_preorder_list&product_id=${product.id}` }
-                    },
-                    {
-                        type: 'button', style: 'secondary', color: '#DE5246', height: 'sm',
-                        action: { type: 'postback', label: '停止預購並下架', data: `action=stop_preorder_start&product_id=${product.id}` }
-                    }
-                ]
-            }
-        };
-    };
-
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
+
     return executeDbQuery(async (client) => {
+        // 步驟 1: 正常查詢當頁的商品 (維持不變)
         const res = await client.query("SELECT * FROM products WHERE status = 'preorder' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
         const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
         const pageRows = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
 
         if (pageRows.length === 0 && page === 1) {
-            return '目前沒有任何商品正在預購中。';
+             return '目前沒有任何商品正在預購中。';
         }
         if (pageRows.length === 0) {
             return '沒有更多預購中的商品了。';
         }
 
-        const bubbles = await Promise.all(pageRows.map(mapRowToBubble));
+        // ====================== [優化核心] ======================
+        // 步驟 2: 收集當頁所有商品的 ID
+        const productIds = pageRows.map(p => p.id);
+
+        // 步驟 3: 只用一次查詢，取得所有商品的預購統計
+        const statsRes = await client.query(`
+            SELECT 
+                product_id, 
+                COUNT(*) as preorder_count, 
+                SUM(quantity) as total_quantity 
+            FROM product_preorders 
+            WHERE product_id = ANY($1::int[]) AND status = 'active' 
+            GROUP BY product_id
+        `, [productIds]);
+
+        // 步驟 4: 將統計結果轉換成一個方便查找的 Map (Key: product_id, Value: stats)
+        const statsMap = new Map(statsRes.rows.map(row => [
+            row.product_id, 
+            {
+                count: parseInt(row.preorder_count, 10) || 0,
+                total_quantity: parseInt(row.total_quantity, 10) || 0
+            }
+        ]));
+        // ==========================================================
+
+        const mapRowToBubble = (product) => {
+            // 現在直接從 Map 中讀取統計資料，不再需要查詢資料庫
+            const preorderStats = statsMap.get(product.id) || { count: 0, total_quantity: 0 };
+            
+            return {
+                type: 'bubble',
+                hero: (product.image_url && product.image_url.startsWith('https')) ? {
+                    type: 'image', url: product.image_url, size: 'full', aspectRatio: '1:1', aspectMode: 'cover'
+                } : undefined,
+                body: {
+                    type: 'box', layout: 'vertical', spacing: 'md',
+                    contents: [
+                         { type: 'text', text: product.name, weight: 'bold', size: 'xl', wrap: true },
+                        { type: 'separator', margin: 'lg' },
+                        {
+                            type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                             contents: [
+                                { type: 'text', text: `預購人數：${preorderStats.count} 人`, size: 'sm' },
+                                { type: 'text', text: `預購總數：${preorderStats.total_quantity} 個`, size: 'sm' }
+                             ]
+                        }
+                    ]
+                },
+                footer: {
+                    type: 'box', layout: 'vertical', spacing: 'sm',
+                    contents: [
+                        {
+                            type: 'button', style: 'primary', height: 'sm',
+                            action: { type: 'postback', label: '📋 查看預購清單', data: `action=view_preorder_list&product_id=${product.id}` }
+                        },
+                        {
+                            type: 'button', style: 'secondary', color: '#DE5246', height: 'sm',
+                            action: { type: 'postback', label: '停止預購並下架', data: `action=stop_preorder_start&product_id=${product.id}` }
+                        }
+                    ]
+                }
+            };
+        };
+
+        const bubbles = pageRows.map(mapRowToBubble); // 直接 map，不再需要 async
         const paginationBubble = createPaginationBubble('action=view_preorder_products', page, hasNextPage);
         if (paginationBubble) {
             bubbles.push(paginationBubble);
         }
 
-        return {
+         return {
             type: 'flex',
             altText: '預購中商品管理',
             contents: { type: 'carousel', contents: bubbles }
         };
     });
 }
+
 // =======================================================
 // [新增] 顯示待出貨的預購商品列表
 // =======================================================
@@ -6618,7 +6641,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43.3 (修改訊息通知邏輯)`);
+    console.log(`Bot 版本 V43.4 (商品查詢優化)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
