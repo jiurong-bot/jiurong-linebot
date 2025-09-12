@@ -1,4 +1,4 @@
-// index.js - V43.2 (合併查詢)
+// index.js - V43.3 (上課錯誤通知)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
