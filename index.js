@@ -736,7 +736,7 @@ async function getCourse(courseId, dbClient) {
         return {
             id: row.id,
             title: row.title,
-            time: row.time.toISOString(),
+            time: new Date(row.time).toISOString(),
             capacity: row.capacity,
             points_cost: row.points_cost,
             students: row.students || [],
@@ -771,7 +771,7 @@ async function deleteCoursesByPrefix(prefix, dbClient) {
         const coursesToDelete = coursesToDeleteRes.rows.map(row => ({
             id: row.id,
             title: row.title,
-            time: row.time.toISOString(),
+            time: new Date(row.time).toISOString(),
             points_cost: row.points_cost,
             students: row.students || [],
             waiting: row.waiting || []
