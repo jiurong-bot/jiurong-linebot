@@ -1,4 +1,4 @@
-// index.js - V43.3 (優化商品查詢)
+// index.js - V43.4 (商品查詢優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
