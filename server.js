@@ -1,4 +1,4 @@
-// index.js - V43.5 (邏輯錯誤修正)
+// server.js - V43.5 (邏輯錯誤修正)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6661,20 +6661,26 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
 
 
-app.listen(PORT, async () => {
-  try {
-    checkEnvironmentVariables();
-    console.log('✅ 資料庫結構已由 Build Command 處理。');
+// 1. 建立一個名為 startServer 的新函式
+function startServer() {
+  // 2. 將您原本的整段 app.listen(...) 程式碼，完整地移動到這個函式裡面
+  app.listen(PORT, async () => {
+    try {
+      checkEnvironmentVariables();
+      console.log('✅ 資料庫結構已由 Build Command 處理。');
 
+      console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
+      console.log(`Bot 版本 V43.5 (邏輯錯誤修正)`);
 
-    console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43.5 (邏輯錯誤修正)`);
+    } catch (error) {
+      console.error('❌ 應用程式啟動失敗:', error);
+      process.exit(1); // 如果啟動檢查失敗，結束程序
+    }
+  });
+}
 
-   } catch (error) {
-    console.error('❌ 應用程式啟動失敗:', error);
-    process.exit(1);
-  }
-});
+// 3. 在檔案的最底部，加上這行來匯出函式
+module.exports = startServer;
 // =======================================================
 // [優化建議] Postback 子處理函式區塊
 // =======================================================
