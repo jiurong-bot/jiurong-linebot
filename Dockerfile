@@ -24,4 +24,4 @@ EXPOSE 8080
 
 # 7. 設定啟動指令：告訴 Docker 當容器啟動時，要執行什麼指令
 # 請將下面的指令換成您自己的「啟動指令」
-CMD [ "node", "main.js" ]
+CMD [ "node", "index.js" ]
