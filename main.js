@@ -1,15 +1,13 @@
-// main.js - 新的啟動檔案
+// main.js (這是我們新的統一入口)
 
-// 引入您的既有程式
-const startWebServer = require('./server'); // 假設 server.js 導出一個啟動函式
-const startWorker = require('./worker.js');   // 假設 worker.js 導出一個啟動函式
+// 引入我們剛剛從其他檔案匯出的兩個啟動函式
+const startServer = require('./server');
+const startWorker = require('./worker');
 
-console.log("Starting unified application...");
+console.log('🚀 正在啟動整合服務...');
 
-// 1. 啟動網頁伺服器
-startWebServer();
-console.log("Web Server is running.");
-
-// 2. 啟動背景 Worker
+// 依次執行這兩個函式
+startServer();
 startWorker();
-console.log("Background Worker is running.");
+
+console.log('✅ 所有服務均已啟動！');
