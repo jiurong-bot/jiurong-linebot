@@ -1,0 +1,20 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# 依賴套件 (這些會在容器內重新安裝，不需要複製過去)
+node_modules
+__pycache__
+venv
+.venv
+
+# 敏感資訊
+.env
+*.env
+
+# 作業系統檔案
+.DS_Store
