@@ -2,7 +2,7 @@
 
 // 引入我們剛剛從其他檔案匯出的兩個啟動函式
 const startServer = require('./server');
-const startWorker = require('./worker');
+const startWorker = require('./startworker');
 
 console.log('🚀 正在啟動整合服務...');
 
