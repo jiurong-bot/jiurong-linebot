@@ -7,6 +7,10 @@ FROM node:18-alpine
 # 2. 設定工作目錄：在容器(Container)內建立一個資料夾，並進入它
 WORKDIR /app
 
+# [新增] 安裝 postgresql-client (包含 pg_dump 工具)
+# 解決 worker.js 中 pg_dump: not found 的錯誤
+RUN apk add --no-cache postgresql-client
+
 # 3. 複製依賴檔並安裝：優化步驟，利用 Docker 的快取機制
 # 先複製 package.json 和 package-lock.json (如果有的話)
 COPY package*.json ./
