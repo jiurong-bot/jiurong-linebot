@@ -681,19 +681,71 @@ async function main() {
     }
 
     if (tasks.length > 0) {
-        console.log(`📡 取得 ${tasks.length} 個任務，開始循序處理...`);
-        for (const task of tasks) {
-            if (isShuttingDown) {
-                console.log(`🛑 在處理批次任務時收到關閉信號，將 ${task.id} 設回 pending 後退出。`);
-                await executeDbQuery(db => db.query("UPDATE tasks SET status = 'pending' WHERE id = $1", [task.id]));
-                break;
+        console.log(`📡 取得 ${tasks.length} 個任務，開始批次處理...`);
+
+        const successfulTaskIds = [];
+        const failedTasksToUpdate = [];
+        const tasksToMoveToDLQ = [];
+
+        // 使用 Promise.all 平行處理所有 API 請求，以加快發送速度
+        const pushPromises = tasks.map(async (task) => {
+            if (isShuttingDown) return;
+            try {
+                await client.pushMessage(task.recipient_id, task.message_payload);
+                // 成功時，只記錄 ID
+                successfulTaskIds.push(task.id);
+            } catch (err) {
+                console.error(`❌ 處理任務 ${task.id} API 發送失敗:`, err.message, `(Recipient: ${task.recipient_id})`);
+                // 失敗時，根據重試次數分類
+                if (task.retry_count < MAX_RETRIES) {
+                    failedTasksToUpdate.push({ id: task.id, message: err.message, retry_count: task.retry_count });
+                } else {
+                    tasksToMoveToDLQ.push({ task: task, message: err.message });
+                }
             }
-            await executePush(task);
-            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_PUSH_MS));
+        });
+
+        // 等待所有 push Message 的 API 請求完成
+        await Promise.all(pushPromises);
+
+        // API 請求全部結束後，才開始批次更新資料庫
+        if (isShuttingDown) {
+            console.log('🛑 收到關閉信號，已停止後續的資料庫更新。');
+            break; // 中斷 while 迴圈
         }
+        
+        try {
+            await executeDbQuery(async (db) => {
+                // 1. 【效能提升】一次性更新所有成功的任務
+                if (successfulTaskIds.length > 0) {
+                    await db.query("UPDATE tasks SET status = 'sent', updated_at = NOW() WHERE id = ANY($1::int[])", [successfulTaskIds]);
+                    console.log(`🗂️ 已批次更新 ${successfulTaskIds.length} 筆成功任務的狀態。`);
+                }
+
+                // 2. 處理需要重試的失敗任務 (因重試時間不同，仍需逐筆更新)
+                for (const failed of failedTasksToUpdate) {
+                    const nextRetryMinutes = RETRY_DELAY_MINUTES * (failed.retry_count + 1);
+                    await db.query(
+                      `UPDATE tasks SET status = 'pending', retry_count = retry_count + 1, last_error = $1, updated_at = NOW(), send_at = NOW() + INTERVAL '${nextRetryMinutes} minutes' WHERE id = $2`,
+                      [failed.message, failed.id]
+                    );
+                    console.log(`🕒 任務 ${failed.id} 將在 ${nextRetryMinutes} 分鐘後重試。`);
+                }
+
+                // 3. 處理需要移至 Dead Letter Queue 的任務 (函式內部已包含事務)
+                for (const toDLQ of tasksToMoveToDLQ) {
+                    await moveTaskToDLQ(toDLQ.task, toDLQ.message); 
+                }
+            });
+        } catch(dbError) {
+            console.error('❌ 批次更新任務狀態時發生資料庫錯誤:', dbError);
+        }
+        
     } else {
+        // 如果沒有任務，則等待一段時間再檢查
         await new Promise(resolve => setTimeout(resolve, WORKER_INTERVAL_MS));
     }
+
   }
 }
 
