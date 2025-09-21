@@ -1080,7 +1080,7 @@ function attachQuickReply(messages, menu) {
 
   return messages;
 }
- /**
+/**
  * [V31.2 重構] 透過組合輔助函式來回覆訊息，結構更清晰。
  * [程式夥伴修改] 加入環境變數判斷，以控制日誌輸出。
  */
