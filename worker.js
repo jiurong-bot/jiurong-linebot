@@ -1,4 +1,4 @@
-// worker.js - V43.5 (N+1 查詢問題)
+// worker.js - V43.5 (批次刪除課程fix)
 require('dotenv').config();
 const { exec } = require('child_process');
 const fs = require('fs');
@@ -325,8 +325,8 @@ async function processExpiredWaitlistInvites() {
 
             // ✅ 步驟 2: 一次性查詢出所有需要處理的課程
             const coursesRes = await db.query(
-                "SELECT * FROM courses WHERE id = ANY($1::text[]) FOR UPDATE", 
-                [courseIds]
+            "SELECT * FROM courses WHERE id = ANY($1::text[]) FOR UPDATE SKIP LOCKED", // 在這裡加上 SKIP LOCKED
+             [courseIds]
             );
 
             // ✅ 步驟 3: 將課程資料整理成 Map，方便快速查找
