@@ -1,4 +1,4 @@
-// index.js - V43.6 (批次刪除課程修正)
+// index.js - V43.7 (批次新增課程優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6675,7 +6675,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43.6 (批次刪除課程修正)`);
+    console.log(`Bot 版本 V43.7 (批次新增課程優化)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
