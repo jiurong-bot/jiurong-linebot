@@ -3346,93 +3346,119 @@ async function handleTeacherCommands(event, userId) {
             state.points_cost = points; 
             state.step = 'await_teacher';
             return buildTeacherSelectionCarousel();
-
         case 'await_confirmation':
-            if (text === '✅ 確認新增') {
-                const teacherId = userId;
-                const courseState = { ...pendingCourseCreation[userId] };
-                delete pendingCourseCreation[userId];
+    if (text === '✅ 確認新增') {
+        const teacherId = userId;
+        const courseState = { ...pendingCourseCreation[userId] };
+        delete pendingCourseCreation[userId];
 
-                return executeDbQuery(async (client) => {
-                    await client.query('BEGIN');
-                    try {
-                        const prefix = await generateUniqueCoursePrefix(client);
-                        let currentDate = new Date();
-                        for (let i = 0; i < courseState.sessions; i++) {
-                            // 注意：這裡我們使用 start_time 來計算課程的實際日期時間
-                            const courseDate = getNextDate(courseState.weekday, courseState.start_time, currentDate);
-                            const course = {
-                                id: `${prefix}${String(i + 1).padStart(2, '0')}`,
-                                // [修改] 標題可以加上時間方便辨識
-                                title: `${courseState.title} (${courseState.start_time}-${courseState.end_time})`,
-                                time: courseDate.toISOString(),
-                                capacity: courseState.capacity,
-                                points_cost: courseState.points_cost,
-                                students: [],
-                                waiting: [],
-                                teacher_id: courseState.teacher_id
-                            };
-                            await saveCourse(course, client);
-                            currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
+        return executeDbQuery(async (client) => {
+            await client.query('BEGIN');
+            try {
+                const prefix = await generateUniqueCoursePrefix(client);
+                let currentDate = new Date();
+                const coursesToInsert = [];
+
+                // 步驟 1: 先在迴圈中準備好所有要新增的課程資料
+                for (let i = 0; i < courseState.sessions; i++) {
+                    const courseDate = getNextDate(courseState.weekday, courseState.start_time, currentDate);
+                    const course = {
+                        id: `${prefix}${String(i + 1).padStart(2, '0')}`,
+                        title: `${courseState.title} (${courseState.start_time}-${courseState.end_time})`,
+                        time: courseDate.toISOString(),
+                        capacity: courseState.capacity,
+                        points_cost: courseState.points_cost,
+                        students: [],
+                        waiting: [],
+                        teacher_id: courseState.teacher_id
+                    };
+                    coursesToInsert.push(course); // 將準備好的課程物件放入陣列
+                    currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
+                }
+
+                // 步驟 2: 使用批次新增語法，一次性將整個陣列的資料新增至資料庫
+                if (coursesToInsert.length > 0) {
+                    // 將物件陣列轉換為 query 需要的一維陣列
+                    const values = coursesToInsert.flatMap(c => [
+                        c.id, c.title, c.time, c.capacity, c.points_cost,
+                        JSON.stringify(c.students), // students 陣列轉為 JSON 字串
+                        JSON.stringify(c.waiting),  // waiting 陣列轉為 JSON 字串
+                        c.teacher_id
+                    ]);
+
+                    // 動態產生對應數量的 placeholder ($1, $2, ...)
+                    const placeholders = coursesToInsert.map((_, i) =>
+                        `($${i*8+1}, $${i*8+2}, $${i*8+3}, $${i*8+4}, $${i*8+5}, $${i*8+6}::jsonb, $${i*8+7}::jsonb, $${i*8+8})`
+                    ).join(',');
+
+                    // 執行單一一次的 INSERT 指令
+                    await client.query(
+                        `INSERT INTO courses (id, title, time, capacity, points_cost, students, waiting, teacher_id) 
+                         VALUES ${placeholders}`,
+                        values
+                    );
+                }
+
+                await client.query('COMMIT');
+
+                // --- 後續發送公告的邏輯 ---
+                const mainTitle = getCourseMainTitle(courseState.title);
+                const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
+                pendingAnnouncementCreation[teacherId] = {
+                    step: 'await_final_confirmation',
+                    content: prefilledContent
+                };
+                setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => {
+                    enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。' });
+                });
+                
+                const finalFlexMessage = {
+                    type: 'flex',
+                    altText: '發佈系列課程公告？',
+                    contents: {
+                        type: 'bubble',
+                        header: {
+                            type: 'box',
+                            layout: 'vertical',
+                            contents: [{ type: 'text', text: '📢 發佈系列課程公告', weight: 'bold', color: '#FFFFFF' }],
+                            backgroundColor: '#52B69A',
+                            paddingAll: 'lg'
+                        },
+                        body: {
+                            type: 'box',
+                            layout: 'vertical',
+                            spacing: 'md',
+                            contents: [
+                                { type: 'text', text: prefilledContent, wrap: true }
+                            ]
                         }
-                        await client.query('COMMIT');
-
-                        const mainTitle = getCourseMainTitle(courseState.title);
-                        const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
-                        pendingAnnouncementCreation[teacherId] = {
-                            step: 'await_final_confirmation',
-                            content: prefilledContent
-                        };
-                        setupConversationTimeout(userId, pendingAnnouncementCreation, 'pendingAnnouncementCreation', (u) => { 
-                            enqueuePushTask(u, { type: 'text', text: '頒佈公告操作逾時，自動取消。'});
-                        });
-
-                        const finalFlexMessage = {
-                            type: 'flex',
-                            altText: '發佈系列課程公告？',
-                            contents: {
-                                type: 'bubble',
-                                header: {
-                                    type: 'box',
-                                    layout: 'vertical',
-                                    contents: [{ type: 'text', text: '📢 發佈系列課程公告', weight: 'bold', color: '#FFFFFF' }],
-                                    backgroundColor: '#52B69A',
-                                    paddingAll: 'lg'
-                                },
-                                body: {
-                                    type: 'box',
-                                    layout: 'vertical',
-                                    spacing: 'md',
-                                    contents: [
-                                        { type: 'text', text: prefilledContent, wrap: true }
-                                    ]
+                    },
+                    quickReply: {
+                        items: [
+                            {
+                                type: 'action',
+                                action: {
+                                    type: 'postback',
+                                    label: '✅ 直接發佈',
+                                    data: 'action=publish_prefilled_announcement'
                                 }
                             },
-                            quickReply: {
-                                items: [
-                                    {
-                                        type: 'action',
-                                        action: {
-                                            type: 'postback',
-                                            label: '✅ 直接發佈',
-                                            data: 'action=publish_prefilled_announcement'
-                                        }
-                                    },
-                                    { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
-                                ]
-                            }
-                        };
-                        return finalFlexMessage;
-
-                    } catch (e) {
-                        await client.query('ROLLBACK');
-                        console.error("新增課程系列失敗", e);
-                        return '新增課程時發生錯誤，請稍後再試。';
+                            { type: 'action', action: { type: 'postback', label: '❌ 暫不發佈', data: 'action=cancel_announcement' } }
+                        ]
                     }
-                });
-            } else {
-                return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
+                };
+                return finalFlexMessage;
+
+            } catch (e) {
+                await client.query('ROLLBACK');
+                console.error("新增課程系列失敗", e);
+                return '新增課程時發生錯誤，請稍後再試。';
             }
+        });
+    } else {
+        return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
+    }
+    break; 
     }
   } else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
