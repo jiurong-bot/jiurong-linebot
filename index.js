@@ -3347,7 +3347,7 @@ async function handleTeacherCommands(event, userId) {
             state.step = 'await_teacher';
             return buildTeacherSelectionCarousel();
         case 'await_confirmation':
-    if (text === '✅ 確認新增') {
+        if (text === '✅ 確認新增') {
         const teacherId = userId;
         const courseState = { ...pendingCourseCreation[userId] };
         delete pendingCourseCreation[userId];
@@ -3359,7 +3359,6 @@ async function handleTeacherCommands(event, userId) {
                 let currentDate = new Date();
                 const coursesToInsert = [];
 
-                // 步驟 1: 先在迴圈中準備好所有要新增的課程資料
                 for (let i = 0; i < courseState.sessions; i++) {
                     const courseDate = getNextDate(courseState.weekday, courseState.start_time, currentDate);
                     const course = {
@@ -3368,30 +3367,30 @@ async function handleTeacherCommands(event, userId) {
                         time: courseDate.toISOString(),
                         capacity: courseState.capacity,
                         points_cost: courseState.points_cost,
-                        students: [],
-                        waiting: [],
+                        students: [], // 維持 JavaScript 空陣列
+                        waiting: [],  // 維持 JavaScript 空陣列
                         teacher_id: courseState.teacher_id
                     };
-                    coursesToInsert.push(course); // 將準備好的課程物件放入陣列
+                    coursesToInsert.push(course);
                     currentDate = new Date(courseDate.getTime() + CONSTANTS.TIME.ONE_DAY_IN_MS);
                 }
 
-                // 步驟 2: 使用批次新增語法，一次性將整個陣列的資料新增至資料庫
                 if (coursesToInsert.length > 0) {
-                    // 將物件陣列轉換為 query 需要的一維陣列
+                    // 【⭐ 關鍵修正 1】
+                    // 直接傳遞 JS 陣列，不再使用 JSON.stringify
                     const values = coursesToInsert.flatMap(c => [
                         c.id, c.title, c.time, c.capacity, c.points_cost,
-                        JSON.stringify(c.students), // students 陣列轉為 JSON 字串
-                        JSON.stringify(c.waiting),  // waiting 陣列轉為 JSON 字串
+                        c.students, // 直接傳遞 students 陣列
+                        c.waiting,  // 直接傳遞 waiting 陣列
                         c.teacher_id
                     ]);
 
-                    // 動態產生對應數量的 placeholder ($1, $2, ...)
+                    // 【⭐ 關鍵修正 2】
+                    // 移除對應 students 和 waiting 欄位的 ::jsonb 型別轉換
                     const placeholders = coursesToInsert.map((_, i) =>
-                        `($${i*8+1}, $${i*8+2}, $${i*8+3}, $${i*8+4}, $${i*8+5}, $${i*8+6}::jsonb, $${i*8+7}::jsonb, $${i*8+8})`
+                        `($${i*8+1}, $${i*8+2}, $${i*8+3}, $${i*8+4}, $${i*8+5}, $${i*8+6}, $${i*8+7}, $${i*8+8})`
                     ).join(',');
 
-                    // 執行單一一次的 INSERT 指令
                     await client.query(
                         `INSERT INTO courses (id, title, time, capacity, points_cost, students, waiting, teacher_id) 
                          VALUES ${placeholders}`,
@@ -3401,7 +3400,6 @@ async function handleTeacherCommands(event, userId) {
 
                 await client.query('COMMIT');
 
-                // --- 後續發送公告的邏輯 ---
                 const mainTitle = getCourseMainTitle(courseState.title);
                 const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
                 pendingAnnouncementCreation[teacherId] = {
@@ -3452,13 +3450,15 @@ async function handleTeacherCommands(event, userId) {
             } catch (e) {
                 await client.query('ROLLBACK');
                 console.error("新增課程系列失敗", e);
-                return '新增課程時發生錯誤，請稍後再試。';
+                // 直接回傳錯誤訊息給使用者，方便除錯
+                return `新增課程時發生錯誤，請稍後再試。`;
             }
         });
     } else {
         return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
     }
-    break; 
+    break;
+
     }
   } else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
