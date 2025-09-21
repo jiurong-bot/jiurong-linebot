@@ -3142,77 +3142,84 @@ async function handleTeacherCommands(event, userId) {
           const backgroundState = { ...state };
           delete pendingCourseCancellation[userId];
           try {
-            (async () => {
-              await executeDbQuery(async (client) => {
-                await client.query('BEGIN');
-                try {
-                    const coursesToCancelRes = await client.query("SELECT * FROM courses WHERE id LIKE $1 AND time > NOW() FOR UPDATE", [`${backgroundState.prefix}%`]);
-                    if (coursesToCancelRes.rows.length === 0) { 
-                        const errMsg = { type: 'text', text: `❌ 批次取消失敗：找不到可取消的「${backgroundState.prefix}」系列課程。`}; 
-                        await enqueuePushTask(userId, errMsg); 
-                         return; 
-                    }
-                    const coursesToCancel = coursesToCancelRes.rows; 
-                    const affectedUsers = new Map();
-              
-                     for (const course of coursesToCancel) { 
-                        for (const studentId of course.students) { 
-                            if (!affectedUsers.has(studentId)) affectedUsers.set(studentId, 0); 
-                             affectedUsers.set(studentId, affectedUsers.get(studentId) + course.points_cost); 
-                        } 
+(async () => {
+  await executeDbQuery(async (client) => {
+    await client.query('BEGIN');
+    try {
+        const coursesToCancelRes = await client.query("SELECT * FROM courses WHERE id LIKE $1 AND time > NOW() FOR UPDATE", [`${backgroundState.prefix}%`]);
+        if (coursesToCancelRes.rows.length === 0) { 
+            const errMsg = { type: 'text', text: `❌ 批次取消失敗：找不到可取消的「${backgroundState.prefix}」系列課程。`}; 
+            await enqueuePushTask(userId, errMsg); 
+            return; 
+        }
+        const coursesToCancel = coursesToCancelRes.rows; 
+        const affectedUsers = new Map();
 
-                        // ====================== [程式夥伴新增] ======================
-                        // 順便刪除每一堂課可能對應的老師提醒
-                        const reminderTextPattern = `%${getCourseMainTitle(course.title)}%`;
-                        await client.query(
-                            `DELETE FROM tasks 
-                             WHERE recipient_id = $1 
-                             AND status = 'pending' 
-                             AND message_payload::text LIKE $2`,
-                            [course.teacher_id, reminderTextPattern]
-                        );
-                        // ==========================================================
-                    }
+        for (const course of coursesToCancel) { 
+            for (const studentId of course.students) { 
+                if (!affectedUsers.has(studentId)) affectedUsers.set(studentId, 0); 
+                affectedUsers.set(studentId, affectedUsers.get(studentId) + course.points_cost);
+            } 
 
-                    for (const [studentId, refundAmount] of affectedUsers.entries()) { 
-                        if (refundAmount > 0) { 
-                           await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [refundAmount, studentId]);
-                        } 
-                    }
-                    const courseMainTitle = getCourseMainTitle(coursesToCancel[0].title);
-                      // ====================== [詳細說明：在這裡新增] ======================
-                    // 目的：一次性刪除所有與這些即將被取消的課程相關的候補邀請。
+            // 刪除每一堂課可能對應的老師提醒
+            const reminderTextPattern = `%${getCourseMainTitle(course.title)}%`;
+            await client.query(
+                `DELETE FROM tasks 
+                 WHERE recipient_id = $1 
+                 AND status = 'pending' 
+                 AND message_payload::text LIKE $2`,
+                [course.teacher_id, reminderTextPattern]
+            );
+        }
 
-                    // 步驟 1: 取得所有要被刪除的課程 ID
-                    const courseIdsToDelete = coursesToCancel.map(c => c.id);
+        for (const [studentId, refundAmount] of affectedUsers.entries()) { 
+            if (refundAmount > 0) { 
+                await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [refundAmount, studentId]);
+            } 
+        }
+        const courseMainTitle = getCourseMainTitle(coursesToCancel[0].title);
+        
+        // 一次性刪除所有相關的候補邀請
+        const courseIdsToDelete = coursesToCancel.map(c => c.id);
+        if (courseIdsToDelete.length > 0) {
+            await client.query(
+                `DELETE FROM waitlist_notifications
+                 WHERE course_id = ANY($1::text[])`,
+                [courseIdsToDelete]
+            );
+        }
 
-                    // 步驟 2: 使用 ANY 語法，一次性刪除所有相關的候補邀請
-                    await client.query(
-                        `DELETE FROM waitlist_notifications
-                         WHERE course_id = ANY($1::text[])`,
-                        [courseIdsToDelete]
-                    );
-                    // ================================================================
-                    await client.query("DELETE FROM courses WHERE id LIKE $1 AND time > NOW()", [`${backgroundState.prefix}%`]);
+        // 【⭐ 關鍵修正】
+        // 確保這裡使用的是 courses 資料表的 `id` 欄位，而不是 `course_id`
+        const deleteResult = await client.query("DELETE FROM courses WHERE id LIKE $1 AND time > NOW()", [`${backgroundState.prefix}%`]);
+        
+        if (deleteResult.rowCount > 0) {
+            console.log(`[批次取消] 成功刪除了 ${deleteResult.rowCount} 筆 ${courseMainTitle} 系列課程。`);
+        }
 
-                    const batchTasks = Array.from(affectedUsers.entries()).map(([studentId, refundAmount]) => ({
-                        recipientId: studentId,
-                        message: { type: 'text', text: `課程取消通知：\n老師已取消「${courseMainTitle}」系列所有課程，已歸還 ${refundAmount} 點至您的帳戶。` }
-                    }));
-                    if (batchTasks.length > 0) {
-                        await enqueueBatchPushTasks(batchTasks, { settingKey: 'student_new_announcement' });
-                    }
-                    await client.query('COMMIT');
-                    const teacherMsg = { type: 'text', text: `✅ 已成功批次取消「${courseMainTitle}」系列課程，並已退點給所有學員。` }; 
-                    await enqueuePushTask(userId, teacherMsg);
-                } catch (e) { 
-                    await client.query('ROLLBACK');
-                    console.error('[批次取消] 背景任務執行失敗:', e); 
-                    const errorMsg = { type: 'text', text: `❌ 批次取消課程時發生嚴重錯誤，操作已復原。請聯繫管理員。\n錯誤: ${e.message}` }; 
-                    await enqueuePushTask(userId, errorMsg);
-                }
-              });
-            })();
+        const batchTasks = Array.from(affectedUsers.entries()).map(([studentId, refundAmount]) => ({
+            recipientId: studentId,
+            message: { type: 'text', text: `課程取消通知：\n老師已取消「${courseMainTitle}」系列所有課程，已歸還 ${refundAmount} 點至您的帳戶。` }
+        }));
+        
+        if (batchTasks.length > 0) {
+            await enqueueBatchPushTasks(batchTasks, { settingKey: 'student_new_announcement' });
+        }
+        
+        await client.query('COMMIT');
+        
+        const teacherMsg = { type: 'text', text: `✅ 已成功批次取消「${courseMainTitle}」系列共 ${deleteResult.rowCount} 堂課，並已退點給所有學員。` }; 
+        await enqueuePushTask(userId, teacherMsg);
+
+    } catch (e) { 
+        await client.query('ROLLBACK');
+        console.error('[批次取消] 背景任務執行失敗:', e); 
+        const errorMsg = { type: 'text', text: `❌ 批次取消課程時發生嚴重錯誤，操作已復原。請聯繫管理員。\n錯誤: ${e.message}` }; 
+        await enqueuePushTask(userId, errorMsg);
+    }
+  });
+})();
+
              return '✅ 指令已收到，正在為您批次取消課程。\n完成後將會另行通知，請稍候...';
           } catch (error) { 
               console.error('❌ 啟動批次取消時發生錯誤:', error);
