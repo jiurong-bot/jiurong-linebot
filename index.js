@@ -1080,8 +1080,8 @@ function attachQuickReply(messages, menu) {
 
   return messages;
 }
-/**
  * [V31.2 重構] 透過組合輔助函式來回覆訊息，結構更清晰。
+ * [程式夥伴修改] 加入環境變數判斷，以控制日誌輸出。
  */
 async function reply(replyToken, content, menu = null) {
   // 步驟 1: 建立標準的訊息陣列
@@ -1097,11 +1097,17 @@ async function reply(replyToken, content, menu = null) {
 
   // 步驟 3: 執行 API 呼叫
   try {
-    console.log(`[REPLY-DEBUG] 準備呼叫 client.replyMessage...`);
-    // [新增] 印出完整的訊息內容，方便除錯
-    console.log('[REPLY-PAYLOAD]', JSON.stringify(messages, null, 2));
+    // 只有在非正式環境 (development) 才印出詳細日誌
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(`[REPLY-DEBUG] 準備呼叫 client.replyMessage...`);
+        console.log('[REPLY-PAYLOAD]', JSON.stringify(messages, null, 2));
+    }
+    
     const result = await client.replyMessage(replyToken, messages);
-    console.log('[REPLY-DEBUG] client.replyMessage 呼叫已完成。');
+
+    if (process.env.NODE_ENV !== 'production') {
+        console.log('[REPLY-DEBUG] client.replyMessage 呼叫已完成。');
+    }
 
     // API 錯誤的雙重檢查
     if (result && result.response && result.response.status >= 400) {
@@ -1119,6 +1125,7 @@ async function reply(replyToken, content, menu = null) {
       throw error; 
   }
 }
+
 function formatIdForDisplay(id) {
     if (!id || typeof id !== 'string') return id;
     const zws = '\u200B'; // Zero-width space
