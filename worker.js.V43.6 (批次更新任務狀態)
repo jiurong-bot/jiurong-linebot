@@ -1,4 +1,4 @@
-// worker.js - V43.6 (批次更新任務狀態)
+// worker.js - V2 (批次更新任務狀態)
 require('dotenv').config();
 const { exec } = require('child_process');
 const fs = require('fs');
