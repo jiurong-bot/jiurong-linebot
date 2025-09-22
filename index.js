@@ -3115,96 +3115,106 @@ async function handleTeacherCommands(event, userId) {
   } else if (pendingCourseCancellation[userId]) {
     const state = pendingCourseCancellation[userId];
     switch(state.type) {
-      case 'batch':
-        if (text === CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL) {
-          const backgroundState = { ...state };
-          delete pendingCourseCancellation[userId];
-          try {
-(async () => {
-  await executeDbQuery(async (client) => {
-    await client.query('BEGIN');
-    try {
-        const coursesToCancelRes = await client.query("SELECT * FROM courses WHERE id LIKE $1 AND time > NOW() FOR UPDATE", [`${backgroundState.prefix}%`]);
-        if (coursesToCancelRes.rows.length === 0) { 
-            const errMsg = { type: 'text', text: `❌ 批次取消失敗：找不到可取消的「${backgroundState.prefix}」系列課程。`}; 
-            await enqueuePushTask(userId, errMsg); 
-            return; 
-        }
-        const coursesToCancel = coursesToCancelRes.rows; 
-        const affectedUsers = new Map();
+    case 'batch':
+    if (text === CONSTANTS.COMMANDS.TEACHER.CONFIRM_BATCH_CANCEL) {
+        const backgroundState = { ...state };
+        delete pendingCourseCancellation[userId];
+        try {
+            (async () => {
+                await executeDbQuery(async (client) => {
+                    await client.query('BEGIN');
+                    try {
+                        const coursesToCancelRes = await client.query("SELECT * FROM courses WHERE id LIKE $1 AND time > NOW() FOR UPDATE", [`${backgroundState.prefix}%`]);
+                        if (coursesToCancelRes.rows.length === 0) {
+                            const errMsg = { type: 'text', text: `❌ 批次取消失敗：找不到可取消的「${backgroundState.prefix}」系列課程。` };
+                            await enqueuePushTask(userId, errMsg);
+                            await client.query('COMMIT');
+                            return;
+                        }
+                        const coursesToCancel = coursesToCancelRes.rows;
+                        const affectedUsers = new Map();
 
-        for (const course of coursesToCancel) { 
-            for (const studentId of course.students) { 
-                if (!affectedUsers.has(studentId)) affectedUsers.set(studentId, 0); 
-                affectedUsers.set(studentId, affectedUsers.get(studentId) + course.points_cost);
-            } 
+                        // 在 JavaScript 中計算每位學員應退還的總點數
+                        for (const course of coursesToCancel) {
+                            for (const studentId of course.students) {
+                                if (!affectedUsers.has(studentId)) affectedUsers.set(studentId, 0);
+                                affectedUsers.set(studentId, affectedUsers.get(studentId) + course.points_cost);
+                            }
+                        }
+                        
+                        // --- 優化點 1: 一次性刪除所有相關的老師提醒 ---
+                        const firstCourse = coursesToCancel[0];
+                        const courseMainTitle = getCourseMainTitle(firstCourse.title);
+                        const reminderTextPattern = `%${courseMainTitle}%`;
+                        await client.query(
+                            `DELETE FROM tasks 
+                             WHERE recipient_id = $1 
+                             AND status = 'pending' 
+                             AND message_payload::text LIKE $2`,
+                            [firstCourse.teacher_id, reminderTextPattern]
+                        );
 
-            // 刪除每一堂課可能對應的老師提醒
-            const reminderTextPattern = `%${getCourseMainTitle(course.title)}%`;
-            await client.query(
-                `DELETE FROM tasks 
-                 WHERE recipient_id = $1 
-                 AND status = 'pending' 
-                 AND message_payload::text LIKE $2`,
-                [course.teacher_id, reminderTextPattern]
-            );
-        }
+                        // --- 優化點 2: 一次性更新所有學員的點數 ---
+                        if (affectedUsers.size > 0) {
+                            const userIds = Array.from(affectedUsers.keys());
+                            const params = [userIds];
+                            let caseStatement = 'CASE id';
+                            userIds.forEach((id, index) => {
+                                caseStatement += ` WHEN $${index + 2} THEN ${affectedUsers.get(id)} `;
+                                params.push(id);
+                            });
+                            caseStatement += ' END';
 
-        for (const [studentId, refundAmount] of affectedUsers.entries()) { 
-            if (refundAmount > 0) { 
-                await client.query("UPDATE users SET points = points + $1 WHERE id = $2", [refundAmount, studentId]);
-            } 
-        }
-        const courseMainTitle = getCourseMainTitle(coursesToCancel[0].title);
-        
-        // 一次性刪除所有相關的候補邀請
-        const courseIdsToDelete = coursesToCancel.map(c => c.id);
-        if (courseIdsToDelete.length > 0) {
-            await client.query(
-                `DELETE FROM waitlist_notifications
-                 WHERE course_id = ANY($1::text[])`,
-                [courseIdsToDelete]
-            );
-        }
+                            await client.query(
+                                `UPDATE users SET points = points + (${caseStatement}) WHERE id = ANY($1)`,
+                                params
+                            );
+                        }
 
-        // 【⭐ 關鍵修正】
-        // 確保這裡使用的是 courses 資料表的 `id` 欄位，而不是 `course_id`
-        const deleteResult = await client.query("DELETE FROM courses WHERE id LIKE $1 AND time > NOW()", [`${backgroundState.prefix}%`]);
-        
-        if (deleteResult.rowCount > 0) {
-            console.log(`[批次取消] 成功刪除了 ${deleteResult.rowCount} 筆 ${courseMainTitle} 系列課程。`);
-        }
+                        // 一次性刪除所有相關的候補邀請
+                        const courseIdsToDelete = coursesToCancel.map(c => c.id);
+                        if (courseIdsToDelete.length > 0) {
+                            await client.query(
+                                `DELETE FROM waitlist_notifications
+                                 WHERE course_id = ANY($1::text[])`,
+                                [courseIdsToDelete]
+                            );
+                        }
 
-        const batchTasks = Array.from(affectedUsers.entries()).map(([studentId, refundAmount]) => ({
-            recipientId: studentId,
-            message: { type: 'text', text: `課程取消通知：\n老師已取消「${courseMainTitle}」系列所有課程，已歸還 ${refundAmount} 點至您的帳戶。` }
-        }));
-        
-        if (batchTasks.length > 0) {
-            await enqueueBatchPushTasks(batchTasks, { settingKey: 'student_new_announcement' });
-        }
-        
-        await client.query('COMMIT');
-        
-        const teacherMsg = { type: 'text', text: `✅ 已成功批次取消「${courseMainTitle}」系列共 ${deleteResult.rowCount} 堂課，並已退點給所有學員。` }; 
-        await enqueuePushTask(userId, teacherMsg);
+                        // 一次性刪除所有課程
+                        const deleteResult = await client.query("DELETE FROM courses WHERE id LIKE $1 AND time > NOW()", [`${backgroundState.prefix}%`]);
+                        if (deleteResult.rowCount > 0) {
+                            console.log(`[批次取消] 成功刪除了 ${deleteResult.rowCount} 筆 ${courseMainTitle} 系列課程。`);
+                        }
 
-    } catch (e) { 
-        await client.query('ROLLBACK');
-        console.error('[批次取消] 背景任務執行失敗:', e); 
-        const errorMsg = { type: 'text', text: `❌ 批次取消課程時發生嚴重錯誤，操作已復原。請聯繫管理員。\n錯誤: ${e.message}` }; 
-        await enqueuePushTask(userId, errorMsg);
+                        // 批次準備通知任務
+                        const batchTasks = Array.from(affectedUsers.entries()).map(([studentId, refundAmount]) => ({
+                            recipientId: studentId,
+                            message: { type: 'text', text: `課程取消通知：\n老師已取消「${courseMainTitle}」系列所有課程，已歸還 ${refundAmount} 點至您的帳戶。` }
+                        }));
+                        if (batchTasks.length > 0) {
+                            await enqueueBatchPushTasks(batchTasks, { settingKey: 'student_new_announcement' });
+                        }
+                        
+                        await client.query('COMMIT');
+                        const teacherMsg = { type: 'text', text: `✅ 已成功批次取消「${courseMainTitle}」系列共 ${deleteResult.rowCount} 堂課，並已退點給所有學員。` };
+                        await enqueuePushTask(userId, teacherMsg);
+                    } catch (e) {
+                        await client.query('ROLLBACK');
+                        console.error('[批次取消] 背景任務執行失敗:', e);
+                        const errorMsg = { type: 'text', text: `❌ 批次取消課程時發生嚴重錯誤，操作已復原。請聯繫管理員。\n錯誤: ${e.message}` };
+                        await enqueuePushTask(userId, errorMsg);
+                    }
+                });
+            })();
+            return '✅ 指令已收到，正在為您批次取消課程。\n完成後將會另行通知，請稍候...';
+        } catch (error) {
+            console.error('❌ 啟動批次取消時發生錯誤:', error);
+            return '啟動批次取消任務失敗，請稍後再試。';
+        }
     }
-  });
-})();
+    break;
 
-             return '✅ 指令已收到，正在為您批次取消課程。\n完成後將會另行通知，請稍候...';
-          } catch (error) { 
-              console.error('❌ 啟動批次取消時發生錯誤:', error);
-              return '啟動批次取消任務失敗，請稍後再試。';
-          }
-        }
-        break;
       case 'single':
          if (text === CONSTANTS.COMMANDS.TEACHER.CONFIRM_SINGLE_CANCEL) {
             return executeDbQuery(async (client) => {
