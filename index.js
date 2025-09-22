@@ -534,40 +534,43 @@ async function getPendingNotificationsForUser(user) {
     const notifications = {};
     try {
         await executeDbQuery(async (client) => {
-      if (user.role === 'teacher') {
-    // 1. 將三個計數查詢合併為一個，課程查詢維持不變
-    const [statsRes, upcomingCoursesRes] = await Promise.all([
-        client.query(`
-            SELECT
-                (SELECT COUNT(*) FROM feedback_messages WHERE status = 'new') AS new_messages_count,
-                (SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation') AS pending_point_orders_count,
-                (SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')) AS pending_shop_orders_count
-        `),
-        client.query(`
-            SELECT title, time 
-            FROM courses 
-            WHERE time BETWEEN NOW() AND NOW() + interval '24 hours' 
-            ORDER BY time ASC
-        `)
-    ]);
-
-    // 2. 接收合併後的結果，它會在 statsRes.rows[0] 中
-    const stats = statsRes.rows[0];
-
-    // 3. 從新的結果物件中，透過我們設定的「別名」來取出計數
-    notifications.newMessages = parseInt(stats.new_messages_count, 10);
-    notifications.pendingPointOrders = parseInt(stats.pending_point_orders_count, 10);
-    notifications.pendingShopOrders = parseInt(stats.pending_shop_orders_count, 10);
-    notifications.upcomingCourses = upcomingCoursesRes.rows;
+            if (user.role === 'teacher') {
+                // 這部分原本就已經是優化過的，維持不變
+                const [statsRes, upcomingCoursesRes] = await Promise.all([
+                    client.query(`
+                        SELECT
+                            (SELECT COUNT(*) FROM feedback_messages WHERE status = 'new') AS new_messages_count,
+                            (SELECT COUNT(*) FROM orders WHERE status = 'pending_confirmation') AS pending_point_orders_count,
+                            (SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')) AS pending_shop_orders_count
+                    `),
+                    client.query(`
+                        SELECT title, time 
+                        FROM courses 
+                        WHERE time BETWEEN NOW() AND NOW() + interval '24 hours' 
+                        ORDER BY time ASC
+                    `)
+                ]);
+                const stats = statsRes.rows[0];
+                notifications.newMessages = parseInt(stats.new_messages_count, 10);
+                notifications.pendingPointOrders = parseInt(stats.pending_point_orders_count, 10);
+                notifications.pendingShopOrders = parseInt(stats.pending_shop_orders_count, 10);
+                notifications.upcomingCourses = upcomingCoursesRes.rows;
         
             } else if (user.role === 'admin') {
                 const failedTasks = await client.query("SELECT COUNT(*) FROM failed_tasks");
                 notifications.failedTasks = parseInt(failedTasks.rows[0].count, 10);
 
             } else if (user.role === 'student') {
-                const [unreadReplies, newAnnouncements, upcomingCoursesRes] = await Promise.all([
-                    client.query("SELECT COUNT(*) FROM feedback_messages WHERE user_id = $1 AND status = 'replied' AND is_student_read = false", [user.id]),
-                    client.query("SELECT COUNT(*) FROM announcements WHERE id > $1", [user.last_seen_announcement_id || 0]),
+                // --- 優化點：將 2 個計數查詢合併為 1 個 ---
+                const [statsRes, upcomingCoursesRes] = await Promise.all([
+                    // 新的合併查詢
+                    client.query(`
+                        SELECT
+                            (SELECT COUNT(*) FROM feedback_messages WHERE user_id = $1 AND status = 'replied' AND is_student_read = false) AS unread_replies_count,
+                            (SELECT COUNT(*) FROM announcements WHERE id > $2) AS new_announcements_count
+                    `, [user.id, user.last_seen_announcement_id || 0]),
+                    
+                    // 查詢課程的部分維持不變
                     client.query(`
                         SELECT title, time 
                         FROM courses 
@@ -576,8 +579,11 @@ async function getPendingNotificationsForUser(user) {
                         ORDER BY time ASC
                     `, [user.id])
                 ]);
-                notifications.unreadReplies = parseInt(unreadReplies.rows[0].count, 10);
-                notifications.newAnnouncements = parseInt(newAnnouncements.rows[0].count, 10);
+
+                // 從新的查詢結果中解析計數
+                const stats = statsRes.rows[0];
+                notifications.unreadReplies = parseInt(stats.unread_replies_count, 10);
+                notifications.newAnnouncements = parseInt(stats.new_announcements_count, 10);
                 notifications.upcomingCourses = upcomingCoursesRes.rows;
             }
         });
