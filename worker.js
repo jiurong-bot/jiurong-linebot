@@ -602,7 +602,7 @@ async function performHealthCheck() {
 // 主程式迴圈
 // =======================================================
 async function main() {
-  console.log('🚀 背景工作程式 (Worker) 已啟動... V43.6 (批次更新任務狀態)');
+  console.log('🚀 背景工作程式 (Worker) 已啟動... V3(移除executePush)');
   while (true) {
     if (isShuttingDown) {
         console.log('🛑 收到關閉信號，停止抓取新任務...');
