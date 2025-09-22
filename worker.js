@@ -532,6 +532,7 @@ async function performHealthCheck() {
     console.log('🩺 執行健康檢查...');
     try {
         await executeDbQuery(async (db) => {
+            // 步驟 1: 找出並重設卡住的任務 (這個 UPDATE 維持獨立)
             const stuckTasksRes = await db.query(
                 `UPDATE tasks SET status = 'pending', updated_at = NOW(), last_error = 'Reset by health check' WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '${STUCK_TASK_TIMEOUT_MINUTES} minutes' RETURNING id`
             );
@@ -540,21 +541,27 @@ async function performHealthCheck() {
                 console.warn(`⚠️ 健康檢查：發現並重設了 ${stuckTasksRes.rows.length} 個卡住的任務: ${stuckIds}`);
             }
             
-            const backlogRes = await db.query(
-                `SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND send_at <= NOW()`
-            );
-            const backlogCount = parseInt(backlogRes.rows[0].count, 10);
+            // --- 優化點：一次性查詢所有健康指標 ---
+            const healthStatsRes = await db.query(`
+                SELECT
+                    (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND send_at <= NOW()) AS backlog_count,
+                    (SELECT COUNT(*) FROM failed_tasks WHERE failed_at > NOW() - INTERVAL '${FAILED_TASK_SPIKE_WINDOW_HOURS} hours') AS spike_count,
+                    (SELECT COUNT(*) FROM error_logs WHERE created_at > NOW() - INTERVAL '${ERROR_LOG_SPIKE_WINDOW_HOURS} hours') AS error_log_spike_count
+            `);
+
+            const stats = healthStatsRes.rows[0];
+            const backlogCount = parseInt(stats.backlog_count, 10);
+            const spikeCount = parseInt(stats.spike_count, 10);
+            const errorLogSpikeCount = parseInt(stats.error_log_spike_count, 10);
+
+            // 步驟 2: 判斷積壓狀況
             if (backlogCount > BATCH_SIZE * 5) {
                  console.warn(`[HEALTH_CHECK_ALERT] 佇列嚴重積壓！目前有 ${backlogCount} 個待辦任務。`);
             }
-
+            
+            // 步驟 3: 判斷是否觸發警報
             if (!isAlertCooldown) {
-                // 檢查1: 失敗任務暴增
-                const spikeRes = await db.query(
-                    `SELECT COUNT(*) FROM failed_tasks WHERE failed_at > NOW() - INTERVAL '${FAILED_TASK_SPIKE_WINDOW_HOURS} hours'`
-                );
-                const spikeCount = parseInt(spikeRes.rows[0].count, 10);
-
+                // 檢查 1: 失敗任務暴增
                 if (spikeCount >= FAILED_TASK_SPIKE_THRESHOLD) {
                     console.warn(`🚨🚨🚨 偵測到失敗任務暴增！過去 ${FAILED_TASK_SPIKE_WINDOW_HOURS} 小時內有 ${spikeCount} 筆失敗任務。`);
                     await sendSystemAlertEmail(
@@ -567,27 +574,18 @@ async function performHealthCheck() {
                         console.log('ℹ️ 智慧警報冷卻時間結束，恢復偵測。');
                     }, ALERT_COOLDOWN_MS);
                 }
-
-                // [V39.5 新增] 檢查2: 一般錯誤日誌暴增
-                // 只有在冷卻時間外且尚未被觸發時才檢查
-                if (!isAlertCooldown) {
-                    const errorLogSpikeRes = await db.query(
-                        `SELECT COUNT(*) FROM error_logs WHERE created_at > NOW() - INTERVAL '${ERROR_LOG_SPIKE_WINDOW_HOURS} hours'`
+                // 檢查 2: 一般錯誤日誌暴增 (只有在冷卻時間外且尚未被觸發時才檢查)
+                else if (errorLogSpikeCount >= ERROR_LOG_SPIKE_THRESHOLD) {
+                    console.warn(`🚨🚨🚨 偵測到一般錯誤日誌暴增！過去 ${ERROR_LOG_SPIKE_WINDOW_HOURS} 小時內有 ${errorLogSpikeCount} 筆錯誤。`);
+                    await sendSystemAlertEmail(
+                        '系統錯誤日誌數量異常',
+                        `系統偵測到在過去 ${ERROR_LOG_SPIKE_WINDOW_HOURS} 小時內，應用程式本身記錄了 ${errorLogSpikeCount} 筆錯誤，已超過 ${ERROR_LOG_SPIKE_THRESHOLD} 筆的警戒值。\n\n這可能表示系統有潛在的不穩定問題，請至管理模式的「查看錯誤日誌」了解詳細原因。`
                     );
-                    const errorLogSpikeCount = parseInt(errorLogSpikeRes.rows[0].count, 10);
-                    
-                    if (errorLogSpikeCount >= ERROR_LOG_SPIKE_THRESHOLD) {
-                        console.warn(`🚨🚨🚨 偵測到一般錯誤日誌暴增！過去 ${ERROR_LOG_SPIKE_WINDOW_HOURS} 小時內有 ${errorLogSpikeCount} 筆錯誤。`);
-                        await sendSystemAlertEmail(
-                            '系統錯誤日誌數量異常',
-                            `系統偵測到在過去 ${ERROR_LOG_SPIKE_WINDOW_HOURS} 小時內，應用程式本身記錄了 ${errorLogSpikeCount} 筆錯誤，已超過 ${ERROR_LOG_SPIKE_THRESHOLD} 筆的警戒值。\n\n這可能表示系統有潛在的不穩定問題，請至管理模式的「查看錯誤日誌」了解詳細原因。`
-                        );
-                        isAlertCooldown = true;
-                        setTimeout(() => {
-                            isAlertCooldown = false;
-                            console.log('ℹ️ 智慧警報冷卻時間結束，恢復偵測。');
-                        }, ALERT_COOLDOWN_MS);
-                    }
+                    isAlertCooldown = true;
+                    setTimeout(() => {
+                        isAlertCooldown = false;
+                        console.log('ℹ️ 智慧警報冷卻時間結束，恢復偵測。');
+                    }, ALERT_COOLDOWN_MS);
                 }
             }
         });
@@ -597,6 +595,7 @@ async function performHealthCheck() {
         lastHealthCheck = Date.now();
     }
 }
+
 
 // =======================================================
 // 主程式迴圈
