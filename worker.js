@@ -1,4 +1,4 @@
-// worker.js - V43.6 (批次更新任務狀態)
+// worker.js - V3 (移除executePush)
 require('dotenv').config();
 const { exec } = require('child_process');
 const fs = require('fs');
@@ -525,26 +525,6 @@ async function moveTaskToDLQ(task, errorMessage) {
             "UPDATE tasks SET status = 'failed', last_error = $1, updated_at = NOW() WHERE id = $2",
             [`DLQ_MOVE_FAILED: ${e.message}`, task.id]
         ));
-    }
-}
-
-async function executePush(task) {
-    try {
-        await client.pushMessage(task.recipient_id, task.message_payload);
-        await executeDbQuery(db => db.query("UPDATE tasks SET status = 'sent', updated_at = NOW() WHERE id = $1", [task.id]));
-        console.log(`✅ 任務 ${task.id} 已成功發送給 ${task.recipient_id}`);
-    } catch (err) {
-        console.error(`❌ 處理任務 ${task.id} 失敗:`, err.message, `(Recipient: ${task.recipient_id})`);
-        if (task.retry_count < MAX_RETRIES) {
-            const nextRetryMinutes = RETRY_DELAY_MINUTES * (task.retry_count + 1);
-            await executeDbQuery(db => db.query(
-              `UPDATE tasks SET status = 'pending', retry_count = retry_count + 1, last_error = $1, updated_at = NOW(), send_at = NOW() + INTERVAL '${nextRetryMinutes} minutes' WHERE id = $2`,
-              [err.message, task.id]
-            ));
-            console.log(`🕒 任務 ${task.id} 將在 ${nextRetryMinutes} 分鐘後重試。`);
-        } else {
-            await moveTaskToDLQ(task, err.message);
-        }
     }
 }
 
