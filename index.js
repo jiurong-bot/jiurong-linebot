@@ -1,4 +1,4 @@
-// index.js - V43.9 (商城資料庫優化)
+// index.js - V43.10 (資料庫查詢優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6678,7 +6678,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43.9 (商城資料庫優化)`);
+    console.log(`Bot 版本 V43.10 (資料庫查詢優化)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
