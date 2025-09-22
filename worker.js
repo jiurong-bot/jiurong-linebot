@@ -1,4 +1,4 @@
-// worker.js - V3 (移除executePush)
+// worker.js - V4 (performHealthCheck 函式優化)
 require('dotenv').config();
 const { exec } = require('child_process');
 const fs = require('fs');
@@ -602,7 +602,7 @@ async function performHealthCheck() {
 // 主程式迴圈
 // =======================================================
 async function main() {
-  console.log('🚀 背景工作程式 (Worker) 已啟動... V3(移除executePush)');
+  console.log('🚀 背景工作程式 (Worker) 已啟動... V4 (performHealthCheck 函式優化)');
   while (true) {
     if (isShuttingDown) {
         console.log('🛑 收到關閉信號，停止抓取新任務...');
