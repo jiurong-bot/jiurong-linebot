@@ -3346,8 +3346,8 @@ async function handleTeacherCommands(event, userId) {
             state.points_cost = points; 
             state.step = 'await_teacher';
             return buildTeacherSelectionCarousel();
-        case 'await_confirmation':
-        if (text === '✅ 確認新增') {
+         case 'await_confirmation':
+    if (text === '✅ 確認新增') {
         const teacherId = userId;
         const courseState = { ...pendingCourseCreation[userId] };
         delete pendingCourseCreation[userId];
@@ -3357,8 +3357,9 @@ async function handleTeacherCommands(event, userId) {
             try {
                 const prefix = await generateUniqueCoursePrefix(client);
                 let currentDate = new Date();
-                const coursesToInsert = [];
 
+                // --- 步驟 1: 準備所有要插入的課程資料 ---
+                const coursesToInsert = [];
                 for (let i = 0; i < courseState.sessions; i++) {
                     const courseDate = getNextDate(courseState.weekday, courseState.start_time, currentDate);
                     const course = {
@@ -3376,21 +3377,20 @@ async function handleTeacherCommands(event, userId) {
                 }
 
                 if (coursesToInsert.length > 0) {
-                    // 【⭐ 關鍵修正 1】
-                    // 直接傳遞 JS 陣列，不再使用 JSON.stringify
+                    // --- 步驟 2: 將所有課程資料攤平成一個參數陣列 ---
                     const values = coursesToInsert.flatMap(c => [
                         c.id, c.title, c.time, c.capacity, c.points_cost,
-                        c.students, // 直接傳遞 students 陣列
-                        c.waiting,  // 直接傳遞 waiting 陣列
+                        c.students, // node-postgres 會自動處理 JS 陣列轉換
+                        c.waiting,
                         c.teacher_id
                     ]);
 
-                    // 【⭐ 關鍵修正 2】
-                    // 移除對應 students 和 waiting 欄位的 ::jsonb 型別轉換
+                    // --- 步驟 3: 根據課程數量，動態產生對應數量的預留位置 ---
                     const placeholders = coursesToInsert.map((_, i) =>
                         `($${i*8+1}, $${i*8+2}, $${i*8+3}, $${i*8+4}, $${i*8+5}, $${i*8+6}, $${i*8+7}, $${i*8+8})`
                     ).join(',');
 
+                    // --- 步驟 4: 執行一次性的批次 INSERT ---
                     await client.query(
                         `INSERT INTO courses (id, title, time, capacity, points_cost, students, waiting, teacher_id) 
                          VALUES ${placeholders}`,
@@ -3399,7 +3399,7 @@ async function handleTeacherCommands(event, userId) {
                 }
 
                 await client.query('COMMIT');
-
+                
                 const mainTitle = getCourseMainTitle(courseState.title);
                 const prefilledContent = `✨ 新課程上架！\n\n「${mainTitle}」系列現已開放預約，歡迎至「預約課程」頁面查看詳情！`;
                 pendingAnnouncementCreation[teacherId] = {
@@ -3458,7 +3458,6 @@ async function handleTeacherCommands(event, userId) {
         return '請點擊「✅ 確認新增」或「❌ 取消操作」。';
     }
     break;
-
     }
   } else if (pendingManualAdjust[userId]) {
     const state = pendingManualAdjust[userId];
