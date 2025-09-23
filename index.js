@@ -1681,6 +1681,7 @@ async function handlePurchaseFlow(event, userId) {
 
 
     switch (purchaseState.step) {
+        // ###########
         case 'input_last5':
         case 'edit_last5':
             if (/^\d{5}$/.test(text)) {
@@ -1718,6 +1719,7 @@ async function handlePurchaseFlow(event, userId) {
             }
             return { handled: true, reply: replyContent };
     }
+  // ###########
     return { handled: false };
 }
 
