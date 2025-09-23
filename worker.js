@@ -13,8 +13,10 @@ const config = {
 const client = new line.Client(config);
 
 const pgPool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  // 核心修改：與 index.js 保持一致
+  max: parseInt(process.env.DB_POOL_SIZE) || 20
 });
 
 // --- 常數設定 ---
