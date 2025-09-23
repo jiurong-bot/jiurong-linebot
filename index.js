@@ -1659,6 +1659,7 @@ function clearPendingConversations(userId) {
 function getCancelMenu() {
     return [{ type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } }];
 }
+
 function setupConversationTimeout(userId, conversationState, stateName, onTimeout) {
     if (conversationState[userId]?.timeoutId) {
         clearTimeout(conversationState[userId].timeoutId);
@@ -1671,16 +1672,15 @@ function setupConversationTimeout(userId, conversationState, stateName, onTimeou
     }, CONSTANTS.INTERVALS.CONVERSATION_TIMEOUT_MS);
     conversationState[userId] = { ...conversationState[userId], timeoutId };
 }
+
 async function handlePurchaseFlow(event, userId, userObject = null) {
-    const text = event.message.text ?
-        event.message.text.trim() : '';
+    const text = event.message.text ? event.message.text.trim() : '';
     // ✅ 如果沒有傳入 userObject，才自己去查詢資料庫
     const user = userObject || await getUser(userId);
     const purchaseState = pendingPurchase[userId];
 
     if (!purchaseState) return { handled: false };
     let replyContent;
-
     switch (purchaseState.step) {
         case 'input_last5':
         case 'edit_last5':
@@ -1700,14 +1700,18 @@ async function handlePurchaseFlow(event, userId, userObject = null) {
                 // 如果更新成功，res.rows[0] 就會是更新後的訂單物件
                 return res.rowCount > 0 ? res.rows[0] : null;
             });
+
             delete pendingPurchase[userId];
 
             if (updatedOrder) {
-                const flexMenu = await buildPointsMenuFlex(userId, user); // ✅ 將 user 物件繼續傳遞下去
+                // ✅ 核心優化點：將 updatedOrder 直接傳入函式，作為第三個參數
+                const flexMenu = await buildPointsMenuFlex(userId, user, updatedOrder);
+                
                 replyContent = [
                     {type: 'text', text: `感謝您！已收到您的匯款後五碼「${text}」。\n我們將盡快為您審核，審核通過後點數將自動加入您的帳戶。`}, 
                     flexMenu
                 ];
+                
                 if (TEACHER_ID) {
                     const notifyMessage = { type: 'text', text: `🔔 購點審核通知\n學員 ${user.name} 已提交匯款資訊。\n訂單ID: ${order_id}\n後五碼: ${text}\n請至「點數管理」->「待確認點數訂單」審核。`};
                     await notifyAllTeachers(notifyMessage);
