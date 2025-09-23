@@ -1,4 +1,4 @@
-// index.js - V43.13 (預購商品管理優化)
+// index.js - V43.14 (input_last5優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -1681,48 +1681,52 @@ async function handlePurchaseFlow(event, userId) {
 
 
     switch (purchaseState.step) {
-        // ###########
-        case 'input_last5':
-        case 'edit_last5':
-            if (/^\d{5}$/.test(text)) {
-                const order_id = purchaseState.data.order_id;
-                const wasSuccessful = await executeDbQuery(async (client) => {
-                    const orderRes = await client.query('SELECT * FROM orders WHERE order_id = $1', [order_id]);
-                    if (orderRes.rows.length > 0) {
-                        const order = orderRes.rows[0];
-                        order.last_5_digits = text;
-                        order.status = 'pending_confirmation';
-                        order.timestamp = new Date().toISOString();
-                        await saveOrder(order, client);
-                        return true;
-                    }
-                    return false;
-                });
-                delete pendingPurchase[userId];
-                if (wasSuccessful) {
-                    const flexMenu = await buildPointsMenuFlex(userId);
-                    replyContent = [{type: 'text', text: `感謝您！已收到您的匯款後五碼「${text}」。\n我們將盡快為您審核，審核通過後點數將自動加入您的帳戶。`}, flexMenu];
-                    
-                    if (TEACHER_ID) {
-                        const notifyMessage = { type: 'text', text: `🔔 購點審核通知\n學員 ${user.name} 已提交匯款資訊。\n訂單ID: ${order_id}\n後五碼: ${text}\n請至「點數管理」->「待確認點數訂單」審核。`};
-                        await notifyAllTeachers(notifyMessage);
-                    }
-                } else {
-                    replyContent = '找不到您的訂單，請重新操作。';
+           case 'input_last5':
+    case 'edit_last5':
+        if (/^\d{5}$/.test(text)) {
+            const order_id = purchaseState.data.order_id;
+            
+            // ✅ 使用單一 UPDATE ... RETURNING 指令，一步到位
+            const updatedOrder = await executeDbQuery(async (client) => {
+                const res = await client.query(
+                    `UPDATE orders 
+                     SET last_5_digits = $1, 
+                         status = 'pending_confirmation', 
+                         timestamp = NOW() 
+                     WHERE order_id = $2 
+                     RETURNING *`, // RETURNING * 會回傳被更新的那一整行資料
+                    [text, order_id]
+                );
+                // 如果更新成功，res.rows[0] 就會是更新後的訂單物件
+                return res.rowCount > 0 ? res.rows[0] : null;
+            });
+
+            delete pendingPurchase[userId];
+
+            if (updatedOrder) {
+                const flexMenu = await buildPointsMenuFlex(userId);
+                replyContent = [
+                    {type: 'text', text: `感謝您！已收到您的匯款後五碼「${text}」。\n我們將盡快為您審核，審核通過後點數將自動加入您的帳戶。`}, 
+                    flexMenu
+                ];
+                
+                if (TEACHER_ID) {
+                    const notifyMessage = { type: 'text', text: `🔔 購點審核通知\n學員 ${user.name} 已提交匯款資訊。\n訂單ID: ${order_id}\n後五碼: ${text}\n請至「點數管理」->「待確認點數訂單」審核。`};
+                    await notifyAllTeachers(notifyMessage);
                 }
             } else {
-                replyContent = {
-                    type: 'text',
-                    text: '格式錯誤，請輸入5位數字的匯款帳號後五碼。',
-                    quickReply: { items: getCancelMenu() }
-                };
+                replyContent = '找不到您的訂單，請重新操作。';
             }
-            return { handled: true, reply: replyContent };
-    }
-  // ###########
+        } else {
+            replyContent = {
+                type: 'text',
+                text: '格式錯誤，請輸入5位數字的匯款帳號後五碼。',
+                quickReply: { items: getCancelMenu() }
+            };
+        }
+        return { handled: true, reply: replyContent };
     return { handled: false };
 }
-
 
 // --- Teacher Command Handlers (V34.0 Refactor) ---
 
@@ -6722,7 +6726,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V43.13 (預購商品管理優化)`);
+    console.log(`Bot 版本 V43.14 (input_last5優化)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
