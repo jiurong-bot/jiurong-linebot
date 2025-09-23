@@ -3614,8 +3614,15 @@ await clientDB.query(
     if (event.message.type === 'image') {
         try {
             const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
-            const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-            const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: true, folder: "yoga_teachers" });
+            
+            // ✅ 同樣使用 sharp 進行圖片預處理
+            const processedImageBuffer = await sharp(imageResponse.data)
+                .resize({ width: 800, height: 800, fit: 'inside', withoutEnlargement: true }) // 個人頭像可以設小一點，例如 800x800
+                .jpeg({ quality: 80 })
+                .toBuffer();
+
+            // ✅ 上傳處理過的圖片 Buffer
+            const uploadResponse = await imagekit.upload({ file: processedImageBuffer, fileName: `teacher_${userId}.jpg`, useUniqueFileName: true, folder: "yoga_teachers" });
             imageUrl = uploadResponse.url;
         } catch (err) {
             console.error('上傳老師照片至 ImageKit 失敗', err);
@@ -3633,6 +3640,7 @@ await clientDB.query(
     state.step = 'await_confirmation';
     state.newData = state.profileData;
     return buildProfileConfirmationMessage(userId, state.newData);
+
         }
     } 
     else if (state.type === 'edit') {
