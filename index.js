@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 const crypto =require('crypto');
 const axios = require('axios');
 const ImageKit = require("imagekit");
+const sharp = require('sharp');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const config = {
