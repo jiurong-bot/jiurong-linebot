@@ -4809,56 +4809,44 @@ async function showHistoricalMessagesAsTeacher(page, userId = null) {
         };
     });
 }
-
 async function showUnreadMessages(page) {
-    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-    return executeDbQuery(async (client) => {
-        const res = await client.query("SELECT * FROM feedback_messages WHERE status = 'new' ORDER BY timestamp ASC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
-        
-        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageMessages = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
-
-
-        if (pageMessages.length === 0 && page === 1) {
-            return '太棒了！目前沒有未回覆的學員留言。';
+    // 內部函式：定義如何將一筆 message 資料轉換成一個 Bubble
+    const mapRowToBubble = (msg) => ({
+        type: 'bubble',
+        body: {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'md',
+            contents: [
+                { type: 'text', text: msg.user_name, weight: 'bold', size: 'lg', wrap: true },
+                { type: 'text', text: formatDateTime(msg.timestamp), size: 'xs', color: '#AAAAAA' },
+                { type: 'separator', margin: 'lg' },
+                { type: 'text', text: msg.message, wrap: true, margin: 'lg', size: 'md' }
+            ]
+        },
+        footer: {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            contents: [
+                { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '💬 回覆此留言', data: `action=reply_feedback&msgId=${msg.id}&userId=${msg.user_id}` } },
+                { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '標示為已讀', data: `action=mark_feedback_read&msgId=${msg.id}` } }
+            ]
         }
-        if (pageMessages.length === 0) {
-            return '沒有更多未回覆的留言了。';
-        }
+    });
 
-
-        const messageBubbles = pageMessages.map(msg => ({
-            type: 'bubble',
-            body: {
-                type: 'box',
-                layout: 'vertical',
-                spacing: 'md',
-                contents: [
-                    { type: 'text', text: msg.user_name, weight: 'bold', size: 'lg', wrap: true },
-                    { type: 'text', text: formatDateTime(msg.timestamp), size: 'xs', color: '#AAAAAA' },
-                    { type: 'separator', margin: 'lg' },
-                    { type: 'text', text: msg.message, wrap: true, margin: 'lg', size: 'md' }
-                ]
-            },
-            footer: {
-                type: 'box',
-                layout: 'vertical',
-                spacing: 'sm',
-                contents: [
-                    { type: 'button', style: 'primary', height: 'sm', action: { type: 'postback', label: '💬 回覆此留言', data: `action=reply_feedback&msgId=${msg.id}&userId=${msg.user_id}` } },
-                    { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '標示為已讀', data: `action=mark_feedback_read&msgId=${msg.id}` } }
-                ]
-            }
-        }));
-        const paginationBubble = createPaginationBubble('action=view_unread_messages', page, hasNextPage);
-        if (paginationBubble) {
-            messageBubbles.push(paginationBubble);
-        }
-
-
-        return { type: 'flex', altText: '未回覆的學員留言', contents: { type: 'carousel', contents: messageBubbles } };
+    // 直接呼叫產生器，傳入設定
+    return createPaginatedCarousel({
+        altText: '未回覆的學員留言',
+        baseAction: 'action=view_unread_messages',
+        page: page,
+        dataQuery: "SELECT * FROM feedback_messages WHERE status = 'new' ORDER BY timestamp ASC LIMIT $1 OFFSET $2",
+        queryParams: [],
+        mapRowToBubble: mapRowToBubble,
+        noDataMessage: '太棒了！目前沒有未回覆的學員留言。'
     });
 }
+
 async function showPendingShopOrders(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
