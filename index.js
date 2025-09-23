@@ -1337,24 +1337,25 @@ function buildBuyPointsFlex() {
     };
 }
 // [程式夥伴修改] V42.4b - 修正重複訂單問題
-async function buildPointsMenuFlex(userId, userObject = null) {
+// [優化建議] 新增 pendingOrderObject 參數，避免重複查詢
+async function buildPointsMenuFlex(userId, userObject = null, pendingOrderObject = null) {
     // ✅ 如果沒有傳入 userObject，才自己去查詢資料庫
     const user = userObject || await getUser(userId);
     if (!user) return { type: 'text', text: '無法獲取您的使用者資料。' };
 
-    // [修正] 擴大查詢範圍，納入所有待處理狀態，並只取最新一筆
-    const pendingOrderRes = await executeDbQuery(client =>
+    // ✅ 核心優化點：
+    // 如果外面已經傳入 pendingOrderObject，就直接使用它。
+    // 否則 (為 null)，才自己去查詢資料庫。
+    const pendingOrder = pendingOrderObject || await executeDbQuery(client =>
         client.query(
             "SELECT * FROM orders WHERE user_id = $1 AND status IN ('pending_payment', 'pending_confirmation', 'rejected') ORDER BY timestamp DESC LIMIT 1",
             [userId]
         )
-    );
-    const pendingOrder = pendingOrderRes.rows.length > 0 ? pendingOrderRes.rows[0] : null;
+    ).then(res => res.rows.length > 0 ? res.rows[0] : null);
 
     const bodyContents = [];
     // 如果找到任何待處理的訂單，就建立一個詳細的提示卡
     if (pendingOrder) {
-        // --- [整合] 從 showPurchaseHistory 借用並簡化邏輯，以顯示更詳細的狀態 ---
         let actionButton = null;
         let cardColor, statusText, additionalInfo = '';
         const isTransfer = pendingOrder.payment_method === 'transfer';
@@ -1420,6 +1421,7 @@ async function buildPointsMenuFlex(userId, userObject = null) {
             { type: 'text', text: `${user.points} 點`, weight: 'bold', size: '3xl', margin: 'sm', color: '#1A759F' },
         ]
     });
+
     return {
         type: 'flex',
         altText: '點數查詢選單',
