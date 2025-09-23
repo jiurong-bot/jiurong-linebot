@@ -1681,8 +1681,8 @@ async function handlePurchaseFlow(event, userId) {
 
 
     switch (purchaseState.step) {
-           case 'input_last5':
-    case 'edit_last5':
+        case 'input_last5':
+        case 'edit_last5':
         if (/^\d{5}$/.test(text)) {
             const order_id = purchaseState.data.order_id;
             
@@ -1725,7 +1725,8 @@ async function handlePurchaseFlow(event, userId) {
             };
         }
         return { handled: true, reply: replyContent };
-    return { handled: false };
+    }
+        return { handled: false };
 }
 
 // --- Teacher Command Handlers (V34.0 Refactor) ---
