@@ -1,4 +1,4 @@
-// worker.js - V4 (performHealthCheck 函式優化)
+// worker.js - V5 (調整資料庫連接池大小)
 require('dotenv').config();
 const { exec } = require('child_process');
 const fs = require('fs');
