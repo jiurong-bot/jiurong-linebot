@@ -5418,7 +5418,7 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        return flexMessage;
    });
 }
-async function showMyCourses(userId, page) {
+
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
