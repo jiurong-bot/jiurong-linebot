@@ -1951,19 +1951,24 @@ async function showAnnouncementsForDeletionList(event, user) {
 async function showShopManagementMenu(event, user) {
     // --- 透過一次查詢，取得所有需要的計數 ---
     const counts = await executeDbQuery(client =>
+        // ✅ 使用條件聚合，對 products 表只需掃描一次
         client.query(`
             SELECT
-                -- 查詢 1: 各種產品狀態的計數
-                (SELECT COUNT(*) FROM products WHERE status = 'preorder') AS preorder_count,
-                (SELECT COUNT(*) FROM products WHERE inventory <= 0 AND status = 'available') AS sold_out_count,
-                (SELECT COUNT(*) FROM products WHERE status = 'available') AS available_count,
-                (SELECT COUNT(*) FROM products WHERE status = 'unavailable') AS unavailable_count,
-
-                -- 查詢 2: 待處理的商品訂單數量
+                p.preorder_count,
+                p.sold_out_count,
+                p.available_count,
+                p.unavailable_count,
+                -- 其他表的查詢維持子查詢形式，因為它們的來源表不同
                 (SELECT COUNT(*) FROM product_orders WHERE status IN ('pending_payment', 'pending_confirmation')) AS pending_shop_orders_count,
-
-                -- 查詢 3: 待出貨的預購系列數量
-                (SELECT COUNT(DISTINCT p.id) FROM products p JOIN product_preorders pp ON p.id = pp.product_id WHERE p.status = 'unavailable' AND pp.status = 'active') AS fulfillment_count
+                (SELECT COUNT(DISTINCT prd.id) FROM products prd JOIN product_preorders pp ON prd.id = pp.product_id WHERE prd.status = 'unavailable' AND pp.status = 'active') AS fulfillment_count
+            FROM (
+                SELECT
+                    COUNT(*) FILTER (WHERE status = 'preorder') AS preorder_count,
+                    COUNT(*) FILTER (WHERE inventory <= 0 AND status = 'available') AS sold_out_count,
+                    COUNT(*) FILTER (WHERE status = 'available') AS available_count,
+                    COUNT(*) FILTER (WHERE status = 'unavailable') AS unavailable_count
+                FROM products
+            ) p
         `)
     ).then(res => ({
         preorderCount: parseInt(res.rows[0].preorder_count, 10),
