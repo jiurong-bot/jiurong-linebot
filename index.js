@@ -1,4 +1,4 @@
-// index.js - V44.2 (全域通知設定加上快取)
+// index.js - V44.3 (重複查詢修正)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6748,7 +6748,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V44.2 (全域通知設定加上快取)`);
+    console.log(`Bot 版本 V44.3 (重複查詢修正)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
