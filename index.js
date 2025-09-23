@@ -2292,7 +2292,14 @@ async function showFailedTasks(page) {
  * @returns {Promise<object>} 一個包含所有通知設定狀態的物件
  */
 async function getGlobalNotificationSettings() {
-    // 預設所有通知都是開啟的
+    // ✅ 步驟 1: 嘗試從快取中讀取
+    const cacheKey = 'global_notification_settings';
+    const cachedSettings = simpleCache.get(cacheKey);
+    if (cachedSettings) {
+        return cachedSettings;
+    }
+
+    // --- 快取未命中，執行原有邏輯 ---
     const settings = {
         // [新增] 分類總開關
         admin_notifications_enabled: true,
@@ -2314,8 +2321,6 @@ async function getGlobalNotificationSettings() {
         student_welcome_message: true,
         student_new_announcement: true
     };
-
-    // 所有要去資料庫查詢的 key
     const allSettingKeys = [
         'admin_notifications_enabled', 'teacher_notifications_enabled', 'student_notifications_enabled',
         'admin_failed_task_alert_enabled',
@@ -2323,7 +2328,6 @@ async function getGlobalNotificationSettings() {
         'student_class_reminder_1hr_enabled', 'student_order_result_enabled', 'student_message_reply_enabled',
         'student_welcome_message_enabled', 'student_new_announcement_enabled'
     ];
-
     await executeDbQuery(async (db) => {
         const res = await db.query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key = ANY($1::text[])", [allSettingKeys]);
         
@@ -2347,8 +2351,12 @@ async function getGlobalNotificationSettings() {
         settings.student_new_announcement = dbSettings.get('student_new_announcement_enabled') ?? true;
     });
 
+    // ✅ 步驟 2: 將從資料庫讀取到的新值寫入快取，存活 60 秒
+    simpleCache.set(cacheKey, settings, 60000); 
+
     return settings;
 }
+
 /**
  * [程式夥伴修正] V42.20 - 建立「通知細項設定」子選單 (修正版，改為穩定的單欄佈局)
  * @returns {Promise<object>} Flex Message 物件
