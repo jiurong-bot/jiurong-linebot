@@ -2705,68 +2705,49 @@ async function showErrorLogs(page) {
         noDataMessage: '✅ 太好了！目前沒有任何錯誤日誌。'
     });
 }
-
 async function showTeacherListForRemoval(page) {
-    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-    return executeDbQuery(async (client) => {
-        const res = await client.query(
-            "SELECT id, name, picture_url FROM users WHERE role = 'teacher' ORDER BY name ASC LIMIT $1 OFFSET $2",
-            [CONSTANTS.PAGINATION_SIZE + 1, offset]
-        );
-
-
-        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageTeachers = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
-
-
-        if (pageTeachers.length === 0 && page === 1) {
-            return '目前沒有任何已授權的老師可供移除。';
+    // 內部函式：定義如何將一筆 teacher 資料轉換成一個 Bubble
+    const mapRowToBubble = (teacher) => ({
+        type: 'bubble',
+        body: {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'md',
+            contents: [
+                { type: 'image', url: teacher.picture_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
+                { type: 'box', layout: 'vertical', flex: 3, justifyContent: 'center',
+                    contents: [
+                        { type: 'text', text: teacher.name, weight: 'bold', size: 'lg', wrap: true },
+                        { type: 'text', text: `ID: ${formatIdForDisplay(teacher.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm', wrap: true }
+                    ]
+                }
+            ]
+        },
+        footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [{
+                type: 'button',
+                style: 'primary',
+                color: '#DE5246',
+                height: 'sm',
+                action: { type: 'postback', label: '選擇此老師', data: `action=select_teacher_for_removal&targetId=${teacher.id}&targetName=${encodeURIComponent(teacher.name)}` }
+            }]
         }
-        if (pageTeachers.length === 0) {
-            return '沒有更多老師了。';
-        }
+    });
 
-        const teacherBubbles = pageTeachers.map(t => ({
-            type: 'bubble',
-            body: {
-                type: 'box',
-                layout: 'horizontal',
-                spacing: 'md',
-                contents: [
-                    { type: 'image', url: t.picture_url || CONSTANTS.IMAGES.PLACEHOLDER_AVATAR_USER, size: 'md', aspectRatio: '1:1', aspectMode: 'cover' },
-                    { type: 'box', layout: 'vertical', flex: 3, justifyContent: 'center',
-                        contents: [
-                            { type: 'text', text: t.name, weight: 'bold', size: 'lg', wrap: true },
-                            { type: 'text', text: `ID: ${formatIdForDisplay(t.id)}`, size: 'xxs', color: '#AAAAAA', margin: 'sm', wrap: true }
-                        ]
-                    }
-                ]
-            },
-            footer: {
-                type: 'box',
-                layout: 'vertical',
-                contents: [{
-                    type: 'button',
-                    style: 'primary',
-                    color: '#DE5246',
-                    height: 'sm',
-                    action: { type: 'postback', label: '選擇此老師', data: `action=select_teacher_for_removal&targetId=${t.id}&targetName=${encodeURIComponent(t.name)}` }
-                }]
-            }
-        }));
-        const paginationBubble = createPaginationBubble('action=list_teachers_for_removal', page, hasNextPage);
-        if (paginationBubble) {
-            teacherBubbles.push(paginationBubble);
-        }
-
-
-        return {
-            type: 'flex',
-            altText: '選擇要移除的老師',
-            contents: { type: 'carousel', contents: teacherBubbles }
-        };
+    // 直接呼叫產生器，傳入設定
+    return createPaginatedCarousel({
+        altText: '選擇要移除的老師',
+        baseAction: 'action=list_teachers_for_removal',
+        page: page,
+        dataQuery: "SELECT id, name, picture_url FROM users WHERE role = 'teacher' ORDER BY name ASC LIMIT $1 OFFSET $2",
+        queryParams: [],
+        mapRowToBubble: mapRowToBubble,
+        noDataMessage: '目前沒有任何已授權的老師可供移除。'
     });
 }
+
 // [程式夥伴修改] V40.10.4 - 調整購點紀錄中「待處理訂單」的顯示順序
 async function showPurchaseHistory(userId, page) { // page 參數暫時保留
     return executeDbQuery(async (client) => {
