@@ -6883,7 +6883,6 @@ async function handleViewActions(action, data, user) {
     }
     return null;
 }
-
 /**
  * 處理「管理員專用」的指令
  */
@@ -6900,7 +6899,6 @@ async function handleAdminActions(action, data, user) {
             const key = data.get('key');
             const currentValue = data.get('value') === 'true';
             const newValue = !currentValue;
-
             await executeDbQuery(async (db) => {
                 await db.query(
                     `INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ($1, $2, NOW())
@@ -6908,8 +6906,8 @@ async function handleAdminActions(action, data, user) {
                     [key, newValue.toString()]
                 );
             });
-            
-            simpleCache.clear(key);
+            // ✅ 正確地清除包含所有設定的大物件快取
+            simpleCache.clear('global_notification_settings');
             return buildNotificationSettingsFlex();
         }
         case 'delete_error_log': {
@@ -6966,6 +6964,7 @@ async function handleAdminActions(action, data, user) {
     }
     return null;
 }
+
 /**
  * 處理「老師」相關的操作 (包含個人資訊設定、手動調點、啟動查詢流程等)
  */
