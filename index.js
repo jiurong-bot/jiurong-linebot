@@ -1336,8 +1336,9 @@ function buildBuyPointsFlex() {
     };
 }
 // [程式夥伴修改] V42.4b - 修正重複訂單問題
-async function buildPointsMenuFlex(userId) {
-    const user = await getUser(userId);
+async function buildPointsMenuFlex(userId, userObject = null) {
+    // ✅ 如果沒有傳入 userObject，才自己去查詢資料庫
+    const user = userObject || await getUser(userId);
     if (!user) return { type: 'text', text: '無法獲取您的使用者資料。' };
 
     // [修正] 擴大查詢範圍，納入所有待處理狀態，並只取最新一筆
@@ -1350,14 +1351,12 @@ async function buildPointsMenuFlex(userId) {
     const pendingOrder = pendingOrderRes.rows.length > 0 ? pendingOrderRes.rows[0] : null;
 
     const bodyContents = [];
-
     // 如果找到任何待處理的訂單，就建立一個詳細的提示卡
     if (pendingOrder) {
         // --- [整合] 從 showPurchaseHistory 借用並簡化邏輯，以顯示更詳細的狀態 ---
         let actionButton = null;
         let cardColor, statusText, additionalInfo = '';
         const isTransfer = pendingOrder.payment_method === 'transfer';
-
         // 根據訂單狀態決定顯示的文字和按鈕
         if (pendingOrder.status === 'pending_confirmation') {
             // 如果是轉帳訂單，提供「修改後五碼」的選項
@@ -1377,7 +1376,7 @@ async function buildPointsMenuFlex(userId) {
                 };
             }
             cardColor = '#d90429'; 
-            statusText = '訂單被老師退回'; 
+            statusText = '訂單被老師退回';
             additionalInfo = '請檢查金額或後五碼是否有誤。';
         } else { // status === 'pending_payment'
             if (isTransfer) {
@@ -1395,7 +1394,6 @@ async function buildPointsMenuFlex(userId) {
             type: 'button', style: 'link', height: 'sm', margin: 'sm', color: '#999999',
             action: { type: 'postback', label: '取消此訂單', data: `action=cancel_pending_order_start&order_id=${pendingOrder.order_id}` }
         };
-        
         bodyContents.push({
             type: 'box', layout: 'vertical', paddingAll: 'lg', backgroundColor: '#FFF1F0', cornerRadius: 'md', spacing: 'sm',
             contents: [
@@ -1421,7 +1419,6 @@ async function buildPointsMenuFlex(userId) {
             { type: 'text', text: `${user.points} 點`, weight: 'bold', size: '3xl', margin: 'sm', color: '#1A759F' },
         ]
     });
-
     return {
         type: 'flex',
         altText: '點數查詢選單',
@@ -1454,6 +1451,7 @@ async function buildPointsMenuFlex(userId) {
         }
     };
 }
+
 /**
  * [程式夥伴新增] 建立商城主選單，動態顯示待處理的商品訂單
  * @param {string} userId 
