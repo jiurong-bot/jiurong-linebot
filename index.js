@@ -15,8 +15,11 @@ const config = {
 };
 const client = new line.Client(config);
 const pgPool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  // 核心修改：設定最大連接數，並允許透過環境變數調整
+  // 如果沒有設定環境變數，則預設為 20
+  max: parseInt(process.env.DB_POOL_SIZE) || 20
 });
 const imagekit = new ImageKit({
     publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
