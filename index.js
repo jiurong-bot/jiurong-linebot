@@ -1,4 +1,4 @@
-// index.js - V44.3 (重複查詢修正)
+// index.js - V44.4 (圖片上傳優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6741,7 +6741,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V44.3 (重複查詢修正)`);
+    console.log(`Bot 版本 V44.4 (圖片上傳優化)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
