@@ -601,7 +601,7 @@ async function performHealthCheck() {
 // 主程式迴圈
 // =======================================================
 async function main() {
-  console.log('🚀 背景工作程式 (Worker) 已啟動... V4 (performHealthCheck 函式優化)');
+  console.log('🚀 背景工作程式 (Worker) 已啟動... V5 (調整資料庫連接池大小)');
   while (true) {
     if (isShuttingDown) {
         console.log('🛑 收到關閉信號，停止抓取新任務...');
