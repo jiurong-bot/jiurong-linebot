@@ -3019,7 +3019,8 @@ async function handleTeacherCommands(event, userId) {
             state.step = 'await_image_url'; return { type: 'text', text: '請直接上傳一張商品圖片，或輸入「無」：', quickReply: { items: getCancelMenu() } };
             }
             break;
-            case 'await_image_url':
+    
+    case 'await_image_url':
     let imageUrl = null;
     if (event.message.type === 'text' && event.message.text.trim().toLowerCase() === '無') {
         imageUrl = null;
@@ -3027,8 +3028,15 @@ async function handleTeacherCommands(event, userId) {
     else if (event.message.type === 'image') {
         try {
             const imageResponse = await axios.get(`https://api-data.line.me/v2/bot/message/${event.message.id}/content`, { headers: { 'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}` }, responseType: 'arraybuffer' });
-            const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-            const uploadResponse = await imagekit.upload({ file: imageBuffer, fileName: `product_${Date.now()}.jpg`, useUniqueFileName: true, folder: "yoga_products" });
+            
+            // ✅ 使用 sharp 進行圖片預處理
+            const processedImageBuffer = await sharp(imageResponse.data)
+                .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true }) // 將圖片等比例縮小到 1024x1024 以內
+                .jpeg({ quality: 80 }) // 轉為 JPG 並設定 80% 的品質
+                .toBuffer(); // 輸出為 Buffer
+
+            // ✅ 上傳處理過的圖片 Buffer
+            const uploadResponse = await imagekit.upload({ file: processedImageBuffer, fileName: `product_${Date.now()}.jpg`, useUniqueFileName: true, folder: "yoga_products" });
             imageUrl = uploadResponse.url;
         } catch (err) {
             console.error("❌ 圖片上傳至 ImageKit.io 失敗:", err);
@@ -3060,19 +3068,7 @@ async function handleTeacherCommands(event, userId) {
         text: summaryText,
         quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}
     };
-            summaryText = `請確認商品資訊：\n\n` +
-                              `名稱：${state.name}\n` +
-                              `描述：${state.description || '無'}\n` +
-                              `價格：${state.price} 元\n` +
-                              `庫存：${state.inventory}\n` +
-                              `狀態：${state.isPreorder ? '開放預購' : '直接上架'}\n` + // 根據標記顯示不同狀態
-                              `圖片：${state.image_url || '無'}\n\n` +
-                              `確認無誤後請點擊「✅ 確認上架」。`;
-            return {
-                type: 'text',
-                text: summaryText,
-                quickReply: { items: [ { type: 'action', action: { type: 'postback', label: '✅ 確認上架', data: 'action=confirm_add_product' } }, { type: 'action', action: { type: 'message', label: CONSTANTS.COMMANDS.GENERAL.CANCEL, text: CONSTANTS.COMMANDS.GENERAL.CANCEL } } ]}
-            };
+
     }
     if (!proceed && state.step !== 'await_image_url') { return { type: 'text', text: errorMessage, quickReply: { items: getCancelMenu() } };
     }
