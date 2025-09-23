@@ -6643,13 +6643,10 @@ app.post('/webhook', line.middleware(config), (req, res) => {
     });
 });
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
-
-
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   try {
     checkEnvironmentVariables();
     console.log('✅ 資料庫結構已由 Build Command 處理。');
-
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
     console.log(`Bot 版本 V44.9 (優雅關閉機制)`);
@@ -6659,6 +6656,40 @@ app.listen(PORT, async () => {
     process.exit(1);
   }
 });
+
+/**
+ * [新增] Express 伺服器的優雅關閉機制
+ */
+const gracefulShutdown = () => {
+  console.log('🔌 收到關閉信號，開始優雅關閉伺服器...');
+
+  // 1. 停止接收新的請求
+  server.close(async () => {
+    console.log('✅ 所有 HTTP 請求已處理完畢。');
+    
+    // 2. 關閉資料庫連接池
+    try {
+      await pgPool.end();
+      console.log('🐘 PostgreSQL 連接池已關閉。');
+    } catch (e) {
+      console.error('❌ 關閉 PostgreSQL 連接池時發生錯誤:', e);
+    }
+
+    // 3. 正常退出程序
+    process.exit(0);
+  });
+
+  // 強制逾時：如果伺服器在 10 秒內未能正常關閉，則強制退出
+  setTimeout(() => {
+    console.error('❌ 關閉超時，強制退出程序。');
+    process.exit(1);
+  }, 10000);
+};
+
+// 監聽來自作業系統的關閉信號
+process.on('SIGTERM', gracefulShutdown); // 由 Render 等平台發送
+process.on('SIGINT', gracefulShutdown);  // 由 Ctrl+C 發送
+
 // =======================================================
 // [優化建議] Postback 子處理函式區塊
 // =======================================================
