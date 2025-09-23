@@ -5985,7 +5985,6 @@ async function showSoldOutProducts(page) {
 // =======================================================
 async function showPreorderProducts(page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-
     return executeDbQuery(async (client) => {
         // 步驟 1: 正常查詢當頁的商品 (維持不變)
         const res = await client.query("SELECT * FROM products WHERE status = 'preorder' ORDER BY created_at DESC LIMIT $1 OFFSET $2", [CONSTANTS.PAGINATION_SIZE + 1, offset]);
@@ -6039,7 +6038,7 @@ async function showPreorderProducts(page) {
                          { type: 'text', text: product.name, weight: 'bold', size: 'xl', wrap: true },
                         { type: 'separator', margin: 'lg' },
                         {
-                            type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
+                             type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm',
                              contents: [
                                 { type: 'text', text: `預購人數：${preorderStats.count} 人`, size: 'sm' },
                                 { type: 'text', text: `預購總數：${preorderStats.total_quantity} 個`, size: 'sm' }
@@ -6056,7 +6055,7 @@ async function showPreorderProducts(page) {
                         },
                         {
                             type: 'button', style: 'secondary', color: '#DE5246', height: 'sm',
-                            action: { type: 'postback', label: '停止預購並下架', data: `action=stop_preorder_start&product_id=${product.id}` }
+                             action: { type: 'postback', label: '停止預購並下架', data: `action=stop_preorder_start&product_id=${product.id}` }
                         }
                     ]
                 }
@@ -6076,6 +6075,7 @@ async function showPreorderProducts(page) {
         };
     });
 }
+
 // =======================================================
 // [新增] 顯示待出貨的預購商品列表 (效能優化版)
 // =======================================================
