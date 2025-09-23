@@ -1668,22 +1668,21 @@ function setupConversationTimeout(userId, conversationState, stateName, onTimeou
     }, CONSTANTS.INTERVALS.CONVERSATION_TIMEOUT_MS);
     conversationState[userId] = { ...conversationState[userId], timeoutId };
 }
-async function handlePurchaseFlow(event, userId) {
-    const text = event.message.text ? event.message.text.trim() : '';
-    const user = await getUser(userId);
+async function handlePurchaseFlow(event, userId, userObject = null) {
+    const text = event.message.text ?
+        event.message.text.trim() : '';
+    // ✅ 如果沒有傳入 userObject，才自己去查詢資料庫
+    const user = userObject || await getUser(userId);
     const purchaseState = pendingPurchase[userId];
-
 
     if (!purchaseState) return { handled: false };
     let replyContent;
-
 
     switch (purchaseState.step) {
         case 'input_last5':
         case 'edit_last5':
         if (/^\d{5}$/.test(text)) {
             const order_id = purchaseState.data.order_id;
-            
             // ✅ 使用單一 UPDATE ... RETURNING 指令，一步到位
             const updatedOrder = await executeDbQuery(async (client) => {
                 const res = await client.query(
@@ -1698,16 +1697,14 @@ async function handlePurchaseFlow(event, userId) {
                 // 如果更新成功，res.rows[0] 就會是更新後的訂單物件
                 return res.rowCount > 0 ? res.rows[0] : null;
             });
-
             delete pendingPurchase[userId];
 
             if (updatedOrder) {
-                const flexMenu = await buildPointsMenuFlex(userId);
+                const flexMenu = await buildPointsMenuFlex(userId, user); // ✅ 將 user 物件繼續傳遞下去
                 replyContent = [
                     {type: 'text', text: `感謝您！已收到您的匯款後五碼「${text}」。\n我們將盡快為您審核，審核通過後點數將自動加入您的帳戶。`}, 
                     flexMenu
                 ];
-                
                 if (TEACHER_ID) {
                     const notifyMessage = { type: 'text', text: `🔔 購點審核通知\n學員 ${user.name} 已提交匯款資訊。\n訂單ID: ${order_id}\n後五碼: ${text}\n請至「點數管理」->「待確認點數訂單」審核。`};
                     await notifyAllTeachers(notifyMessage);
@@ -1724,11 +1721,10 @@ async function handlePurchaseFlow(event, userId) {
         }
         return { handled: true, reply: replyContent };
     }
-        return { handled: false };
+    return { handled: false };
 }
 
 // --- Teacher Command Handlers (V34.0 Refactor) ---
-
 
 async function showCourseManagementMenu(event, user) {
     return { 
