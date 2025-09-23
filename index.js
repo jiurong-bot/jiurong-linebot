@@ -3911,12 +3911,11 @@ event.message.text.trim().normalize() : '';
         }
     }
     
-    const purchaseFlowResult = await handlePurchaseFlow(event, userId);
-  
-  if (purchaseFlowResult.handled) {
+    // ✅ 將已經在 handleStudentCommands 中查到的 user 物件傳遞下去
+    const purchaseFlowResult = await handlePurchaseFlow(event, userId, user);
+    if (purchaseFlowResult.handled) {
       return purchaseFlowResult.reply;
-  }
-
+    }
 
   if (pendingBookingConfirmation[userId]) {
     const state = pendingBookingConfirmation[userId];
