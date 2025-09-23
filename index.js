@@ -1,4 +1,4 @@
-// index.js - V44.7 (統一使用 Carousel 產生器)
+// index.js - V44.8 (調整資料庫連接池大小)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6649,7 +6649,7 @@ app.listen(PORT, async () => {
 
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V44.7 (統一使用 Carousel 產生器)`);
+    console.log(`Bot 版本 V44.8 (調整資料庫連接池大小)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
