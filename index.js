@@ -5418,15 +5418,20 @@ async function showAvailableCourses(userId, postbackData = new URLSearchParams()
        return flexMessage;
    });
 }
-
+async function showMyCourses(userId, page) {
 async function showMyCourses(userId, page) {
     const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
     return executeDbQuery(async (client) => {
+        // ✅ SQL 查詢直接計算好所需資訊
         const res = await client.query(
             `SELECT
                 c.*,
                 t.name AS teacher_name,
-                t.image_url AS teacher_image_url
+                t.image_url AS teacher_image_url,
+                -- 直接計算使用者預約了幾個名額，並命名為 booked_spots_count
+                (SELECT COUNT(*) FROM unnest(c.students) s WHERE s = $1) AS booked_spots_count,
+                -- 直接判斷使用者是否在候補名單，並命名為 is_on_waiting_list
+                ($1 = ANY(c.waiting)) AS is_on_waiting_list
              FROM courses c
              LEFT JOIN teachers t ON c.teacher_id = t.id
              WHERE (
@@ -5436,13 +5441,18 @@ async function showMyCourses(userId, page) {
             [userId]
         );
 
-        const allCourseCardsData = res.rows.flatMap(c => {
+        // ✅ Node.js 的邏輯變得極度簡潔，直接使用資料庫算好的結果
+        const allCourseCardsData = res.rows.flatMap(row => {
             const cards = [];
-            const spotsBookedByUser = (c.students || []).filter(id => id === userId).length;
-            const isUserOnWaitingList = (c.waiting || []).includes(userId);
-
-            if (spotsBookedByUser > 0) cards.push({ course: c, type: 'booked', spots: spotsBookedByUser });
-            if (isUserOnWaitingList) cards.push({ course: c, type: 'waiting' });
+            // row.booked_spots_count 和 row.is_on_waiting_list 是資料庫直接給我們的
+            const spotsBookedByUser = parseInt(row.booked_spots_count, 10);
+            
+            if (spotsBookedByUser > 0) {
+                cards.push({ course: row, type: 'booked', spots: spotsBookedByUser });
+            }
+            if (row.is_on_waiting_list) {
+                cards.push({ course: row, type: 'waiting' });
+            }
             return cards;
         });
 
@@ -5464,7 +5474,6 @@ async function showMyCourses(userId, page) {
 
             if (cardData.type === 'booked') {
                 statusComponents.push({ type: 'text', text: `✅ 您已預約 ${cardData.spots} 位`, color: '#28a745', size: 'sm', weight: 'bold' });
-
                 const eightHoursInMillis = CONSTANTS.TIME.EIGHT_HOURS_IN_MS;
                 const canCancel = new Date(c.time).getTime() - Date.now() > eightHoursInMillis;
 
@@ -5486,7 +5495,6 @@ async function showMyCourses(userId, page) {
                 footerButtons.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '取消候補', data: `action=confirm_cancel_waiting_start&course_id=${c.id}` } });
             }
 
-            // [V38.4 修改] 調整 Flex Message 結構
             return {
                 type: 'bubble',
                 size: 'giga',
