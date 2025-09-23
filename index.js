@@ -2234,59 +2234,47 @@ async function getUserNames(userIds, dbClient) {
     return new Map(usersRes.rows.map(u => [u.id, u.name]));
 }
 async function showFailedTasks(page) {
-    const offset = (page - 1) * CONSTANTS.PAGINATION_SIZE;
-    return executeDbQuery(async (client) => {
-        const res = await client.query(
-            "SELECT * FROM failed_tasks ORDER BY failed_at DESC LIMIT $1 OFFSET $2",
-            [CONSTANTS.PAGINATION_SIZE + 1, offset]
-        );
+    // 步驟 1: 先查詢所有相關任務的 user names，因為 mapRowToBubble 是同步函式
+    const allFailedTasks = await executeDbQuery(client => 
+        client.query("SELECT recipient_id FROM failed_tasks")
+    ).then(res => res.rows);
+
+    const userIds = [...new Set(allFailedTasks.map(task => task.recipient_id))];
+    const userNamesMap = await executeDbQuery(client => getUserNames(userIds, client));
+
+    // 步驟 2: 定義如何將一筆 failed_task 資料轉換成一個 Bubble
+    const mapRowToBubble = (task) => {
+        const recipientName = userNamesMap.get(task.recipient_id) || '未知用戶';
+        const errorMessage = task.last_error || '沒有錯誤訊息。';
         
-        const hasNextPage = res.rows.length > CONSTANTS.PAGINATION_SIZE;
-        const pageTasks = hasNextPage ? res.rows.slice(0, CONSTANTS.PAGINATION_SIZE) : res.rows;
+        return {
+            type: 'bubble',
+            size: 'giga',
+            header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🚨 任務失敗', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#d9534f', paddingAll: 'lg' },
+            body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+                { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '收件人', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${recipientName}`, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '失敗時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(task.failed_at), color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
+                { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'text', text: '錯誤原因', color: '#aaaaaa', size: 'sm' }, { type: 'text', text: errorMessage.substring(0, 100), color: '#666666', size: 'sm', wrap: true, margin: 'md' } ] }
+            ]},
+            footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+                { type: 'button', style: 'secondary', flex: 1, height: 'sm', action: { type: 'postback', label: '🗑️ 刪除', data: `action=delete_failed_task&id=${task.id}` } },
+                { type: 'button', style: 'primary', color: '#5cb85c', flex: 1, height: 'sm', action: { type: 'postback', label: '🔄 重試', data: `action=retry_failed_task&id=${task.id}` } }
+            ]}
+        };
+    };
 
-
-        if (pageTasks.length === 0 && page === 1) {
-            return '✅ 太好了！目前沒有任何失敗的任務。';
-        }
-        if (pageTasks.length === 0) {
-            return '沒有更多失敗的任務了。';
-        }
-
-
-        const userIds = [...new Set(pageTasks.map(task => task.recipient_id))];
-        const userNamesMap = await getUserNames(userIds, client);
-
-
-        const taskBubbles = pageTasks.map(task => {
-            const recipientName = userNamesMap.get(task.recipient_id) || '未知用戶';
-            const errorMessage = task.last_error || '沒有錯誤訊息。';
-            
-            return {
-                type: 'bubble',
-                size: 'giga',
-                header: { type: 'box', layout: 'vertical', contents: [{ type: 'text', text: '🚨 任務失敗', weight: 'bold', color: '#FFFFFF' }], backgroundColor: '#d9534f', paddingAll: 'lg' },
-                body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '收件人', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: `${recipientName}`, color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
-                    { type: 'box', layout: 'baseline', spacing: 'sm', contents: [ { type: 'text', text: '失敗時間', color: '#aaaaaa', size: 'sm', flex: 2 }, { type: 'text', text: formatDateTime(task.failed_at), color: '#666666', size: 'sm', flex: 5, wrap: true } ] },
-                    { type: 'box', layout: 'vertical', spacing: 'sm', contents: [ { type: 'text', text: '錯誤原因', color: '#aaaaaa', size: 'sm' }, { type: 'text', text: errorMessage.substring(0, 100), color: '#666666', size: 'sm', wrap: true, margin: 'md' } ] }
-                ]},
-                footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-                    { type: 'button', style: 'secondary', flex: 1, height: 'sm', action: { type: 'postback', label: '🗑️ 刪除', data: `action=delete_failed_task&id=${task.id}` } },
-                    { type: 'button', style: 'primary', color: '#5cb85c', flex: 1, height: 'sm', action: { type: 'postback', label: '🔄 重試', data: `action=retry_failed_task&id=${task.id}` } }
-                ]}
-            };
-        });
-
-
-        const paginationBubble = createPaginationBubble('action=view_failed_tasks', page, hasNextPage);
-        if (paginationBubble) {
-            taskBubbles.push(paginationBubble);
-        }
-
-
-        return { type: 'flex', altText: '失敗任務列表', contents: { type: 'carousel', contents: taskBubbles } };
+    // 步驟 3: 直接呼叫產生器，傳入設定
+    return createPaginatedCarousel({
+        altText: '失敗任務列表',
+        baseAction: 'action=view_failed_tasks',
+        page: page,
+        dataQuery: "SELECT * FROM failed_tasks ORDER BY failed_at DESC LIMIT $1 OFFSET $2",
+        queryParams: [], // 這個查詢沒有額外參數
+        mapRowToBubble: mapRowToBubble,
+        noDataMessage: '✅ 太好了！目前沒有任何失敗的任務。'
     });
 }
+
 // [程式夥伴修改] V42.12 - 新增分類總開關
 /**
  * [V39.0 修改] 取得所有全局通知設定
