@@ -450,7 +450,7 @@ async function enqueuePushTask(recipientId, message, { sendAt = null, settingKey
         }
 
         await db.query(
-          `INSERT INTO tasks (recipient_id, message_payload, send_at) VALUES ($1, $2, $3)`,`
+          `INSERT INTO tasks (recipient_id, message_payload, send_at) VALUES ($1, $2, $3)`,
           [recipientId, JSON.stringify(validMessages), sendTimestamp]
         );
     });
