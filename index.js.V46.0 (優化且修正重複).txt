@@ -1,4 +1,4 @@
-// index.js - V45.0 (效能優化+優雅關閉)
+// index.js - V46.0 (優化且修正重複)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
