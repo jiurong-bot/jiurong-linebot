@@ -1,4 +1,4 @@
-// index.js - V46.0 (優化)
+// index.js - V46.0 (性能優化)
 require('dotenv').config();
 const line = require('@line/bot-sdk');
 const express = require('express');
@@ -6608,7 +6608,7 @@ const server = app.listen(PORT, async () => {
     console.log('✅ 資料庫結構已由 Build Command 處理。');
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V45.0 (效能優化+優雅關閉)`);
+    console.log(`Bot 版本 V46.0 (效能優化)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
