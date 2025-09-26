@@ -6596,18 +6596,19 @@ app.post('/webhook', line.middleware(config), (req, res) => {
     });
 });
 app.get('/', (req, res) => res.send('九容瑜伽 LINE Bot 正常運作中。'));
-const server = 
+
 // 啟動 simpleCache 的自動清理器（TTL 清理）
 if (typeof simpleCache !== 'undefined' && simpleCache && typeof simpleCache.startCleanup === 'function') {
   simpleCache.startCleanup();
 }
-app.listen(PORT, async () => {
+
+const server = app.listen(PORT, async () => {
   try {
     checkEnvironmentVariables();
     console.log('✅ 資料庫結構已由 Build Command 處理。');
 
     console.log(`✅ 伺服器已啟動，監聽埠號 ${PORT}`);
-    console.log(`Bot 版本 V46.0 (優化且修正重複)`);
+    console.log(`Bot 版本 V45.0 (效能優化+優雅關閉)`);
 
    } catch (error) {
     console.error('❌ 應用程式啟動失敗:', error);
